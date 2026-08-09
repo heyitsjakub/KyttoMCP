@@ -47,7 +47,7 @@ release.
 
 ---
 
-## [1.0-beta] — 2026-08-03
+## 1.0-beta — 2026-08-03
 
 First public beta, for macOS and Windows.
 
@@ -63,4 +63,3 @@ First public beta, for macOS and Windows.
 
 [Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.1-beta...HEAD
 [1.0.1-beta]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.1-beta
-[1.0-beta]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0-beta
