@@ -26,7 +26,20 @@ without a backup.
             trailing comma
 -->
 
-In development. Planned work is tracked in [Issues](https://github.com/heyitsjakub/KyttoMCP/issues).
+Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/KyttoMCP/issues).
+
+---
+
+## [1.0.2-beta] — 2026-08-09
+
+Maintenance release: bug fixes plus stability and performance improvements. No new features.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---|---|
+| macOS (universal) | `KyttoMCP-1.0.2-beta.dmg` | 4.0 MB | `86336a51163a4ff9b579cc59519e0bae7d085a3739b7aa04e7715bfeb72c0b02` |
+| Windows | `Kytto-Setup-1.0.2-beta.exe` | 74.8 MB | `6b09a48702725c57f283d984b1b932d7da1f81e11152da7dd0d6bc12a1e07271` |
 
 ---
 
@@ -61,5 +74,6 @@ First public beta, for macOS and Windows.
 - MCP Doctor findings with previewed fixes
 - Optional Gateway mode with metadata-only Live Activity
 
-[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.1-beta...HEAD
+[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.2-beta...HEAD
+[1.0.2-beta]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.2-beta
 [1.0.1-beta]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.1-beta
