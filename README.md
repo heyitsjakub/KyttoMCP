@@ -85,11 +85,11 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.1.dmg
+shasum -a 256 KyttoMCP-1.0.2.dmg
 # f742df0ef5d9f97abd07c61f09d97bf8106895d70ac787a0617ac9887c60fcfc
 
 # Windows (PowerShell)
-Get-FileHash Kytto-Setup-1.0.1-beta.exe -Algorithm SHA256
+Get-FileHash Kytto-Setup-1.0.2-beta.exe -Algorithm SHA256
 # 622da113114b9906ca4426da25a4fb72d1369c6e9d1aa9427b53b78a205fb202
 ```
 
@@ -137,7 +137,7 @@ The beta needs honest criticism far more than it needs praise. If something is c
 
 ## License
 
-Proprietary. Free to use during the 1.0.1 beta.
+Proprietary. Free to use during the 1.0.2 beta.
 
 ---
 
