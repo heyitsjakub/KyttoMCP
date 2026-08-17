@@ -10,10 +10,24 @@
 
 ---
 
-<!-- TODO: nahraď strihom B (45–60 s demo) hneď ako bude natočený.
-     Formát: docs/demo.gif, šírka 1200 px, pod 10 MB. -->
+<!-- DEMO — 72 s záznam, natočený 16. 8. 2026, hotový súbor je `assets/kytto-demo.mp4`
+     v repozitári webu (4,3 MB, 1080p, bez zvuku).
+
+     GitHub neprehrá video z cudzej adresy — musí byť nahraté k nemu. Postup:
+       1. Otvor https://github.com/heyitsjakub/KyttoMCP/issues/new
+       2. Pretiahni `assets/kytto-demo.mp4` do poľa komentára a počkaj na dokončenie uploadu
+       3. GitHub ho nahradí adresou https://github.com/user-attachments/assets/...
+          — tú adresu skopíruj
+       4. Draft issue **neodosielaj**, len zavri; nahratý súbor zostáva dostupný
+       5. Odkomentuj riadok nižšie a vlož adresu namiesto DEMO_URL
+     Limit je 10 MB pre free účet, náš súbor má 4,3 MB, takže prejde.
+
+https://DEMO_URL
+-->
 
 ![KyttoMCP showing MCP servers and their status across Claude Desktop, Claude Code, Cursor, VS Code and Codex in one matrix](docs/screenshot.png)
+
+> **See it work:** [72-second recording](https://kytto.jakubhecht.sk/#demo) — eleven servers across four clients, a server switched on for Claude Code, a failing server diagnosed, and the context cost of each server. No narration.
 
 ## The problem
 
@@ -85,12 +99,12 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.2.dmg
-# f742df0ef5d9f97abd07c61f09d97bf8106895d70ac787a0617ac9887c60fcfc
+shasum -a 256 KyttoMCP-1.0.2-beta.dmg
+# 86336a51163a4ff9b579cc59519e0bae7d085a3739b7aa04e7715bfeb72c0b02
 
 # Windows (PowerShell)
 Get-FileHash Kytto-Setup-1.0.2-beta.exe -Algorithm SHA256
-# 622da113114b9906ca4426da25a4fb72d1369c6e9d1aa9427b53b78a205fb202
+# 6b09a48702725c57f283d984b1b932d7da1f81e11152da7dd0d6bc12a1e07271
 ```
 
 ## Local by design
