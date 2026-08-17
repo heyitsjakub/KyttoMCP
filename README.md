@@ -10,24 +10,13 @@
 
 ---
 
-<!-- DEMO — 72 s záznam, natočený 16. 8. 2026, hotový súbor je `assets/kytto-demo.mp4`
-     v repozitári webu (4,3 MB, 1080p, bez zvuku).
-
-     GitHub neprehrá video z cudzej adresy — musí byť nahraté k nemu. Postup:
-       1. Otvor https://github.com/heyitsjakub/KyttoMCP/issues/new
-       2. Pretiahni `assets/kytto-demo.mp4` do poľa komentára a počkaj na dokončenie uploadu
-       3. GitHub ho nahradí adresou https://github.com/user-attachments/assets/...
-          — tú adresu skopíruj
-       4. Draft issue **neodosielaj**, len zavri; nahratý súbor zostáva dostupný
-       5. Odkomentuj riadok nižšie a vlož adresu namiesto DEMO_URL
-     Limit je 10 MB pre free účet, náš súbor má 4,3 MB, takže prejde.
-
-https://DEMO_URL
--->
-
 ![KyttoMCP showing MCP servers and their status across Claude Desktop, Claude Code, Cursor, VS Code and Codex in one matrix](docs/screenshot.png)
 
-> **See it work:** [72-second recording](https://kytto.jakubhecht.sk/#demo) — eleven servers across four clients, a server switched on for Claude Code, a failing server diagnosed, and the context cost of each server. No narration.
+### See it work — 72 seconds, no narration
+
+https://github.com/user-attachments/assets/e8e91309-8f4a-4ba5-9a1d-ac306b51d664
+
+Eleven MCP servers across four clients, one of them refusing to start. Kytto switches a server on for Claude Code, shows the stderr behind the failing one, and measures what each server costs in context. Recorded unedited on Windows with Beta 1.0.2 — [also on the site](https://kytto.jakubhecht.sk/#demo).
 
 ## The problem
 
