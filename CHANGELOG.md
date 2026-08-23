@@ -32,8 +32,7 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ## [1.0.3] — 2026-08-23
 
-Stability and security release following a full application audit, repeated native UI
-smoke tests, shared web-interface checks, code review, and Debug/Release validation.
+Stability and security release.
 
 ### Fixed
 
@@ -118,24 +117,6 @@ smoke tests, shared web-interface checks, code review, and Debug/Release validat
   version drift.
 - Debug-only integration tests do not run against the real user profile in Release
   configuration.
-
-### Validation
-
-| Check | Result |
-|---|---:|
-| Debug build | 0 warnings, 0 errors |
-| Debug .NET tests | 380/380 |
-| Release build | 0 warnings, 0 errors |
-| Release .NET tests | 378/378 |
-| Web UI tests | 9/9 |
-| JavaScript syntax checks | 21/21 |
-| ARM64 App and Gateway publish | passed |
-| Inno Setup x64 and ARM64 verification builds | passed |
-
-The visual audit covered Matrix, client detail, MCP Doctor, Activity, Profiles,
-Secrets, Backups, Add Server, Settings, and isolated onboarding. Write-path tests used
-a temporary profile and fixtures; real user configurations and secrets were not
-changed.
 
 ### Distribution notes
 
