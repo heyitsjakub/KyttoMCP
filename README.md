@@ -2,7 +2,7 @@
 
 **A local control panel for MCP servers across the AI clients you already use.**
 
-[![Version](https://img.shields.io/badge/beta-1.0.2-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
+[![Version](https://img.shields.io/badge/beta-1.0.3-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
 [![Price](https://img.shields.io/badge/beta-free-brightgreen)](https://kytto.jakubhecht.sk/)
 
@@ -88,12 +88,12 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.2-beta.dmg
-# 86336a51163a4ff9b579cc59519e0bae7d085a3739b7aa04e7715bfeb72c0b02
+shasum -a 256 KyttoMCP-1.0.3.dmg
+# c037817dea99c5f884b2c319fc0916b8ec884f5478d7f975d365494a101494fd
 
 # Windows (PowerShell)
-Get-FileHash Kytto-Setup-1.0.2-beta.exe -Algorithm SHA256
-# 6b09a48702725c57f283d984b1b932d7da1f81e11152da7dd0d6bc12a1e07271
+Get-FileHash Kytto-Setup-win-x64-1.0.3.exe -Algorithm SHA256
+# 5b4114a0ec69b4dc7002171e5b52915a4c6dbbb719321b499b60d1cc1fba396b
 ```
 
 ## Local by design
@@ -140,7 +140,7 @@ The beta needs honest criticism far more than it needs praise. If something is c
 
 ## License
 
-Proprietary. Free to use during the 1.0.2 beta.
+Proprietary. Free to use during the 1.0.3 beta.
 
 ---
 
