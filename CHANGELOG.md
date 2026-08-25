@@ -30,6 +30,39 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.3.1] — 2026-08-25
+
+Focused cross-platform usability update for the client matrix.
+
+### Fixed
+
+- The matrix now keeps all five supported clients visible: Claude Desktop, Claude
+  Code, Cursor, VS Code, and Codex.
+- Clients that are not detected remain visible but read-only, with guidance for
+  installations that use a custom configuration path.
+- Fixed the matrix jumping vertically after changing a server below the fold.
+- Fixed horizontal scroll position being lost when changing a server in a wide
+  matrix.
+- Keyboard focus is restored without moving the matrix away from the user's current
+  position.
+
+This update does not add support for additional client types.
+
+### Distribution notes
+
+The macOS build is ad-hoc signed rather than notarized. The Windows installer is not
+Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or
+SmartScreen.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---|---|
+| macOS (universal) | `KyttoMCP-1.0.3.1.dmg` | 5.1 MB | `2e7a2b0944a0159bbd3a3f452a9c45028e048e262d4b15d828b683f700d0eb0a` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.3.1.exe` | 78.4 MB | `55811ea0be9a6a554b964e50abcf9de9c6292ff3a23e8ab1e40eadbfd989f262` |
+
+---
+
 ## [1.0.3] — 2026-08-23
 
 Stability and security release.
@@ -177,7 +210,8 @@ First public beta, for macOS and Windows.
 - MCP Doctor findings with previewed fixes
 - Optional Gateway mode with metadata-only Live Activity
 
-[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.3.1...HEAD
+[1.0.3.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.3.1
 [1.0.3]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.3
 [1.0.2-beta]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.2-beta
 [1.0.1-beta]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.1-beta
