@@ -30,6 +30,39 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.4] — 2026-08-25
+
+Feature and usability update for custom configuration sources and high-density displays.
+
+### Added
+
+- Attach multiple named JSON, JSONC or TOML configuration files as read-only custom sources with Global, Profile or Workspace display scope.
+- Discover and watch custom-source servers without rewriting, creating or deleting the selected files.
+- Distinguish the five built-in writable clients from read-only custom sources throughout onboarding, the sidebar, matrix and detail views.
+- Explain the first matrix write before it happens, then remember that choice without bypassing Kytto's backup, stale-file and atomic-write safeguards.
+- Offer Undo after successful matrix changes, including exact backup restoration for a server that was previously absent.
+
+### Fixed
+
+- Native mutation services reject custom-source IDs even when called outside the UI.
+- Normal sidebar and matrix client icons now render at a consistent 22px × 22px.
+- The restart banner no longer covers the matrix in short windows.
+
+This release does not add hosted or organization-managed MCP inventory, writable custom sources, automatic workspace crawling or scope precedence.
+
+### Distribution notes
+
+The macOS build is ad-hoc signed rather than notarized. The Windows installer is not Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or SmartScreen.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---|---|
+| macOS (universal) | `KyttoMCP-1.0.4.dmg` | 5.3 MB | `0b5b208e9c14174792a2cb14c3a0cbd6f44a1d2ae5b3596444b2bfce361f3bb4` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.4.exe` | 78.4 MB | `be3b71b03c84f3b91abc6a41c35935567152ee4e63175b492efad719fd867651` |
+
+---
+
 ## [1.0.3.1] — 2026-08-25
 
 Focused cross-platform usability update for the client matrix.
@@ -210,7 +243,8 @@ First public beta, for macOS and Windows.
 - MCP Doctor findings with previewed fixes
 - Optional Gateway mode with metadata-only Live Activity
 
-[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.3.1...HEAD
+[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.4
 [1.0.3.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.3.1
 [1.0.3]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.3
 [1.0.2-beta]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.2-beta
