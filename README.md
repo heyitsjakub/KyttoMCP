@@ -2,11 +2,11 @@
 
 **A local control panel for MCP servers across the AI clients you already use.**
 
-[![Version](https://img.shields.io/badge/beta-1.0.5-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
+[![Version](https://img.shields.io/badge/beta-1.0.4.1-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
 [![Price](https://img.shields.io/badge/beta-free-brightgreen)](https://kytto.jakubhecht.sk/)
 
-[**Download Beta 1.0.5**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
+[**Download Beta 1.0.4.1**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
 
 ---
 
@@ -36,7 +36,7 @@ Different formats, different locations, different rules about what a valid entry
 Kytto reads those files locally and turns them into one workspace.
 
 **See and change what is enabled**
-Every server against every client in one matrix. Toggle a server on or off, edit a definition across every client that uses it, or remove it from one client without touching the others — Kytto writes each client in that client's own format and respects its rules. Add servers by hand or from a built-in catalog. In 1.0.5, Kytto explains the first matrix write before it happens and offers Undo after successful changes, including exact backup restoration for a server that was previously absent.
+Every server against every client in one matrix. Toggle a server on or off, edit a definition across every client that uses it, or remove it from one client without touching the others — Kytto writes each client in that client's own format and respects its rules. Add servers by hand or from a built-in catalog. In 1.0.4.1, Kytto explains the first matrix write before it happens and offers Undo after successful changes, including exact backup restoration for a server that was previously absent.
 
 **Attach custom sources without writing them**
 Attach multiple named JSON, JSONC or TOML configuration files as read-only custom sources with Global, Profile or Workspace display scope. Kytto discovers and watches their servers without rewriting, creating or deleting the selected files, and keeps them distinct from the five built-in writable clients.
@@ -73,7 +73,7 @@ Custom sources are read-only and are not an additional writable client. Want ano
 
 ## Install
 
-Download Beta 1.0.5 from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from the [v1.0.5 Release](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.5).
+Download Beta 1.0.4.1 from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from the [v1.0.4.1 Release](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.4.1).
 
 ### macOS
 
@@ -91,12 +91,12 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.5.dmg
-# 5a458a9b16d10c344715a238b03cc16a6e8ec8002d83772ee9cab7f8d09c34d1
+shasum -a 256 KyttoMCP-1.0.4.1.dmg
+# 578beaa8fcccfc9fbdb5828cc2713faa9b885b36bae49e7c89f6934838c883a4
 
 # Windows (PowerShell)
-Get-FileHash Kytto-Setup-win-x64-1.0.5.exe -Algorithm SHA256
-# f8546a423cf93fe54d932204beeea3b73d6fed3fdd3024000c86f838b80c1bb7
+Get-FileHash Kytto-Setup-win-x64-1.0.4.1.exe -Algorithm SHA256
+# e551166f130d712a96bf194b609cd5ceffbfb266792a8ab316e09fca477c2fd7
 ```
 
 ## Local by design
@@ -143,7 +143,7 @@ The beta needs honest criticism far more than it needs praise. If something is c
 
 ## License
 
-Proprietary. Free to use during the 1.0.5 beta.
+Proprietary. Free to use during the 1.0.4.1 beta.
 
 ---
 
