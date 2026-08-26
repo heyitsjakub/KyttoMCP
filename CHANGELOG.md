@@ -56,13 +56,15 @@ Cross-platform beta update for macOS and Windows.
 
 ### Distribution notes
 
-**From this release the macOS build is Apple Silicon only, M1 and later.** Intel Macs are not supported; 1.0.4.1 and earlier carry a universal build. The macOS build is not notarized and the Windows installer is not Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or SmartScreen.
+The macOS build is universal and runs on both Apple Silicon and Intel Macs. It is ad-hoc signed rather than notarized, and the Windows installer is not Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or SmartScreen.
+
+**The macOS disk image was rebuilt and replaced on 26 August 2026.** The image first published under this version was produced by an unguarded build step: it was signed with a development certificate, carried the `com.apple.security.get-task-allow` entitlement, and was Apple Silicon only. None of that was intended. If you downloaded `KyttoMCP-1.0.5.dmg` before the replacement, its checksum will not match the one below — please download it again.
 
 **Downloads**
 
 | Platform | File | Size | SHA-256 |
 |---|---|---:|---|
-| macOS (Apple Silicon) | `KyttoMCP-1.0.5.dmg` | 4.1 MB | `ad9d5dcbc0646697c965ef9d0bd493e6249d59650a48b2ff424e6c3c7f288369` |
+| macOS (universal) | `KyttoMCP-1.0.5.dmg` | 4.3 MB | `21d038b01ba1c1438b552e515fcca45a551c3e3798b632a73d3b4670d6efba1c` |
 | Windows x64 | `Kytto-Setup-win-x64-1.0.5.exe` | 78.4 MB | `851be7f910e6d40d541d9a17e35df099f75059cfad130100602fe6163c36eae9` |
 
 ---
