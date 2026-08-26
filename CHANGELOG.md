@@ -30,6 +30,43 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.5] — 2026-08-26
+
+Cross-platform beta update for macOS and Windows.
+
+### Added
+
+- Claude Code project and workspace entries already present in `.claude.json` are discovered as read-only sources.
+- A local MCP library scans a selected directory for supported JSON, JSONC and TOML maps, then previews conflicts and warnings before importing into built-in writable clients.
+- A copy-paste agent prompt and a strict JSON import flow that validates schema, fields, values, duplicates and environment-variable names without accepting secret values.
+- Server provenance, version and maintenance state, distinguishing npm, Python, local package, local executable, remote and unknown sources.
+- A read-only skills inventory showing known global and workspace skill roots, scope, metadata status, duplicates, conflicts and warnings.
+- The in-app updater checks a fresh first-party manifest, downloads to private staging, verifies SHA-256 and version, and supports cancel, install, relaunch and rollback.
+
+### Changed
+
+- Pending restarts now reflect the actual difference between the applied baseline and the current configuration. Undo and restore clear stale restart state.
+- Restart banners identify the affected client and the number of pending changes. Dismissing a banner hides it without discarding the pending state.
+- Read-only sources and their scope stay distinct from writable client configurations throughout the UI.
+- Existing backup, external-change detection, digest guards and atomic-write safeguards remain in the write path.
+
+### Fixed
+
+- Health-check timeout messages preserve the configured duration and no longer show misleading zero-second errors.
+
+### Distribution notes
+
+**From this release the macOS build is Apple Silicon only, M1 and later.** Intel Macs are not supported; 1.0.4.1 and earlier carry a universal build. The macOS build is not notarized and the Windows installer is not Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or SmartScreen.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (Apple Silicon) | `KyttoMCP-1.0.5.dmg` | 4.1 MB | `ad9d5dcbc0646697c965ef9d0bd493e6249d59650a48b2ff424e6c3c7f288369` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.5.exe` | 78.4 MB | `851be7f910e6d40d541d9a17e35df099f75059cfad130100602fe6163c36eae9` |
+
+---
+
 ## [1.0.4.1] — 2026-08-26
 
 Small cross-platform beta update.
@@ -267,7 +304,8 @@ First public beta, for macOS and Windows.
 - MCP Doctor findings with previewed fixes
 - Optional Gateway mode with metadata-only Live Activity
 
-[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.4.1...HEAD
+[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.5
 [1.0.4.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.4.1
 [1.0.4]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.4
 [1.0.3.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.3.1
