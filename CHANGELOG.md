@@ -30,7 +30,46 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.5.1] — 2026-08-26
+
+Emergency fix. **1.0.5 does not launch on macOS and has been withdrawn.** There
+are no functional changes in this release; it is 1.0.5 with a corrected
+signature.
+
+### Fixed
+
+- The macOS app crashed immediately on launch with `Library not loaded:
+  @rpath/KyttoCore.framework/Versions/A/KyttoCore` and
+  `(non-platform) have different Team IDs`. The release build enabled the
+  hardened runtime, which enforces library validation, which requires the app
+  and its embedded framework to share a Team ID. Ad-hoc signed builds have no
+  Team ID, so the check could never pass and macOS refused to load the
+  framework. The hardened runtime is now off on the ad-hoc build path, and the
+  release script launches the built app and verifies it is still running before
+  it will produce a disk image.
+
+### Distribution notes
+
+The macOS build is universal and runs on both Apple Silicon and Intel Macs. It
+is ad-hoc signed rather than notarized, and the Windows installer is not
+Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or
+SmartScreen.
+
+The Windows installer is unchanged from 1.0.5 and is unaffected by this defect.
+It is republished here under the new tag with an identical checksum.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.5.1.dmg` | 4.3 MB | `7bc266509754a9974b5efdaa1566495aa643cae80d4f396ef34aea175dcf2603` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.5.exe` | 78.4 MB | `851be7f910e6d40d541d9a17e35df099f75059cfad130100602fe6163c36eae9` |
+
+---
+
 ## [1.0.5] — 2026-08-26
+
+**Withdrawn — this release does not launch on macOS.** The macOS app crashes at startup because the build enabled the hardened runtime, which cannot be satisfied by an ad-hoc signature. Use [1.0.5.1](#1051--2026-08-26) instead; it contains the same features. The Windows installer is unaffected.
 
 Cross-platform beta update for macOS and Windows.
 
