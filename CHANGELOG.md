@@ -30,42 +30,6 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
-## [1.0.5] — 2026-08-26
-
-Feature and reliability update for safer configuration changes, MCP discovery, imports, provenance, updates, and skills inventory.
-
-### Added
-
-- Pending restarts now reflect the actual difference between the applied baseline and the current configuration. Undo and restore clear stale restart state.
-- Restart banners identify the affected client and number of pending changes. Dismissing a banner hides it without discarding the pending state.
-- Claude Code project/workspace entries already present in `.claude.json` are discovered as read-only sources.
-- A local MCP library scans a selected directory for supported JSON, JSONC, and TOML maps, then previews conflicts, warnings, and imports into built-in writable clients.
-- A copy-paste agent prompt and strict JSON import flow validate the schema, fields, values, duplicates, and environment-variable names without accepting secret values.
-- Server provenance, version, and maintenance state distinguish npm, Python, local package, local executable, remote, and unknown sources.
-- A read-only skills inventory shows known global and workspace skill roots, scope, metadata status, duplicates, conflicts, and warnings.
-- The in-app updater checks a fresh first-party manifest, downloads to private staging, verifies SHA-256 and version, and supports cancel, install, relaunch, and rollback.
-
-### Changed and fixed
-
-- Health-check timeout messages preserve the configured duration and no longer show misleading zero-second errors.
-- Read-only sources and their scope stay distinct from writable client configurations throughout the UI.
-- Existing backup, external-change detection, digest guards, and atomic-write safeguards remain in the write path.
-
-### Security and privacy
-
-- Configurations and secrets remain in native/local storage; secret values are not sent to the web UI, DTOs, logs, or updater requests.
-- Discovery, scanning, inventory, and provenance checks do not execute discovered files or commands.
-- The macOS build is ad-hoc signed rather than notarized. The Windows installer is not Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or SmartScreen.
-
-**Downloads**
-
-| Platform | File | Size | SHA-256 |
-|---|---|---:|---|
-| macOS (universal) | `KyttoMCP-1.0.5.dmg` | 5.9 MB | `5a458a9b16d10c344715a238b03cc16a6e8ec8002d83772ee9cab7f8d09c34d1` |
-| Windows x64 | `Kytto-Setup-win-x64-1.0.5.exe` | 78.5 MB | `f8546a423cf93fe54d932204beeea3b73d6fed3fdd3024000c86f838b80c1bb7` |
-
----
-
 ## [1.0.4.1] — 2026-08-26
 
 Small cross-platform beta update.
@@ -303,8 +267,7 @@ First public beta, for macOS and Windows.
 - MCP Doctor findings with previewed fixes
 - Optional Gateway mode with metadata-only Live Activity
 
-[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.5...HEAD
-[1.0.5]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.5
+[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.4.1...HEAD
 [1.0.4.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.4.1
 [1.0.4]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.4
 [1.0.3.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.3.1
