@@ -30,6 +30,30 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.4.1] — 2026-08-26
+
+Small cross-platform beta update.
+
+### Added
+
+- Added an automatic updater that checks for a newer KyttoMCP release.
+- Added a manual **Check for updates** action so you can start the check yourself.
+
+No other new features are included in this release.
+
+### Distribution notes
+
+The macOS build is ad-hoc signed rather than notarized. The Windows installer is not Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or SmartScreen.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.4.1.dmg` | 5.3 MB | `578beaa8fcccfc9fbdb5828cc2713faa9b885b36bae49e7c89f6934838c883a4` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.4.1.exe` | 78.4 MB | `e551166f130d712a96bf194b609cd5ceffbfb266792a8ab316e09fca477c2fd7` |
+
+---
+
 ## [1.0.4] — 2026-08-25
 
 Feature and usability update for custom configuration sources and high-density displays.
@@ -243,7 +267,8 @@ First public beta, for macOS and Windows.
 - MCP Doctor findings with previewed fixes
 - Optional Gateway mode with metadata-only Live Activity
 
-[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.4.1...HEAD
+[1.0.4.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.4.1
 [1.0.4]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.4
 [1.0.3.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.3.1
 [1.0.3]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.3
