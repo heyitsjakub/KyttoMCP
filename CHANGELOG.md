@@ -30,6 +30,62 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.5.2] — 2026-08-27
+
+Cross-platform beta update. Everything here came from one tester's notes on
+1.0.5.1; the headline is that a remote server waiting for you to sign in is no
+longer reported as broken.
+
+### Added
+
+- **A server waiting for authorization is now its own state.** A remote server
+  that opens a browser and waits for OAuth consent used to time out and be
+  reported as failed, which meant every OAuth-backed server showed red in the
+  matrix. It is now shown in blue as waiting for authorization, with the sign-in
+  URL the server itself printed and an **Open sign-in page** action. The state is
+  read from the server's own output, never guessed from a URL that merely looks
+  like OAuth, and provenance treats it as unchecked rather than unhealthy.
+- **The sidebar can be resized.** Drag its edge, or focus the handle and use the
+  arrow keys. The width is remembered.
+
+### Changed
+
+- Claude Code project rows now identify themselves by the part of the path that
+  actually differs — `Claude Code · …/kytto` rather than a row of identical
+  truncated paths. The leaf grows leftwards only when two projects would
+  otherwise read the same, and the full path is still in the tooltip.
+- Health failures now store the reason rather than the finished sentence, so
+  improvements to error wording reach results that were recorded earlier.
+  Records written before this release keep the text they were saved with.
+
+### Fixed
+
+- Skills whose front matter uses a YAML block scalar (`description: >-` and the
+  `>`, `|`, `|-` forms) showed the marker itself instead of the description. The
+  parser now reads block scalars, plain continuation lines and nested mappings,
+  and no longer gives up when the file starts with a byte-order mark or a blank
+  line.
+- Skill cards printed their scope twice, as `Shared agent · global · Shared
+  agents · global`.
+- A long configuration path in a server's **Clients** list could render one
+  character per line down the side of the panel.
+
+### Distribution notes
+
+The macOS build is universal and runs on both Apple Silicon and Intel Macs. It is
+ad-hoc signed rather than notarized, and the Windows installer is not
+Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or
+SmartScreen.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.5.2.dmg` | 4.4 MB | `d544479a4523bb988c5377fe5cd6ea8ef7f5e2c5c573e9321dbcfde6d9d07bd5` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.5.2.exe` | 78.5 MB | `dbcdf3270e3acdc12fc1465f325007f70919cbb0bd12411e6296da3b2fa6b479` |
+
+---
+
 ## [1.0.5.1] — 2026-08-26
 
 Emergency fix. **1.0.5 does not launch on macOS and has been withdrawn.** There
