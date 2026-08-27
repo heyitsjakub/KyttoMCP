@@ -30,6 +30,54 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.5.3] — 2026-08-27
+
+Repair release for the in-app updater on macOS. **There is nothing new to see in
+this version** — the thing it fixes is the update mechanism itself, so its effect
+only shows up the *next* time an update is offered. Install it now and the
+version after this one will arrive without a manual download.
+
+### Fixed
+
+- **The in-app updater on macOS could never download anything.** Clicking
+  *Download and verify* always ended in "The update server did not return a valid
+  response", on every version that has shipped the updater. The download is
+  routed through `kytto.jakubhecht.sk/download.php`, which deliberately redirects
+  to the GitHub release asset, but the code checked the URL at the *end* of that
+  redirect chain against Kytto's own domain — a condition the GitHub asset URL
+  can never satisfy. Each redirect hop is now checked as it happens, against an
+  allow-list of the site, GitHub, and GitHub's release-asset host, and the
+  download stops the moment a hop leaves them. The SHA-256 from the verified
+  manifest is still checked against the bytes as they arrive, as it always was.
+
+  Nobody hit this earlier because 1.0.5, which introduced the full download and
+  install flow, did not launch at all.
+
+### Distribution notes
+
+Because the broken updater is inside the app, **this release has to be installed
+by hand**, like every one before it. That is the last time: from 1.0.5.3 onward
+the updater can fetch its own updates.
+
+The macOS build is universal and runs on both Apple Silicon and Intel Macs. It is
+ad-hoc signed rather than notarized, and the Windows installer is not
+Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or
+SmartScreen.
+
+The Windows app is unaffected by this defect — its updater opens the download in
+the browser rather than fetching it in code, so there is no redirect chain for it
+to get wrong. It is rebuilt here only to keep both platforms on one version
+number.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.5.3.dmg` | 4.4 MB | `106cb906edfdc7ff1fd3c5b57eebc35b45c1291a0e87b0a1c920ae6e3ca87a99` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.5.3.exe` | 78.5 MB | `249d40273329111291c91193394aaa7011fb2e644451447df8a55ce4d5b90229` |
+
+---
+
 ## [1.0.5.2] — 2026-08-27
 
 Cross-platform beta update. Everything here came from one tester's notes on
