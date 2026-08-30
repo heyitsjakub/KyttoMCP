@@ -30,6 +30,89 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.6] — 2026-08-30
+
+Reliability release. There is no new feature to look at here — every fix is about
+the app telling you the truth about what it just did, and about undoing a change
+it cannot finish instead of leaving half of it behind.
+
+**If you are on 1.0.5.3 for macOS, this is the first release the in-app updater
+can install for you.** Earlier versions still have to be replaced by hand.
+
+### Fixed
+
+- **Creating a client's first MCP file was reported as "no change".** When a
+  client had no configuration file yet, the first write was judged by whether
+  there had been anything to back up — and since a file that does not exist
+  cannot be backed up, Kytto concluded it had written nothing. Add, Edit and
+  Remove now list that client as changed, and the restart notice appears only
+  after a write that really happened, so clicking the same action twice no longer
+  invents a second restart. Undo on that first write still removes the server
+  from the client, which is the only correct way back when there is no earlier
+  file to restore.
+- **Enabling a server in Claude Code could change one file and not the other.**
+  Claude Code stores the server definition in `.claude.json` and its deny list in
+  `.claude/settings.json`, and the toggle wrote them one after another. If the
+  second write failed, the first stayed. Both writes are now one operation: on
+  failure the first file is restored byte for byte, or removed if Kytto had just
+  created it. The rollback re-checks the file's digest immediately beforehand, so
+  it can never overwrite a newer change made outside Kytto.
+- **The macOS updater announced success before it knew.** Installing an update
+  asks macOS to launch the new bundle, and the installer treated the request
+  being *sent* as the install being *done* — deleting the old app and the
+  rollback copy while the new one might still fail to start. It now waits for
+  macOS to confirm the new bundle is actually running, and a failed relaunch goes
+  down the existing rollback path and brings the previous version back.
+- **A damaged `profiles.json` was treated as an empty profile list, and then
+  overwritten.** A missing file still means first use and is created normally,
+  but a file that exists and cannot be read or parsed is no longer read as
+  "no profiles". Create, Update, Delete and rename maintenance now refuse with a
+  visible error and leave the original bytes untouched, and all of them go
+  through one transactional read-modify-write path so two profile operations
+  cannot race.
+- **Launch at login could show a setting the system disagreed with.** The macOS
+  login item is now registered or unregistered *before* the preference is saved.
+  If the system refuses, the settings file is left exactly as it was; if saving
+  the settings then fails, Kytto puts the login item back and reports both
+  problems if it cannot.
+- **A successful change could be reported as a failure.** After a write, the app
+  reloads the Backups, Profiles and Secrets lists. One of those reloads failing
+  used to surface as though the change itself had failed, inviting you to repeat
+  a write that had already succeeded. The reloads are now best-effort: you get a
+  warning that the list could not be refreshed, and an explicit confirmation that
+  the change went through. The Add server form no longer reappears empty and
+  typeless after such a failure.
+- **Errors that vanished instead of being shown.** The Secrets and Activity
+  panels, and the Adopt, Forget, Restrict permissions, restart
+  acknowledge/dismiss and finish-onboarding actions, now display the error they
+  got back rather than dropping it as an unhandled rejection.
+
+### Compatibility
+
+No IPC command, event, payload field or response field was added, removed or
+renamed. `updates.install` is unchanged on the wire — only the native
+implementation behind it now waits for the real relaunch result.
+
+### Distribution notes
+
+The Windows build carries the same fixes, ported natively. The relaunch fix is
+macOS-only: the Windows updater hands the download to your browser rather than
+installing it in-process, so it has no relaunch to get wrong.
+
+The macOS build is universal and runs on both Apple Silicon and Intel Macs. It is
+ad-hoc signed rather than notarized, and the Windows installer is not
+Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or
+SmartScreen.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.6.dmg` | 4.5 MB | `d0332dd74e76932a55f9408a263748993275a0580081daa5cddafb9ee79e1f5e` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.6.exe` | 78.5 MB | `1d6a056c863910a061bc5514f66e3b8813cf21454205fe7099740ec7d2069ecc` |
+
+---
+
 ## [1.0.5.3] — 2026-08-27
 
 Repair release for the in-app updater on macOS. **There is nothing new to see in
@@ -449,7 +532,11 @@ First public beta, for macOS and Windows.
 - MCP Doctor findings with previewed fixes
 - Optional Gateway mode with metadata-only Live Activity
 
-[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.6...HEAD
+[1.0.6]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6
+[1.0.5.3]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.5.3
+[1.0.5.2]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.5.2
+[1.0.5.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.5.1
 [1.0.5]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.5
 [1.0.4.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.4.1
 [1.0.4]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.4
