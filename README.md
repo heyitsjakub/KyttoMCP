@@ -44,8 +44,8 @@ Attach multiple named JSON, JSONC or TOML configuration files as read-only custo
 **Find out why a server fails**
 Run an on-demand MCP handshake and read what the server actually reports: tools, prompts, resources, protocol details and stderr. MCP Doctor turns that evidence into concrete findings — missing environment values, relative paths, failed handshakes, executables that only resolve inside one client's PATH — and previews any fix before writing it.
 
-**Know what a server costs you**
-Tool definitions consume the context window before you type anything. Kytto estimates the context cost of each server and each profile, and flags heavy servers, over-budget stacks, unmeasured entries and duplicate tools that can confuse selection.
+**Compare tool-schema footprint**
+Clients differ in how and when they load MCP tool definitions. Kytto estimates the full-schema footprint of each server and profile as a consistent comparison, not exact per-conversation usage, and flags heavy definitions, unmeasured entries and duplicate tool names for review.
 
 **Switch between setups**
 Save local profiles such as Coding, Research or Minimal. Preview exactly what a switch will change, then apply it to one client with the normal backup and restart safeguards.
