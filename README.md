@@ -22,12 +22,13 @@ Eleven MCP servers across four clients, one of them refusing to start. Kytto swi
 
 Once you run more than two or three MCP servers, the configuration is spread across files that share nothing but the idea:
 
-```
-~/.claude.json                 Claude Desktop / Claude Code
-~/.cursor/mcp.json             Cursor
-settings.json                  VS Code
-config.toml                    Codex
-```
+| Client | macOS | Windows |
+|---|---|---|
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Claude Code | `~/.claude.json` (servers); `~/.claude/settings.json` (deniedMcpServers) | `%USERPROFILE%\.claude.json` (servers); `%USERPROFILE%\.claude\settings.json` (deniedMcpServers) |
+| Cursor | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
+| VS Code | `~/Library/Application Support/Code/User/mcp.json` | `%APPDATA%\Code\User\mcp.json` |
+| Codex | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` |
 
 Different formats, different locations, different rules about what a valid entry looks like. And the question that keeps coming back has no single place to answer it: **what is actually enabled, where?**
 
