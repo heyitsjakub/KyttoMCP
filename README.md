@@ -2,11 +2,11 @@
 
 **A local control panel for MCP servers across the AI clients you already use.**
 
-[![Version](https://img.shields.io/badge/beta-1.0.6-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
+[![Version](https://img.shields.io/badge/beta-1.0.6.1-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
 [![Price](https://img.shields.io/badge/beta-free-brightgreen)](https://kytto.jakubhecht.sk/)
 
-[**Download Beta 1.0.6**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
+[**Download Beta 1.0.6.1**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
 
 ---
 
@@ -74,7 +74,7 @@ Custom sources are read-only and are not an additional writable client. Want ano
 
 ## Install
 
-Download Beta 1.0.6 from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from the [v1.0.6 Release](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6).
+Download Beta 1.0.6.1 from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from the [v1.0.6.1 Release](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6.1).
 
 ### macOS
 
@@ -92,12 +92,12 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.6.dmg
-# d0332dd74e76932a55f9408a263748993275a0580081daa5cddafb9ee79e1f5e
+shasum -a 256 KyttoMCP-1.0.6.1.dmg
+# 774c6af6b8eab9fd068ea647ff5e8ab33a5b44f06da92782351f517ba3286e99
 
 # Windows (PowerShell)
-Get-FileHash Kytto-Setup-win-x64-1.0.6.exe -Algorithm SHA256
-# 1d6a056c863910a061bc5514f66e3b8813cf21454205fe7099740ec7d2069ecc
+Get-FileHash Kytto-Setup-win-x64-1.0.6.1.exe -Algorithm SHA256
+# 077f74e7a2a668af1d8af6945177bb9759026fd6dd4fb8b38ae84a21aff86568
 ```
 
 ## Local by design

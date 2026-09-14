@@ -30,6 +30,80 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.6.1] — 2026-09-14
+
+Security hardening for configuration backups, following up
+[#11](https://github.com/heyitsjakub/KyttoMCP/issues/11). Backups and parked
+server definitions hold the same API keys as the configuration files they were
+copied from, but until now they were created readable by other local accounts on
+the same computer. This release locks them to your own user and limits restoring
+a backup to the files Kytto actually manages for that client.
+
+Both findings are low severity. Reading the backups took a second account on the
+same computer, and redirecting a restore took write access to your own backups
+folder already.
+
+### Security
+
+- **Backups are readable only by you.** Backup folders are now created
+  owner-only, and every backup copy and the sidecar that records where it came
+  from are readable and writable by your account alone. Kytto's own data folder
+  is tightened the same way.
+- **Parked server definitions are owner-only.** When a client that has no
+  "disabled" flag switches a server off, Kytto keeps its definition — `env`
+  block included — in `parked-servers.json`. That file is now owner-only too.
+- **Existing backups are fixed on first launch.** Backups made by earlier
+  versions are tightened once when the app starts. Nothing is created or
+  deleted, symbolic links are not followed, and later launches change nothing.
+- **No readable moment during a write.** The atomic writer now creates its
+  temporary file owner-only from the start and applies the final permissions
+  afterwards. Previously the configuration bytes were briefly readable under the
+  temporary name.
+- **Restore writes only to files Kytto manages.** Revert and Undo now write a
+  backup back only to that client's own files: its server configuration (at the
+  current path override or the default location), the Claude Code deny list, and
+  Claude Desktop's extension settings. The destination always comes from Kytto's
+  client registry, never from the path recorded next to the backup, so an edited
+  sidecar can no longer aim a restore at another file. Any other target is
+  refused with a clear message and nothing is written.
+
+### Changed
+
+- A backup taken from a configuration path you have since changed in Settings can
+  no longer be restored. The message explains why, and the backup stays in the
+  backups folder.
+- A configuration file marked read-only (`0444`) can now be written by Kytto and
+  keeps its permissions. Previously the write failed as a side effect of the old
+  implementation.
+
+### Compatibility
+
+No IPC command, event, request field or response field was added or removed.
+`backups.restore` can now fail with the existing error code `backup`, and when it
+does it writes nothing.
+
+### Distribution notes
+
+The Windows build carries the same hardening, ported natively. Windows has no
+Unix permission bits, so Kytto's data folder, backups and parked definitions get
+a private access list instead: your account, SYSTEM and Administrators, and no
+one else.
+
+If you are on 1.0.5.3 or later for macOS, the in-app updater can install this
+release. The macOS build is universal and runs on both Apple Silicon and Intel
+Macs. It is ad-hoc signed rather than notarized, and the Windows installer is not
+Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or
+SmartScreen.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.6.1.dmg` | 4.5 MB | `774c6af6b8eab9fd068ea647ff5e8ab33a5b44f06da92782351f517ba3286e99` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.6.1.exe` | 78.5 MB | `077f74e7a2a668af1d8af6945177bb9759026fd6dd4fb8b38ae84a21aff86568` |
+
+---
+
 ## [1.0.6] — 2026-08-30
 
 Reliability release. There is no new feature to look at here — every fix is about
@@ -532,7 +606,8 @@ First public beta, for macOS and Windows.
 - MCP Doctor findings with previewed fixes
 - Optional Gateway mode with metadata-only Live Activity
 
-[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.6...HEAD
+[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.6.1...HEAD
+[1.0.6.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6.1
 [1.0.6]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6
 [1.0.5.3]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.5.3
 [1.0.5.2]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.5.2
