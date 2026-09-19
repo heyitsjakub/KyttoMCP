@@ -30,6 +30,54 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.6.2] — 2026-09-19
+
+A visual and onboarding release across the macOS and Windows builds. It makes
+the first-run hand-off easier to understand before any configuration is changed,
+and gives the matrix shell a clearer sense of movement as you navigate.
+
+### Changed
+
+- **Modernized first-run onboarding.** Kytto now presents the detected local
+  workspace with client icons, server/client metrics and read-only custom-source
+  counts before you enter the matrix.
+- **Clearer safety boundary.** Onboarding explicitly says that the screen only
+  reads configuration and that edits create a backup first; the discovery list
+  shows each client state and path without implying that anything was written.
+- **Direction-aware panel navigation.** Moving between the matrix, client details
+  and utility panels now animates in the direction of the selected panel.
+- **More spacious responsive UI.** The updated shell, discovery list and matrix
+  styling give the interface more room while preserving the existing responsive
+  layout.
+
+### Compatibility
+
+No IPC command, event, request field or response field was added or removed. The
+release retains the backup, permission and restore protections from 1.0.6.1.
+
+### Distribution notes
+
+The macOS build is universal and runs on Apple Silicon and Intel Macs. It is
+ad-hoc signed rather than notarized, and the Windows installer is not
+Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or
+SmartScreen.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.6.2.dmg` | 4.5 MB | `e0f398c590beaba2a9de9caf4a94304c258eee119c9708ce9ebc4554fa3ebdfd` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.6.2.exe` | 78.5 MB | `b64b972d92db2bb59e6ae502383159bc4874b50973853a89fc1aae2e2806e1e2` |
+
+**Install**
+
+- **macOS:** Open the DMG and drag KyttoMCP into Applications. Control-click
+  the app and choose **Open** on first launch if Gatekeeper warns you.
+- **Windows:** Run the setup file. At the SmartScreen prompt choose
+  **More info** and then **Run anyway**.
+
+---
+
 ## [1.0.6.1] — 2026-09-14
 
 Security hardening for configuration backups, following up
@@ -606,7 +654,8 @@ First public beta, for macOS and Windows.
 - MCP Doctor findings with previewed fixes
 - Optional Gateway mode with metadata-only Live Activity
 
-[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.6.1...HEAD
+[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.6.2...HEAD
+[1.0.6.2]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6.2
 [1.0.6.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6.1
 [1.0.6]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6
 [1.0.5.3]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.5.3
