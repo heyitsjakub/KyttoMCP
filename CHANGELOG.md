@@ -30,6 +30,54 @@ Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/
 
 ---
 
+## [1.0.6.3] — 2026-09-20
+
+A fix release. Three panels could not be scrolled, so anything below the bottom
+edge of the window was unreachable; Settings also gained a way in that does not
+go through the menu bar.
+
+### Fixed
+
+- **Scrolling in MCP Doctor, Live Activity and Profiles.** These three panels
+  clipped their content instead of scrolling it, and no gesture or key reached
+  what was cut off. They now scroll like the MCP Library and Skills panels
+  always did.
+
+### Added
+
+- **Settings in the sidebar footer.** Settings was reachable only from the app
+  menu and ⌘,. It is now a row in the sidebar footer, below the diagnostics
+  count. The row opens the Settings window and never takes selection in the
+  sidebar.
+
+### Compatibility
+
+One IPC command was added, `settings.open`. Nothing was removed or changed. The
+backup, permission and restore protections from 1.0.6.1 are retained.
+
+### Distribution notes
+
+The macOS build is universal and runs on Apple Silicon and Intel Macs. It is
+ad-hoc signed rather than notarized, and the Windows installer is not
+Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or
+SmartScreen.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.6.3.dmg` | 4.3 MB | `825c194ae505160d841eaa50cce993ebacf41dbee4b334ba554a790c9a16744e` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.6.3.exe` | 78.5 MB | `d1efbf351fa00cf010588a790f9650542137177e44fda2ad9750b6d479f71bb9` |
+
+**Install**
+
+- **macOS:** Open the DMG and drag KyttoMCP into Applications. Control-click
+  the app and choose **Open** on first launch if Gatekeeper warns you.
+- **Windows:** Run the setup file. At the SmartScreen prompt choose
+  **More info** and then **Run anyway**.
+
+---
+
 ## [1.0.6.2] — 2026-09-19
 
 A visual and onboarding release across the macOS and Windows builds. It makes
