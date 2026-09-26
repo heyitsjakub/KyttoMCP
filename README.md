@@ -2,11 +2,15 @@
 
 **A local control panel for MCP servers across the AI clients you already use.**
 
+Free and **open source** under the MIT License — the full source of both the macOS
+and the Windows app lives in this repository. Read it, build it, or send a pull request.
+
 [![Version](https://img.shields.io/badge/beta-1.0.6.3-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
+[![Open source](https://img.shields.io/badge/open%20source-yes-brightgreen)](#source-code)
 
-[**Download Beta 1.0.6.3**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
+[**Download Beta 1.0.6.3**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Source code](#source-code) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
 
 ---
 
@@ -143,7 +147,7 @@ one shared `web/` is welcome work.
 
 ### Contributing
 
-Issues and pull requests are welcome. Writing to someone else's config file is
+Issues and pull requests are welcome — start with [CONTRIBUTING.md](CONTRIBUTING.md). Writing to someone else's config file is
 the whole risk of this app, so every write goes through one pipeline — digest
 check, backup, span-level edit that preserves comments and key order, atomic
 write — and parser or writer changes need round-trip tests. The platform READMEs
