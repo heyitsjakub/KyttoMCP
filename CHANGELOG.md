@@ -26,7 +26,22 @@ without a backup.
             trailing comma
 -->
 
-Nothing yet. Planned work is tracked in [Issues](https://github.com/heyitsjakub/KyttoMCP/issues).
+### Added
+
+- **The source code is public.** Both apps — `macos/` (Swift) and `windows/`
+  (.NET) — are now open source under the MIT License, in this repository. You
+  can read exactly what Kytto does with your config files, check every network
+  request it makes, and build it yourself instead of trusting an unsigned binary.
+
+### Removed
+
+- **Anonymous diagnostics.** The optional *Share anonymous diagnostics* setting,
+  off by default since it was introduced, is gone from both apps. Kytto now sends
+  no telemetry of any kind; the only request it makes on its own is the update
+  check. If you run 1.0.6.3 or earlier with the setting on, the website has
+  stopped storing what it sends, so nothing is kept either way.
+
+Planned work is tracked in [Issues](https://github.com/heyitsjakub/KyttoMCP/issues).
 
 ---
 

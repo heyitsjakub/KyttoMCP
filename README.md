@@ -82,7 +82,7 @@ Universal build — runs on both Apple Silicon and Intel Macs. Open the DMG and 
 
 The beta is **not yet signed with a paid Apple Developer certificate**, so Gatekeeper will show an "unidentified developer" warning. Control-click the app and choose **Open**, then **Open** again. If macOS still blocks it, go to System Settings → Privacy & Security → **Open Anyway**.
 
-> Signing and notarization are planned. Until then, only open a build you downloaded from the official site or this repository's Releases page, and verify the checksum below.
+> Signing and notarization are planned. Until then, only open a build you downloaded from the official site or this repository's Releases page and verify the checksum below — or [build it yourself from source](#source-code), which needs no warning bypass at all.
 
 ### Windows
 
