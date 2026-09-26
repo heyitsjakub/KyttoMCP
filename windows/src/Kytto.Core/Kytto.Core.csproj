@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Everything that is not UI: parsing, the client registry, discovery, the write
+    pipeline, health checks, secrets.
+
+    A separate project so the risky tests run without launching a window, and so
+    the rule that keeps this port honest stays mechanical rather than remembered:
+    nothing here may reference WPF. It targets `-windows` because secrets and file
+    permissions are Win32 calls, not because it draws anything.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>false</UseWPF>
+    <UseWindowsForms>false</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Kytto.Core</RootNamespace>
+  </PropertyGroup>
+
+  <!-- The bundled catalog (§7.2). Static, no remote fetching. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Catalog\catalog.json" />
+    <!--
+      The cl100k_base rank table (§7.4). Embedded rather than copied beside the
+      binary: a byte-exact table is the whole point of bundling one, and a
+      resource cannot be half-deployed the way a loose file can.
+    -->
+    <EmbeddedResource Include="Tokenizer\cl100k_base.tiktoken" />
+  </ItemGroup>
+
+  <!--
+    The heuristics that decide what counts as a secret are internal — nothing
+    outside this library should be asking — but they are exactly the kind of
+    judgement call that deserves cases written down, so the tests see them.
+  -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Kytto.Core.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Kytto.App</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Kytto</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

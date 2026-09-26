@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kytto — fixtures</title>
+    <link rel="stylesheet" href="./css/app.css" />
+  </head>
+  <body>
+    <!--
+      The browser harness, and §3.2's portability proof.
+
+      Open this file directly in a browser and the whole UI runs against
+      fixtures, with no shell and no native code. That demonstrates the same
+      thing a throwaway Windows shell would — the web layer reaches the machine
+      only through ipc.js — and unlike a Windows shell it is useful every day as
+      the development loop.
+
+      The rule it enforces: if something works in index.html but not here, the
+      boundary has been violated somewhere.
+    -->
+    <div id="app"></div>
+    <script type="module">
+      // The fixture page is the zero-build UI loop. Avoid serving an old ES
+      // module after a reload while its source is being edited.
+      const cacheBust = Date.now();
+      const { install } = await import(`./js/dev/fixtures.js?v=${cacheBust}`);
+      install();
+      await import(`./js/main.js?v=${cacheBust}`);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "isEnabled": false,
+  "userConfig": {
+    "allowed_directories": [
+      "/Users/example/Documents"
+    ]
+  }
+}

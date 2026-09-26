@@ -1,0 +1,24 @@
+// User-level MCP configuration for VS Code.
+// This file is JSONC: comments and trailing commas are legal here, and Kytto
+// must not destroy them when it writes.
+{
+  /* Servers are keyed by name, under "servers" — not "mcpServers" like the
+     other clients. */
+  "servers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest", // pinned deliberately
+      ],
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+    },
+  },
+
+  // Inputs are prompted for on first use.
+  "inputs": [],
+}

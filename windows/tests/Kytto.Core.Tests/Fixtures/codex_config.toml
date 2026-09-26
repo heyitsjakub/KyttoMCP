@@ -1,0 +1,47 @@
+# Codex configuration.
+# Shaped after a real one: the servers are a small part of a large file, and
+# everything around them has to survive a write.
+
+model = "gpt-5-codex"
+model_reasoning_effort = "medium"
+approvals_reviewer = true
+
+# A multi-line string whose content starts a line with a bracket. This is the
+# case that breaks a line-oriented TOML reader, and it is not contrived — notify
+# templates and instructions routinely look like this.
+notify = """
+[not.a.table]
+this text is inside a string and must never be read as a header
+"""
+
+sandbox_permissions = [
+  "disk-full-read-access",
+  "disk-write-cwd",
+]
+
+[shell_environment_policy.set]
+LANG = "en_US.UTF-8"
+
+[projects."/Users/someone/Desktop/a project"]
+trust_level = "trusted"
+
+[projects."/Users/someone/code/Xcode/Thing"]
+trust_level = "trusted"
+
+[mcp_servers.filesystem]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/Users/someone/Projects"]
+startup_timeout_sec = 20
+
+[mcp_servers.filesystem.env]
+FS_ALLOW_WRITE = "1"
+
+[mcp_servers.legacy-tool]
+command = "/usr/local/bin/legacy-mcp"
+enabled = false
+
+[mcp_servers.docs]
+url = "https://developers.openai.com/mcp"
+
+[history]
+persistence = "save-all"

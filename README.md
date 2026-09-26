@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/beta-1.0.6.3-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
-[![Price](https://img.shields.io/badge/beta-free-brightgreen)](https://kytto.jakubhecht.sk/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 
 [**Download Beta 1.0.6.3**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
 
@@ -107,22 +107,47 @@ Kytto works with the files already on your computer.
 - No account, no sign-up, no cloud sync
 - MCP configurations and credentials never leave your machine
 - Backups and configuration changes are handled locally
-- Anonymous diagnostics are **off by default**, and the payload is deliberately incapable of carrying configuration, file paths or error text even when enabled
+- No telemetry or analytics. The only request the app makes on its own is the update check; a package version lookup happens only when you ask for it. The platform READMEs list every request. (Builds up to 1.0.6.3 included opt-in anonymous diagnostics, off by default; the source here has removed them.)
 - Gateway activity is metadata-only; payload capture is off
 
-See the [privacy policy](https://kytto.jakubhecht.sk/privacy.html) for exactly what is collected and how long it is kept.
+See the [privacy policy](https://kytto.jakubhecht.sk/privacy.html) for details.
 
-## About the source
+## Source code
 
-The Kytto app is currently **closed source**. It seems fair to say that plainly rather than let you find out by clicking around.
+Kytto is **free and open source** under the [MIT License](LICENSE). This
+repository holds both apps:
 
-This is a solo project and I haven't settled the model yet. What I can commit to now:
+| Folder | Platform | Stack | Start here |
+|---|---|---|---|
+| [`macos/`](macos) | macOS 15+ | Swift 6, SwiftUI/AppKit shell, WKWebView | [macos/README.md](macos/README.md) |
+| [`windows/`](windows) | Windows 10/11 | .NET 10, WPF shell, WebView2 | [windows/README.md](windows/README.md) |
 
-- The beta is free, and I will not retroactively paywall a build someone already installed.
-- The parts people reasonably worry about — what Kytto reads, what it writes, and whether anything leaves the machine — are documented in the privacy policy, and diagnostics are opt-in rather than opt-out.
-- If there is interest in open-sourcing the configuration read/write layer specifically, I am open to it. That is where the trust question actually lives. [Say so in an issue](https://github.com/heyitsjakub/KyttoMCP/issues) if you care about it.
+Both are a native shell around a web UI (vanilla HTML/CSS/JS, no build step),
+talking over a typed IPC contract, and both follow the same design document:
+[macos/README.md](macos/README.md) (§1–§12) and
+[windows/docs/design.md](windows/docs/design.md). Each folder builds and tests on
+its own:
 
-This repository is the home for releases, the changelog, the roadmap and bug reports.
+```sh
+git clone https://github.com/heyitsjakub/KyttoMCP.git
+
+# macOS (Xcode 16+)
+cd KyttoMCP/macos/KyttoCore && swift test
+
+# Windows (.NET 10 SDK)
+cd KyttoMCP/windows && dotnet test
+```
+
+The two web layers share their origin but have diverged; bringing them back to
+one shared `web/` is welcome work.
+
+### Contributing
+
+Issues and pull requests are welcome. Writing to someone else's config file is
+the whole risk of this app, so every write goes through one pipeline — digest
+check, backup, span-level edit that preserves comments and key order, atomic
+write — and parser or writer changes need round-trip tests. The platform READMEs
+and their `CLAUDE.md` / `AGENTS.md` files carry the house rules.
 
 ## What Kytto is not
 
@@ -144,7 +169,9 @@ The beta needs honest criticism far more than it needs praise. If something is c
 
 ## License
 
-Proprietary. Free to use throughout the beta.
+MIT — see [LICENSE](LICENSE). Bundled third-party components are listed in
+[macos/THIRD_PARTY_NOTICES.md](macos/THIRD_PARTY_NOTICES.md) and
+[windows/THIRD-PARTY-NOTICES.md](windows/THIRD-PARTY-NOTICES.md).
 
 ---
 

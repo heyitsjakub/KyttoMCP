@@ -1,0 +1,93 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The native shell: window, chrome, tray item, WebView2, the IPC router.
+    Knows about WPF; holds no config logic (that is all Kytto.Core).
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <!-- Required by [LibraryImport]; the generated marshalling stubs are unsafe. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Kytto.App</RootNamespace>
+    <AssemblyName>Kytto</AssemblyName>
+    <Version>1.0.6.3</Version>
+    <!--
+      The same drawing as the Mac's AppIcon.appiconset, rebuilt as the one file
+      Windows reads it from: frames at 16/20/24/32/40/48/64/128/256 so the tray,
+      the taskbar and Explorer each get one drawn for the size they show. The
+      Apple icon grid does not survive the trip — the squircle is cropped out of
+      its 100px inset and the baked-in drop shadow is dropped, because Windows
+      icons fill their canvas and the system draws the shadow itself.
+    -->
+    <ApplicationIcon>Kytto.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!--
+    Windows Forms is referenced for exactly one thing — NotifyIcon, the tray item
+    §7.7 asks for, which WPF has no equivalent of. Its implicit usings are dropped
+    because almost every type they bring in collides with the WPF type of the same
+    name (Application, UserControl, Brush), and a shell that has to alias its way
+    around that is one where the wrong one eventually gets used. The tray code
+    names its types in full.
+  -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Kytto.Core\Kytto.Core.csproj" />
+    <ProjectReference Include="..\Kytto.Gateway\Kytto.Gateway.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- The client config launches this helper directly, so keep its framework-
+       dependent development output beside Kytto. The release script replaces it
+       with a self-contained single-file publish for the selected architecture. -->
+  <Target Name="CopyGatewayHelper" AfterTargets="Build">
+    <ItemGroup>
+      <GatewayHelper Include="..\Kytto.Gateway\bin\$(Configuration)\net10.0-windows\kytto-mcp-proxy.exe" />
+      <GatewayHelper Include="..\Kytto.Gateway\bin\$(Configuration)\net10.0-windows\kytto-mcp-proxy.dll" />
+      <GatewayHelper Include="..\Kytto.Gateway\bin\$(Configuration)\net10.0-windows\kytto-mcp-proxy.deps.json" />
+      <GatewayHelper Include="..\Kytto.Gateway\bin\$(Configuration)\net10.0-windows\kytto-mcp-proxy.runtimeconfig.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(GatewayHelper)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!--
+    The DTOs are internal because nothing outside the shell may construct one, but
+    their exact spelling on the wire is the contract docs/ipc.md describes and the
+    web layer already reads. That deserves a test, so the test project sees them.
+  -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Kytto.App.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!--
+    The web UI ships beside the executable as a folder reference: new files
+    under web/ are bundled with no project edit.
+    dev.html and its fixtures are the browser harness and stay out of the app.
+  -->
+  <ItemGroup>
+    <Content Include="..\..\web\**\*" Exclude="..\..\web\dev.html;..\..\web\js\dev\**;..\..\web\README.md">
+      <Link>web\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- The bridge polyfill, injected before the page's own modules run. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Web\bridge.js" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+  </ItemGroup>
+
+</Project>

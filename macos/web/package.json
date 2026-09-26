@@ -1,0 +1,8 @@
+{
+  "name": "kytto-web-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test js/dev/ui-contract.test.js"
+  }
+}

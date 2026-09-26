@@ -1,0 +1,52 @@
+# .NET build and test output
+**/bin/
+**/obj/
+TestResults/
+*.trx
+coverage/
+coverage.*
+
+# IDE and per-user state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+**/Properties/launchSettings.json
+*.pubxml
+*.binlog
+.claude/
+CLAUDE.local.md
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Release output and logs
+dist/
+dist-archive/
+release-output/
+scripts/Output/
+Kytto-Setup*.exe
+Kytto-Windows-*.zip
+*.log
+vlc-log.txt
+logs/
+
+# Signing material and local secrets
+*.pfx
+*.p12
+*.pem
+*.key
+*.snk
+*.pvk
+*.spc
+.env
+.env.*
+secrets.json
+
+# Local scratch/config copies must never become fixtures accidentally
+scratch/
+local-configs/
+real-configs/

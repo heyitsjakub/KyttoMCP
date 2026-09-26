@@ -1,0 +1,58 @@
+<Window x:Class="Kytto.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Kytto.App"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Kytto"
+        Width="1080" Height="700"
+        MinWidth="720" MinHeight="440"
+        WindowStartupLocation="CenterScreen"
+        Background="Transparent"
+        WindowStyle="None">
+
+  <!--
+    The frame is native, only the content is web (§3). The page runs the full
+    height of the window and the strip across the top is a drag region rather than
+    a bar the shell draws, which is what lets the page keep putting its numbers up
+    there — text, which needs no mouse — exactly as it does on macOS.
+
+    CaptionHeight is 0 because the drag region is declared by the page instead:
+    WebView2's non-client region support turns the page's `.drag-strip` into
+    caption area, so the strip drags the window without WPF having to guess where
+    it is. The system caption buttons still come from the frame.
+
+    GlassFrameThickness is the whole client area rather than a strip of it, which
+    is what -1 means here. The page's chrome is a tint over whatever the shell
+    puts behind it (the chrome alpha it is handed), so the material has to reach
+    as far as the chrome does: extended over only the title strip, the toolbar row
+    and the sidebar below it composite over nothing instead, and the band ends in
+    a seam across the window at exactly the height the glass stopped.
+  -->
+  <shell:WindowChrome.WindowChrome>
+    <shell:WindowChrome CaptionHeight="0"
+                        ResizeBorderThickness="6"
+                        CornerRadius="0"
+                        GlassFrameThickness="-1"
+                        UseAeroCaptionButtons="True" />
+  </shell:WindowChrome.WindowChrome>
+
+  <Grid>
+    <wv2:WebView2 x:Name="Web" DefaultBackgroundColor="Transparent" />
+
+    <!--
+      In a Popup because the web view is a child window and paints over anything
+      WPF puts behind it. A Popup gets a window of its own, so these land on top.
+      Positioned against the window's top-right on every move and resize.
+    -->
+    <Popup x:Name="CaptionPopup"
+           Placement="Relative"
+           PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
+           AllowsTransparency="True"
+           StaysOpen="True"
+           PopupAnimation="None">
+      <local:CaptionButtons x:Name="Caption" />
+    </Popup>
+  </Grid>
+
+</Window>

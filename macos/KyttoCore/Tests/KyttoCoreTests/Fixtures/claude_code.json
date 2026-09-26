@@ -1,0 +1,46 @@
+{
+  "numStartups": 560,
+  "installMethod": "native",
+  "autoUpdates": false,
+  "mcpServers": {
+    "XcodeBuildMCP": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "xcodebuildmcp@latest",
+        "mcp"
+      ],
+      "env": {
+        "XCODEBUILDMCP_SENTRY_DISABLED": "true",
+        "XCODEBUILDMCP_ENABLED_WORKFLOWS": "simulator,ui-automation"
+      }
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp"
+    }
+  },
+  "projects": {
+    "/Users/example/Projects/Xcode/KyttoMCP": {
+      "allowedTools": [],
+      "mcpServers": {
+        "project-only-server": {
+          "command": "node",
+          "args": ["./scripts/mcp.js"]
+        }
+      },
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": true
+    },
+    "/Users/example/Desktop/other": {
+      "allowedTools": [],
+      "mcpServers": {},
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": false
+    }
+  },
+  "migrationVersion": 3
+}

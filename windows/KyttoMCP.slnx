@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Kytto.App/Kytto.App.csproj" />
+    <Project Path="src/Kytto.Core/Kytto.Core.csproj" />
+    <Project Path="src/Kytto.Gateway/Kytto.Gateway.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Kytto.App.Tests/Kytto.App.Tests.csproj" />
+    <Project Path="tests/Kytto.Core.Tests/Kytto.Core.Tests.csproj" />
+  </Folder>
+</Solution>

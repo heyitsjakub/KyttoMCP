@@ -1,0 +1,72 @@
+<UserControl x:Class="Kytto.App.CaptionButtons"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!--
+    Minimise, maximise and close, at the metrics Windows 11 uses for them: 46 by
+    32, glyphs from Segoe Fluent Icons, and close going red rather than grey on
+    hover. They are the system's buttons in everything but who draws them, which
+    is what §3 means by the frame being native.
+  -->
+  <UserControl.Resources>
+    <Style x:Key="CaptionButton" TargetType="Button">
+      <Setter Property="Width" Value="46" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{Binding GlyphBrush, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+      <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Surface" Background="{TemplateBinding Background}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Surface" Property="Background" Value="#20808080" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Surface" Property="Background" Value="#38808080" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="CloseButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Surface" Background="{TemplateBinding Background}">
+              <ContentPresenter x:Name="Glyph" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Surface" Property="Background" Value="#C42B1C" />
+                <Setter Property="Foreground" Value="White" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Surface" Property="Background" Value="#B01F10" />
+                <Setter Property="Foreground" Value="White" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </UserControl.Resources>
+
+  <StackPanel Orientation="Horizontal" Background="Transparent">
+    <Button x:Name="MinimiseButton" Style="{StaticResource CaptionButton}"
+            Content="&#xE921;" ToolTip="Minimize" Click="OnMinimise" />
+    <Button x:Name="MaximiseButton" Style="{StaticResource CaptionButton}"
+            Content="&#xE922;" ToolTip="Maximize" Click="OnMaximise" />
+    <Button x:Name="CloseButton" Style="{StaticResource CloseButton}"
+            Content="&#xE8BB;" ToolTip="Close" Click="OnClose" />
+  </StackPanel>
+
+</UserControl>

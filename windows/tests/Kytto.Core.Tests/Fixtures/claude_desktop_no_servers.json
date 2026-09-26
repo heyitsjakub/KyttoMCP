@@ -1,0 +1,59 @@
+{
+  "coworkUserFilesPath": "/Users/example/Claude",
+  "preferences": {
+    "chromeExtensionEnabled": true,
+    "quickEntryShortcut": "off",
+    "launchPreviewPersistedWorkspaces": [],
+    "launchPreviewSessionScopedSessions": [],
+    "localAgentModeTrustedFolders": [
+      "/Users/example/Library/CloudStorage/OneDrive-ExampleOrg/code"
+    ],
+    "coworkScheduledTasksEnabled": true,
+    "coworkHipaaRestricted": false,
+    "ccdScheduledTasksEnabled": true,
+    "sidebarMode": "chat",
+    "bypassPermissionsOptInByAccount": {
+      "00000000-0000-0000-0000-000000000000": true
+    },
+    "bypassPermissionsGateByAccount": {
+      "00000000-0000-0000-0000-000000000000": true
+    },
+    "coworkWebSearchEnabled": true,
+    "coworkModelAutoFallbackByAccount": {
+      "00000000-0000-0000-0000-000000000000": true
+    },
+    "remoteToolsDeviceName": "example-macbook-pro",
+    "epitaxyPrefs": {
+      "starred-local-code-sessions": [],
+      "starred-cowork-spaces": [],
+      "starred-session-groups": [],
+      "dframe-local-slice": {
+        "pinnedOrder": [],
+        "homeProjectsPinnedOrder": []
+      },
+      "ccd-sessions-filter": {
+        "state": {
+          "selectedProjects": []
+        },
+        "version": 0
+      },
+      "desktop-frame.paneStore.v1": {
+        "state": {
+          "extraPanesByMode": {},
+          "colWeightsByMode": {},
+          "rowSplit": 0.5,
+          "draftNonce": 0
+        },
+        "version": 4
+      },
+      "fastMode": false,
+      "epitaxy-perm-mode-acks.00000000-0000-0000-0000-000000000000": [
+        "/Users/example/code/misc/sample:auto"
+      ],
+      "epitaxy-folder-permission-mode.00000000-0000-0000-0000-000000000000": {
+        "/Users/example/code/misc/sample": "auto"
+      },
+      "dframe-group-scopes": {}
+    }
+  }
+}

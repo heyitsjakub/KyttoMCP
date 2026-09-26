@@ -1,0 +1,164 @@
+<Window x:Class="Kytto.App.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:settings="clr-namespace:Kytto.Core.Settings;assembly=Kytto.Core"
+        Title="Kytto Settings"
+        Width="640" Height="760" MinHeight="560"
+        ResizeMode="CanResize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <!--
+    Native, not a web screen. docs/ipc.md keeps these out of the IPC contract on
+    purpose: a login item, a tray item and a path override are things only the
+    shell can act on, and putting them behind a command would mean inventing one
+    the macOS build has no use for (§3.2).
+  -->
+  <Window.Resources>
+    <Style TargetType="TextBlock" x:Key="Label">
+      <Setter Property="Margin" Value="0,0,0,4" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style TargetType="TextBlock" x:Key="Hint">
+      <Setter Property="Margin" Value="0,3,0,0" />
+      <Setter Property="Opacity" Value="0.65" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style TargetType="StackPanel" x:Key="Row">
+      <Setter Property="Margin" Value="0,0,0,18" />
+    </Style>
+  </Window.Resources>
+
+  <ScrollViewer x:Name="SettingsScroll" VerticalScrollBarVisibility="Auto">
+  <StackPanel Margin="22">
+
+    <StackPanel Style="{StaticResource Row}">
+      <TextBlock Style="{StaticResource Label}" Text="Appearance" />
+      <ComboBox x:Name="ThemeBox" SelectedIndex="0">
+        <ComboBoxItem Content="Follow Windows" Tag="system" />
+        <ComboBoxItem Content="Light" Tag="light" />
+        <ComboBoxItem Content="Dark" Tag="dark" />
+      </ComboBox>
+    </StackPanel>
+
+    <StackPanel Style="{StaticResource Row}">
+      <TextBlock Style="{StaticResource Label}" Text="Backups to keep, per client" />
+      <TextBox x:Name="RetentionBox" Width="90" HorizontalAlignment="Left" />
+      <TextBlock Style="{StaticResource Hint}"
+                 Text="Every change is backed up before it is written. Older copies past this count are removed." />
+    </StackPanel>
+
+    <StackPanel Style="{StaticResource Row}">
+      <TextBlock Style="{StaticResource Label}" Text="Warn above this many tokens" />
+      <TextBox x:Name="ThresholdBox" Width="90" HorizontalAlignment="Left" />
+      <TextBlock Style="{StaticResource Hint}"
+                 Text="A server whose tool definitions cost more than this is called out in the matrix." />
+    </StackPanel>
+
+    <StackPanel Style="{StaticResource Row}">
+      <CheckBox x:Name="TrayBox" Content="Show the Kytto tray item" />
+      <TextBlock Style="{StaticResource Hint}"
+                 Text="Lists your servers with a quick switch, without opening the window. Changes take effect immediately." />
+      <ComboBox x:Name="TrayClientBox" Margin="0,8,0,0" />
+    </StackPanel>
+
+    <StackPanel Style="{StaticResource Row}">
+      <CheckBox x:Name="LoginBox" Content="Start Kytto when I sign in" />
+    </StackPanel>
+
+    <StackPanel Style="{StaticResource Row}">
+      <TextBlock Style="{StaticResource Label}" Text="Where clients keep their configuration" />
+      <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
+                 Text="Leave a row blank to use the standard location. Set one only if a client has moved its config — these paths change between client releases, and this is the escape hatch that does not need a Kytto update." />
+      <ItemsControl x:Name="OverrideList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid Margin="0,0,0,6">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="{Binding DisplayName}" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1" Text="{Binding Path, UpdateSourceTrigger=PropertyChanged}"
+                       VerticalAlignment="Center" />
+              <Button Grid.Column="2" Content="Browse…" Margin="6,0,0,0" Padding="10,3"
+                      Tag="{Binding}" Click="OnBrowse" />
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <TextBlock x:Name="PathError"
+                 Margin="0,6,0,0"
+                 Foreground="#C42B1C"
+                 TextWrapping="Wrap"
+                 Visibility="Collapsed" />
+    </StackPanel>
+
+    <StackPanel Style="{StaticResource Row}">
+      <TextBlock Style="{StaticResource Label}" Text="Custom configuration sources" />
+      <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,10"
+                 Text="Kytto fully manages five built-in clients. Attach additional JSON, JSONC or TOML files here for read-only discovery. Detaching a source never deletes or changes its file." />
+      <ItemsControl x:Name="CustomSourceList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border BorderBrush="#33000000" BorderThickness="1" CornerRadius="4"
+                    Padding="10" Margin="0,0,0,8">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="150" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Row="0" Grid.Column="0" Margin="0,0,8,6"
+                         ToolTip="Display name"
+                         Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" />
+                <ComboBox Grid.Row="0" Grid.Column="1" Margin="0,0,8,6"
+                          ItemsSource="{Binding ScopeOptions}"
+                          SelectedItem="{Binding Scope, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Grid.Row="0" Grid.Column="2" Content="Detach…" Padding="10,3"
+                        Tag="{Binding}" Click="OnDetachCustomSource" />
+                <TextBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,6"
+                         ToolTip="Profile or workspace label (optional)"
+                         Text="{Binding ScopeLabel, UpdateSourceTrigger=PropertyChanged}">
+                  <TextBox.Style>
+                    <Style TargetType="TextBox">
+                      <Setter Property="IsEnabled" Value="True" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding Scope}"
+                                     Value="{x:Static settings:ConfigurationScope.Global}">
+                          <Setter Property="IsEnabled" Value="False" />
+                          <Setter Property="ToolTip" Value="Global sources do not use a scope label." />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBox.Style>
+                </TextBox>
+                <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                           FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                           Text="{Binding Path}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <Button Content="Add Custom Source…" HorizontalAlignment="Left" Padding="12,4"
+              Click="OnAddCustomSource" />
+      <TextBlock x:Name="CustomSourceError" Margin="0,6,0,0"
+                 Foreground="#C42B1C" TextWrapping="Wrap" Visibility="Collapsed" />
+    </StackPanel>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+      <Button Content="Cancel" Padding="16,5" Margin="0,0,8,0" IsCancel="True" />
+      <Button Content="Save" Padding="16,5" IsDefault="True" Click="OnSave" />
+    </StackPanel>
+
+  </StackPanel>
+  </ScrollViewer>
+</Window>

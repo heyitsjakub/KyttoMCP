@@ -1,0 +1,175 @@
+{
+  "_comment": "A small bundled list of servers with prefilled commands (§7.2). Static on purpose: no remote fetching, no registry API. Kytto is not a catalog product — this exists so the first server is easy to add, not to be comprehensive.",
+  "_verifiedOn": "2026-07-30",
+  "_verification": "Every package below was checked against the npm and PyPI registries on the date above, and against the modelcontextprotocol/servers README. Most of the servers people expect here — GitHub, PostgreSQL, SQLite, Puppeteer, Brave Search, Slack, Google Drive — were archived by the MCP project and are deliberately absent rather than shipped broken. Re-verify before every release.",
+  "servers": [
+    {
+      "id": "filesystem",
+      "name": "filesystem",
+      "displayName": "Filesystem",
+      "description": "Read, write and search files in directories you explicitly allow.",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "{{directory}}"],
+      "placeholders": [
+        {
+          "token": "{{directory}}",
+          "label": "Directory to allow",
+          "example": "C:\\Users\\you\\source\\repos"
+        }
+      ],
+      "env": [],
+      "requires": "Node.js",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem"
+    },
+    {
+      "id": "memory",
+      "name": "memory",
+      "displayName": "Memory",
+      "description": "A knowledge graph the model can write to and recall across conversations.",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "placeholders": [],
+      "env": [],
+      "requires": "Node.js",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory"
+    },
+    {
+      "id": "sequential-thinking",
+      "name": "sequential-thinking",
+      "displayName": "Sequential Thinking",
+      "description": "Lets the model break a problem into explicit, revisable steps.",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "placeholders": [],
+      "env": [],
+      "requires": "Node.js",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking"
+    },
+    {
+      "id": "git",
+      "name": "git",
+      "displayName": "Git",
+      "description": "Read, search and inspect the history of a local repository.",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-git", "--repository", "{{repository}}"],
+      "placeholders": [
+        {
+          "token": "{{repository}}",
+          "label": "Repository path",
+          "example": "C:\\Users\\you\\source\\repos\\app"
+        }
+      ],
+      "env": [],
+      "requires": "uv (Python)",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/git"
+    },
+    {
+      "id": "fetch",
+      "name": "fetch",
+      "displayName": "Fetch",
+      "description": "Fetches a web page and converts it to markdown for the model to read.",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "placeholders": [],
+      "env": [],
+      "requires": "uv (Python)",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch"
+    },
+    {
+      "id": "time",
+      "name": "time",
+      "displayName": "Time",
+      "description": "Current time and time-zone conversion.",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-time"],
+      "placeholders": [],
+      "env": [],
+      "requires": "uv (Python)",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/time"
+    },
+    {
+      "id": "playwright",
+      "name": "playwright",
+      "displayName": "Playwright",
+      "description": "Drives a real browser: navigate, click, fill forms, take screenshots.",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
+      "placeholders": [],
+      "env": [],
+      "requires": "Node.js",
+      "homepage": "https://github.com/microsoft/playwright-mcp"
+    },
+    {
+      "id": "context7",
+      "name": "context7",
+      "displayName": "Context7",
+      "description": "Up-to-date documentation and code examples for libraries.",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "placeholders": [],
+      "env": [
+        {
+          "key": "CONTEXT7_API_KEY",
+          "required": false,
+          "hint": "Optional. Raises the rate limit; get one at context7.com."
+        }
+      ],
+      "requires": "Node.js",
+      "homepage": "https://github.com/upstash/context7"
+    },
+    {
+      "id": "firecrawl",
+      "name": "firecrawl",
+      "displayName": "Firecrawl",
+      "description": "Scrape, crawl and search the web through the Firecrawl API.",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "placeholders": [],
+      "env": [
+        {
+          "key": "FIRECRAWL_API_KEY",
+          "required": true,
+          "hint": "From firecrawl.dev."
+        }
+      ],
+      "requires": "Node.js",
+      "homepage": "https://github.com/firecrawl/firecrawl-mcp-server"
+    },
+    {
+      "id": "github",
+      "name": "github",
+      "displayName": "GitHub",
+      "description": "Repositories, issues and pull requests. The official hosted server — no install, sign in through your client.",
+      "transport": "http",
+      "command": "",
+      "args": [],
+      "url": "https://api.githubcopilot.com/mcp/",
+      "placeholders": [],
+      "env": [],
+      "requires": "A client that supports remote MCP servers with OAuth",
+      "homepage": "https://github.com/github/github-mcp-server"
+    },
+    {
+      "id": "everything",
+      "name": "everything",
+      "displayName": "Everything (test server)",
+      "description": "Exercises every part of the MCP protocol. Useful for checking that a client is wired up correctly.",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything"],
+      "placeholders": [],
+      "env": [],
+      "requires": "Node.js",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/everything"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "model": "opus",
+  "deniedMcpServers": [
+    { "serverName": "XcodeBuildMCP" },
+    { "serverName": "claude-in-chrome" }
+  ],
+  "enabledPlugins": {
+    "swift-lsp@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [],
+    "deny": []
+  }
+}
