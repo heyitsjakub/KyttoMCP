@@ -49,6 +49,11 @@ Attach multiple named JSON, JSONC or TOML configuration files as read-only custo
 **Find out why a server fails**
 Run an on-demand MCP handshake and read what the server actually reports: tools, prompts, resources, protocol details and stderr. MCP Doctor turns that evidence into concrete findings — missing environment values, relative paths, failed handshakes, executables that only resolve inside one client's PATH — and previews any fix before writing it.
 
+**Read what a server tells your model**
+A tool's name, description and input schema go straight into the model's context, so an MCP server can give instructions without ever being called. The Tool Safety Scanner reads them the way the model does and reports what a person would not see: hidden or direction-override characters, wording that addresses the model instead of describing the tool ("ignore previous instructions"), markup that imitates a system message, a tool advertised as read-only that names credential files, and two enabled servers claiming the same tool name in one client. Contract Guard remembers each server's tool contract between health checks and reports tools that were added or removed and changed descriptions, input schemas or safety annotations. Acknowledge a change and the contract you reviewed becomes the new baseline.
+
+Both are advice. Nothing is switched off and no config is edited, the scan is deliberately narrow so a finding is worth reading, and a clean scan does not mean a server is trustworthy. Two known gaps are open issues: Contract Guard compares schemas as raw JSON, so reordered keys count as a change ([#12](https://github.com/heyitsjakub/KyttoMCP/issues/12)), and the scanner does not yet catch bidi isolate characters ([#13](https://github.com/heyitsjakub/KyttoMCP/issues/13)). Source: [macOS](macos/KyttoCore/Sources/KyttoCore/Health) · [Windows](windows/src/Kytto.Core/Health).
+
 **Compare tool-schema footprint**
 Clients differ in how and when they load MCP tool definitions. Kytto estimates the full-schema footprint of each server and profile as a consistent comparison, not exact per-conversation usage, and flags heavy definitions, unmeasured entries and duplicate tool names for review.
 
