@@ -743,11 +743,15 @@ final class AppModel {
         reload()
     }
 
-    func doctorFixPreview(serverID: String) throws -> DoctorFixPreview {
+    func doctorFixPreview(
+        serverID: String,
+        action: DoctorAction = .pinResolvedCommand
+    ) throws -> DoctorFixPreview {
         guard let server = current().servers.first(where: { $0.id == serverID }) else {
             throw AppError.unknownServer(serverID)
         }
         try requireDirect(serverID: serverID)
+        if action == .pinPackageVersion { return try packagePinPreview(for: server) }
         guard server.transport == .stdio,
               let currentCommand = server.command,
               let resolvedCommand = server.health?.resolvedCommand,
@@ -769,7 +773,14 @@ final class AppModel {
         )
     }
 
-    func applyDoctorFix(serverID: String) throws -> AuthoringResult {
+    func applyDoctorFix(
+        serverID: String,
+        action: DoctorAction = .pinResolvedCommand,
+        confirmedVersion: String? = nil
+    ) throws -> AuthoringResult {
+        if action == .pinPackageVersion {
+            return try applyPackagePin(serverID: serverID, confirmedVersion: confirmedVersion)
+        }
         let preview = try doctorFixPreview(serverID: serverID)
         guard let server = current().servers.first(where: { $0.id == serverID }) else {
             throw AppError.unknownServer(serverID)
@@ -777,6 +788,62 @@ final class AppModel {
         var draft = ServerDraft(editing: server)
         draft.command = preview.replacementCommand
         return try updateServer(draft, serverID: serverID)
+    }
+
+    /// The package pin, before it is written (§7.10).
+    ///
+    /// The version comes from one place only: the registry lookup the user
+    /// asked for with "Check latest" (`checkProvenanceLatest`), for this very
+    /// package. Nothing here makes a request, so a preview never reaches the
+    /// network on its own. `serverInfo.version` from a health check is not a
+    /// source: it is whatever the server says about itself, frequently not its
+    /// package's release number, and pinning a version the registry does not
+    /// have would break the server on its next start.
+    private func packagePinPreview(for server: Server) throws -> DoctorFixPreview {
+        guard let launch = PackagePin.unpinnedLaunch(in: server), PackagePin.canPin(server) else {
+            throw AppError.noUnpinnedPackage(server.name)
+        }
+        let checked = provenance(for: server)
+        let kind: MCPProvenanceKind = launch.ecosystem == .npm ? .npm : .python
+        guard checked.kind == kind,
+              checked.packageName == launch.name,
+              let version = checked.latestVersion
+        else { throw AppError.packageVersionNotChecked(launch.name) }
+
+        let edits = PackagePin.edits(for: server, version: version)
+        guard !edits.isEmpty else { throw AppError.packageVersionNotPinnable(launch.name, version) }
+        return DoctorFixPreview(
+            serverID: server.id,
+            serverName: server.name,
+            currentCommand: server.command ?? "",
+            replacementCommand: server.command ?? "",
+            clientIDs: edits.keys.sorted { $0.rawValue < $1.rawValue },
+            action: .pinPackageVersion,
+            packageName: launch.name,
+            version: version,
+            argumentChanges: edits
+                .sorted { $0.key.rawValue < $1.key.rawValue }
+                .map { DoctorArgumentChange(clientID: $0.key, current: $0.value.expected, replacement: $0.value.replacement) }
+        )
+    }
+
+    /// Writes the pin the user saw. A lookup that has moved on since the preview
+    /// is a different decision, so a mismatch writes nothing.
+    private func applyPackagePin(serverID: String, confirmedVersion: String?) throws -> AuthoringResult {
+        let preview = try doctorFixPreview(serverID: serverID, action: .pinPackageVersion)
+        guard let version = preview.version, confirmedVersion == version else {
+            throw AppError.packageVersionChanged(preview.packageName ?? preview.serverName)
+        }
+        guard let server = current().servers.first(where: { $0.id == serverID }) else {
+            throw AppError.unknownServer(serverID)
+        }
+        let result = try authoring.replaceArgument(
+            of: server,
+            edits: PackagePin.edits(for: server, version: version)
+        )
+        noteRestarts(result)
+        reload()
+        return result
     }
 
     func activity(limit: Int = 500) -> GatewayActivitySummary {
@@ -793,6 +860,21 @@ final class AppModel {
 
     func routes() -> [GatewayRoute] {
         (try? gatewayRoutes.all()) ?? []
+    }
+
+    /// One client's tool count against its cap. The caller reads the route
+    /// store once and passes it in, rather than once per client.
+    func toolBudget(
+        for client: DiscoveredClient,
+        in result: DiscoveryResult,
+        routes: [GatewayRoute]
+    ) -> ClientToolBudget {
+        ToolBudget.evaluate(
+            clientID: client.id,
+            limit: client.toolLimit,
+            servers: result.servers,
+            routes: routes
+        )
     }
 
     func gatewayPreview(serverID: String, clientID: ClientID) throws -> GatewayMigrationPreview {
@@ -1200,6 +1282,10 @@ final class AppModel {
         case healthResultsCouldNotBeSaved(Int)
         case noDrift(String)
         case launchAtLoginRollbackFailed(original: String, rollback: String)
+        case noUnpinnedPackage(String)
+        case packageVersionNotChecked(String)
+        case packageVersionNotPinnable(String, String)
+        case packageVersionChanged(String)
 
         var errorDescription: String? {
             switch self {
@@ -1227,6 +1313,14 @@ final class AppModel {
                 "Every editable copy of “\(name)” already matches. There is nothing to unify."
             case .launchAtLoginRollbackFailed(let original, let rollback):
                 "Could not save Settings (\(original)) and could not restore the previous login-item state (\(rollback))."
+            case .noUnpinnedPackage(let name):
+                "“\(name)” has no unpinned package that Kytto can pin in place."
+            case .packageVersionNotChecked(let package):
+                "Check the latest release of \(package) first. Kytto pins only a version you looked up."
+            case .packageVersionNotPinnable(let package, let version):
+                "\(version) is not a single exact release of \(package), so Kytto did not write it."
+            case .packageVersionChanged(let package):
+                "The checked version of \(package) changed after the preview. Kytto did not write anything; preview the pin again."
             }
         }
     }
@@ -1264,6 +1358,18 @@ struct DoctorFixPreview: Sendable {
     let currentCommand: String
     let replacementCommand: String
     let clientIDs: [ClientID]
+    var action: DoctorAction = .pinResolvedCommand
+    /// Package pins only: what is pinned, to which release, and the one
+    /// argument each client copy has now and will have after.
+    var packageName: String?
+    var version: String?
+    var argumentChanges: [DoctorArgumentChange] = []
+}
+
+struct DoctorArgumentChange: Sendable {
+    let clientID: ClientID
+    let current: String
+    let replacement: String
 }
 
 struct ProfileApplyFailure: Sendable {

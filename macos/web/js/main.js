@@ -590,9 +590,9 @@ async function confirmUnify(serverId, sourceClientId) {
 
 // MARK: - MCP Doctor
 
-async function previewDoctorFix(serverId) {
+async function previewDoctorFix(serverId, fixAction = 'pinResolvedCommand') {
   try {
-    const preview = await invoke('doctor.previewFix', { serverID: serverId });
+    const preview = await invoke('doctor.previewFix', { serverID: serverId, action: fixAction });
     setState({ sheet: { kind: 'doctorFix', serverId, preview, busy: false, error: null } });
   } catch (error) {
     reportFailure(error);
@@ -600,15 +600,28 @@ async function previewDoctorFix(serverId) {
 }
 
 async function applyDoctorFix(serverId) {
+  // The version travels back so the native side writes only the release this
+  // preview showed, not whatever a later lookup found.
+  const { preview } = getState().sheet;
   setState({ sheet: { ...getState().sheet, busy: true, error: null } });
   try {
-    const result = await invoke('doctor.applyFix', { serverID: serverId });
+    const result = await invoke('doctor.applyFix', {
+      serverID: serverId,
+      action: preview.action,
+      version: preview.version ?? null,
+    });
     applyState(result.state);
     const refreshWarning = await refreshAfterMutation({ backups: true, profiles: true });
+    const parkedFailures = result.parkedFailures ?? [];
+    const message = preview.action !== 'pinPackageVersion'
+      ? `Pinned the verified executable for “${result.serverName}”. Affected configurations were backed up first.`
+      : parkedFailures.length > 0
+        ? `Pinned ${preview.packageName} to ${preview.version} for “${result.serverName}”, but Kytto could not update the stored off copy for ${parkedFailures.join(', ')}. Switching it on there would bring back the unpinned version.`
+        : `Pinned ${preview.packageName} to ${preview.version} for “${result.serverName}”. Affected configurations were backed up first.`;
     setState({
       sheet: null,
       notice: withRefreshWarning(
-        { kind: 'info', message: `Pinned the verified executable for “${result.serverName}”. Affected configurations were backed up first.` },
+        { kind: parkedFailures.length > 0 ? 'warning' : 'info', message },
         refreshWarning,
       ),
     });
@@ -1358,7 +1371,7 @@ root.addEventListener('click', async (event) => {
       await confirmUnify(target.dataset.serverId, target.dataset.clientId);
       break;
     case 'doctor-preview-fix':
-      await previewDoctorFix(target.dataset.serverId);
+      await previewDoctorFix(target.dataset.serverId, target.dataset.fixAction);
       break;
     case 'doctor-apply-fix':
       await applyDoctorFix(target.dataset.serverId);

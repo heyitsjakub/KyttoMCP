@@ -11,7 +11,15 @@
 
 import { el, button, clientIcon, definitionList, formatTokens } from '../dom.js';
 import { changedIn } from '../anim.js';
-import { cellKey, clientTokenTotal, contextWindow, serversIn, serversNotIn } from '../state.js';
+import {
+  cellKey,
+  clientTokenTotal,
+  contextWindow,
+  serversIn,
+  serversNotIn,
+  toolBudgetFigure,
+  toolBudgetStrained,
+} from '../state.js';
 import { toggle, cellSnapshot, serverOpener, dotSnapshot } from './serverRow.js';
 
 /// The four states a client can be in, said in the client's own screen where
@@ -47,6 +55,8 @@ export function renderClient(state) {
   panel.append(header(client, status));
   panel.append(stats(state, client));
   if (status.note) panel.append(el('p', 'panel-note', status.note));
+  const limit = toolLimit(state, client);
+  if (limit) panel.append(limit);
 
   const present = serversIn(client.id);
   // An extension is installed software belonging to the client that installed
@@ -154,12 +164,67 @@ function stats(state, client) {
     row.append(stat('—', 'context cost not measured'));
   }
 
+  // What the client hands its model, against its cap where it has one. Amber
+  // only near or past the cap: the tools are what fills the context the client
+  // is about to refuse or truncate.
+  const budget = client.toolBudget;
+  if (budget) {
+    // "No known limit" is said out loud: people have heard of caps that no
+    // longer exist, and the absence is the answer they came for.
+    const floor = budget.unmeasuredServerIDs.length > 0;
+    const label = `${floor ? 'tools, at least' : 'tools'} · ${budget.limit ? `${client.displayName} limit` : 'no known limit'}`;
+    row.append(stat(toolBudgetFigure(budget), label, toolBudgetStrained(budget) ? 'heavy' : null));
+  }
+
   // Always a number, including zero: a tile that disappears when it has nothing
   // to say is a tile you cannot trust when it says nothing.
   const pending = state.pendingRestarts[client.id] ?? 0;
   row.append(stat(String(pending), pending === 1 ? 'change awaiting restart' : 'changes awaiting restart'));
 
   return row;
+}
+
+/// Near or past a client's tool cap, said where the user is deciding what to
+/// switch off. What the client does past the cap is written in the registry,
+/// native side (§4); what to do about it is the same everywhere, so it is here.
+function toolLimit(state, client) {
+  const budget = client.toolBudget;
+  if (!budget?.limit || !toolBudgetStrained(budget)) return null;
+
+  const floor = budget.unmeasuredServerIDs.length > 0 ? 'at least ' : '';
+  const children = [
+    el(
+      'p',
+      null,
+      budget.state === 'over'
+        ? `The servers switched on here offer ${floor}${budget.toolCount} tools, ${budget.toolCount - budget.limit} past the limit of ${budget.limit}.`
+        : `The servers switched on here offer ${floor}${budget.toolCount} tools, close to the limit of ${budget.limit}.`,
+    ),
+  ];
+  if (budget.pastLimitSummary) children.push(el('p', 'muted', budget.pastLimitSummary));
+  if (budget.unmeasuredServerIDs.length > 0) {
+    const names = budget.unmeasuredServerIDs.map(
+      (id) => state.servers.find((server) => server.id === id)?.name ?? id,
+    );
+    children.push(
+      el(
+        'p',
+        'muted',
+        `Not counted: ${names.join(', ')}. Kytto counts a server’s tools when it passes a health check, so the real number may be higher.`,
+      ),
+    );
+  }
+  if (budget.maskedToolCount > 0) {
+    children.push(el('p', 'muted', `Gateway tool masking already hides ${budget.maskedToolCount} tools from this client.`));
+  }
+  children.push(
+    el(
+      'p',
+      null,
+      'To get under it, switch servers off below, apply a smaller profile, or route a server through the Gateway and hide the tools you do not use.',
+    ),
+  );
+  return section('Tool limit', children);
 }
 
 function stat(value, label, modifier) {

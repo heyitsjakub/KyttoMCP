@@ -306,3 +306,18 @@ export function restartsPending(pending = state.pendingRestarts, dismissed = sta
       displayName: state.clients.find((client) => client.id === id)?.displayName ?? id,
     }));
 }
+
+/**
+ * A client's tool count as a figure: `≥133 / 128`. The `≥` is there when a
+ * server switched on in the client has no tool list to count, so the figure is
+ * a floor rather than a total — the same honesty the token tiles keep. Null
+ * when native sent no budget.
+ */
+export function toolBudgetFigure(budget) {
+  if (!budget) return null;
+  const floor = budget.unmeasuredServerIDs.length > 0 ? '≥' : '';
+  return `${floor}${budget.toolCount}${budget.limit ? ` / ${budget.limit}` : ''}`;
+}
+
+/** Near or over a client's cap — the only budget states that earn colour. */
+export const toolBudgetStrained = (budget) => budget?.state === 'near' || budget?.state === 'over';

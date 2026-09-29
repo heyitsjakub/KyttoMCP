@@ -502,6 +502,21 @@ repairs are deliberately narrow: v1 may pin only an absolute executable path
 already verified by a successful health check, after an exact preview and through
 the ordinary backup/atomic-write transaction. Stderr-based guesses remain advice.
 
+A package a runner fetches by name without an exact version — `npx -y pkg`,
+`pkg@latest`, `^1.2`, `uvx pkg`, `pipx run --spec "pkg>=1"` — is an
+`unpinned-package` **warning**: each client start can run a release nobody
+chose, with the server's environment. It is read from the configuration alone
+(`PackageLaunch`, the same parser provenance uses) and covers `npx`, `npm exec`,
+`pnpm dlx`, `yarn dlx`, `bunx`/`bun x`, `uvx`/`uv tool run` and `pipx run`.
+Local paths, tarballs, git and URL specs, npm aliases, GitHub shorthand, several
+`--package` flags, Docker images and plain executables are not flagged. The
+repair pins the one argument to an exact release in every editable copy (parked
+off copies included) and only to the version the user's explicit "Check latest"
+lookup returned — never to `serverInfo.version`, which is self-reported and often
+not the package's release number. Where a version cannot be added without a new
+argument (`pipx run pkg`), the finding is advice only. Pinning fixes the
+package's own version; its dependencies still resolve within their ranges.
+
 Contract Guard compares consecutive successful `tools/list` results. Surface
 added and removed tools plus changes to descriptions, input schemas and safety
 annotations. The compared contract is model-facing behavior and contains no

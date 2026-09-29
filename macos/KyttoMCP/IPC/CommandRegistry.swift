@@ -61,7 +61,11 @@ enum CommandRegistry {
         }
 
         router.register("clients.list") {
-            model.current().clients.map(ClientDTO.init)
+            let result = model.current()
+            let routes = model.routes()
+            return result.clients.map { client in
+                ClientDTO(client, toolBudget: model.toolBudget(for: client, in: result, routes: routes))
+            }
         }
 
         router.register("servers.list") {
@@ -118,11 +122,18 @@ enum CommandRegistry {
         // MARK: - MCP Doctor and Contract Guard
 
         router.register("doctor.previewFix") { (payload: DoctorFixPayload) -> DoctorFixPreviewDTO in
-            DoctorFixPreviewDTO(try model.doctorFixPreview(serverID: payload.serverID))
+            DoctorFixPreviewDTO(try model.doctorFixPreview(
+                serverID: payload.serverID,
+                action: try payload.doctorAction()
+            ))
         }
 
         router.register("doctor.applyFix") { (payload: DoctorFixPayload) -> AuthoringResultDTO in
-            AuthoringResultDTO(try model.applyDoctorFix(serverID: payload.serverID), model: model)
+            AuthoringResultDTO(try model.applyDoctorFix(
+                serverID: payload.serverID,
+                action: try payload.doctorAction(),
+                confirmedVersion: payload.version
+            ), model: model)
         }
 
         router.register("contract.acknowledge") { (payload: DoctorFixPayload) -> StateDTO in
@@ -581,6 +592,19 @@ struct ExposedToolsPayload: Decodable {
 
 struct DoctorFixPayload: Decodable {
     let serverID: String
+    /// Which repair; absent means the executable pin, the only one there was.
+    var action: String?
+    /// `pinPackageVersion` only: the release the preview showed. The native
+    /// side writes it only if it is still the version it looked up.
+    var version: String?
+
+    func doctorAction() throws -> DoctorAction {
+        guard let action else { return .pinResolvedCommand }
+        guard let known = DoctorAction(rawValue: action), known != .runHealthCheck else {
+            throw CommandError.badArgument("Unknown repair \(action).")
+        }
+        return known
+    }
 }
 
 /// Which copy of a drifted server wins. The definition itself is not in here —

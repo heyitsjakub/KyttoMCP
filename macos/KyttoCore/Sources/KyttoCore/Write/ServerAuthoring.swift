@@ -213,6 +213,122 @@ public struct ServerAuthoring: Sendable {
         return result
     }
 
+    // MARK: - One argument
+
+    /// One argument to change in one client's copy of a server.
+    public struct ArgumentEdit: Equatable, Sendable {
+        /// Position in that copy's `args`, counting strings only.
+        public let index: Int
+        /// What the argument says now; the edit is refused if it says otherwise.
+        public let expected: String
+        public let replacement: String
+
+        public init(index: Int, expected: String, replacement: String) {
+            self.index = index
+            self.expected = expected
+            self.replacement = replacement
+        }
+    }
+
+    /// Replaces a single `args` element in each listed client's copy of
+    /// `server`, and nothing else.
+    ///
+    /// The narrow sibling of `update`: that re-renders the whole definition,
+    /// which is right for an edit the user typed and wrong for a repair that
+    /// changes one token (§7.10). Here every file sees one string literal
+    /// spliced, inside the same transaction as any other authoring write —
+    /// preflight, backup, atomic write, rollback (§6). A switched-off copy Kytto
+    /// is holding is patched too, or switching it back on would restore the old
+    /// argument.
+    public func replaceArgument(
+        of server: Server,
+        edits: [ClientID: ArgumentEdit]
+    ) throws -> AuthoringResult {
+        for clientID in edits.keys where server.definitionsByClient[clientID]?.isBundled == true {
+            throw AuthoringError.notEditable(server.name)
+        }
+
+        let ordered = edits.keys.sorted { $0.rawValue < $1.rawValue }
+        let parked = ordered.filter { parkStore.parked(clientID: $0, serverName: server.name) != nil }
+        let inFile = ordered.filter { !parked.contains($0) }
+
+        let targets = try editableTargets(for: inFile)
+        var changed: [ClientID] = []
+        var backupIDs: [ClientID: String] = [:]
+        var pathDisplays: [ClientID: String] = [:]
+        var committed: [CommittedWrite] = []
+
+        do {
+            for target in targets {
+                guard let edit = edits[target.clientID] else { continue }
+                let source = target.source
+                let url = target.snapshot.url
+                let expecting = ledger.digest(for: url)
+
+                let receipt: WriteReceipt = switch source.format {
+                case .json:
+                    try writer.edit(
+                        url: url, clientID: target.clientID,
+                        pathDisplay: target.snapshot.pathDisplay, expecting: expecting
+                    ) { document in
+                        let name = document.value(at: [source.serversKey])?.keys
+                            .first { Server.identity(for: $0) == server.id } ?? server.name
+                        return try document.replacingString(
+                            inArrayAt: [source.serversKey, name, "args"],
+                            position: edit.index,
+                            expecting: edit.expected,
+                            with: edit.replacement
+                        )
+                    }
+                case .toml:
+                    try writer.edit(
+                        url: url, clientID: target.clientID,
+                        pathDisplay: target.snapshot.pathDisplay, expecting: expecting,
+                        as: TOMLDocument.self
+                    ) { document in
+                        try document.settingServerArgument(
+                            at: edit.index,
+                            expecting: edit.expected,
+                            to: edit.replacement,
+                            forServer: Self.name(of: server, in: document, under: source.serversKey),
+                            under: source.serversKey
+                        )
+                    }
+                }
+                record(receipt, for: target.snapshot, in: &committed)
+                if receipt.didWrite { changed.append(target.clientID) }
+                if let backupID = receipt.backupID { backupIDs[target.clientID] = backupID }
+                pathDisplays[target.clientID] = receipt.pathDisplay
+            }
+        } catch {
+            try rollBack(committed, after: error)
+        }
+
+        var result = AuthoringResult(
+            serverName: server.name, changed: changed, backupIDs: backupIDs, pathDisplays: pathDisplays
+        )
+        // Same stance as `unify`: the config writes have landed, so a held copy
+        // that cannot be patched is reported rather than thrown.
+        for clientID in parked {
+            guard let edit = edits[clientID],
+                  let entry = parkStore.parked(clientID: clientID, serverName: server.name),
+                  descriptors.first(where: { $0.id == clientID })?.editableServerMap?.format == .json,
+                  let text = try? JSONDocument.parse(entry.sourceText).replacingString(
+                      inArrayAt: ["args"],
+                      position: edit.index,
+                      expecting: edit.expected,
+                      with: edit.replacement
+                  ),
+                  (try? parkStore.park(clientID: clientID, serverName: entry.serverName, sourceText: text)) != nil
+            else {
+                result.parkedFailures.append(clientID)
+                continue
+            }
+            result.parkedUpdated.append(clientID)
+        }
+        return result
+    }
+
     // MARK: - Delete
 
     public func delete(_ server: Server) throws -> AuthoringResult {

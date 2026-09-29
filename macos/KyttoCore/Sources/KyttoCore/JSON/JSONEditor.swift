@@ -4,6 +4,9 @@ public enum JSONEditError: Error, Equatable {
     case pathNotFound([String])
     case notAnObject([String])
     case notAnArray([String])
+    /// The value is not what the caller last read there, so the edit it was
+    /// planned against no longer applies.
+    case valueMismatch([String])
 }
 
 /// Structural edits, expressed as splices.
@@ -264,5 +267,31 @@ public extension JSONDocument {
     internal func containsNewline(from start: Int, to end: Int) -> Bool {
         guard start < end, end <= sourceBytes.count else { return false }
         return sourceBytes[start..<end].contains(0x0A)
+    }
+}
+
+// MARK: - Array elements
+
+public extension JSONDocument {
+    /// Replaces one string in the array at `path` and nothing else — not the
+    /// array, not its separators, not the elements either side (§6.3).
+    ///
+    /// `position` counts string elements only, the way `ServerFields` reads
+    /// `args`, so an index taken from the model lands on the same element.
+    /// `expecting` is what that element must still say: a file that moved since
+    /// the edit was planned is refused rather than patched somewhere else.
+    func replacingString(
+        inArrayAt path: [String],
+        position: Int,
+        expecting: String,
+        with value: String
+    ) throws -> String {
+        guard let array = root.value(at: path) else { throw JSONEditError.pathNotFound(path) }
+        guard let elements = array.elements else { throw JSONEditError.notAnArray(path) }
+        let strings = elements.filter { $0.stringValue != nil }
+        guard strings.indices.contains(position),
+              strings[position].stringValue == expecting
+        else { throw JSONEditError.valueMismatch(path) }
+        return replacing(strings[position].span, with: JSONText.string(value))
     }
 }

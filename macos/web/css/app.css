@@ -1071,6 +1071,19 @@ th.col-client.idle .app-icon {
   opacity: 0.45;
 }
 
+/* A client near or past its tool cap. Amber for the same reason a heavy server
+   is: these are the tools filling the context the client will cut short. */
+.client-tool-count {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--warn);
+}
+
 .server-title {
   display: flex;
   align-items: center;
@@ -3090,7 +3103,8 @@ th.col-client.idle .app-icon {
    uses — they are read, not clicked, like the counts in the title strip. */
 .client-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--hairline);
 }

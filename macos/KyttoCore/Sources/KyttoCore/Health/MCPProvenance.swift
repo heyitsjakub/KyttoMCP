@@ -70,10 +70,7 @@ public enum MCPProvenanceResolver {
 
         let command = server.command ?? ""
         let basename = URL(filePath: command).lastPathComponent.lowercased()
-        if let package = packageToken(command: basename, args: server.args) {
-            let kind: MCPProvenanceKind = ["uvx", "pipx", "python", "python3"].contains(basename)
-                ? .python
-                : .npm
+        if case let (kind, package)? = packageToken(command: command, basename: basename, args: server.args) {
             return MCPProvenance(
                 kind: kind,
                 packageName: package,
@@ -116,17 +113,26 @@ public enum MCPProvenanceResolver {
         return latestVersion > installedVersion ? .staleButResponsive : .healthy
     }
 
-    private static func packageToken(command: String, args: [String]) -> String? {
-        let npmCommands = ["npx", "npm", "pnpm", "yarn", "bunx", "bun"]
-        let pythonCommands = ["uvx", "pipx", "python", "python3", "python3.11", "python3.12"]
-        guard npmCommands.contains(command) || pythonCommands.contains(command) else { return nil }
-
-        if pythonCommands.contains(command), let moduleIndex = args.firstIndex(of: "-m"), args.index(after: moduleIndex) < args.endIndex {
-            return normalizePackage(args[args.index(after: moduleIndex)])
+    /// The registry package a command launches. Runners go through
+    /// `PackageLaunch`, the same parser MCP Doctor pins with, so the name shown
+    /// here and the name a version lookup asks about cannot disagree. `python -m`
+    /// names a module rather than a package, and stays an inference.
+    private static func packageToken(
+        command: String,
+        basename: String,
+        args: [String]
+    ) -> (MCPProvenanceKind, String)? {
+        if let launch = PackageLaunch.parse(command: command, args: args) {
+            return (launch.ecosystem == .python ? .python : .npm, launch.name)
         }
 
-        let ignored = Set(["-y", "--yes", "--", "exec", "dlx", "run", "x", "install"])
-        return args.first(where: { !$0.hasPrefix("-") && !ignored.contains($0) }).flatMap(normalizePackage)
+        let pythonCommands = ["python", "python3", "python3.11", "python3.12"]
+        guard pythonCommands.contains(basename),
+              let moduleIndex = args.firstIndex(of: "-m"),
+              args.index(after: moduleIndex) < args.endIndex,
+              let module = normalizePackage(args[args.index(after: moduleIndex)])
+        else { return nil }
+        return (.python, module)
     }
 
     private static func normalizePackage(_ raw: String) -> String? {

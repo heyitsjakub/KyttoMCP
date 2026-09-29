@@ -198,6 +198,9 @@ public enum ClientRegistry {
         Extension args contain `${__dirname}`, which is relative to the bundle \
         directory and must not be resolved for display.
         """
+        // No tool limit: none is documented. A cut to the alphabetically first
+        // 256 connector tools in July 2026 was a regression and has been fixed
+        // (https://www.mintmcp.com/docs/mcp-client-issues-claude), not a cap.
     )
 
     // MARK: - Claude Code
@@ -235,6 +238,9 @@ public enum ClientRegistry {
         an array of objects with a `serverName` field. A denied server stays in the \
         config and must still be listed, shown as off.
         """
+        // No tool limit: MCP tools are deferred behind tool search by default,
+        // with a catalog of up to 10,000
+        // (https://code.claude.com/docs/en/agent-sdk/tool-search).
     )
 
     // MARK: - Cursor
@@ -263,6 +269,12 @@ public enum ClientRegistry {
         — presence is the only lever. Note that `~/.cursor` survives uninstalling \
         Cursor, so it is not evidence the client is installed.
         """
+        // No tool limit any more. Cursor used to send only the first 40 tools
+        // and silently drop the rest
+        // (https://forum.cursor.com/t/tools-limited-to-40-total/67976). Since
+        // January 2026 the agent receives tool names only and looks tools up on
+        // demand (https://cursor.com/blog/dynamic-context-discovery), and the
+        // current docs (https://cursor.com/docs/context/mcp) state no cap.
     )
 
     // MARK: - VS Code
@@ -291,7 +303,17 @@ public enum ClientRegistry {
         `globalStorage/state.vscdb`, a SQLite database we will not write to, so \
         presence is the only lever here too. The file often does not exist yet on \
         an install that has never configured MCP.
-        """
+        """,
+        // "A chat request can have a maximum of 128 tools enabled at a time."
+        // https://code.visualstudio.com/docs/agents/run/tools
+        toolLimit: ClientToolLimit(
+            maxTools: 128,
+            pastLimitSummary: """
+            VS Code allows at most 128 tools in one chat request. Past that, \
+            agent mode refuses the request ("Cannot have more than 128 tools per \
+            request") unless the experimental virtual tools setting groups them.
+            """
+        )
     )
 
     // MARK: - Codex
@@ -338,5 +360,8 @@ public enum ClientRegistry {
         are installed packages in a cache directory the client repopulates, so \
         they are read and shown but never written.
         """
+        // No tool limit: none is documented, and MCP tools are deferred behind
+        // tool search where the model supports it
+        // (https://github.com/openai/codex/pull/29486).
     )
 }

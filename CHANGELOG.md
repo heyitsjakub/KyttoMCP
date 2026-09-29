@@ -26,12 +26,44 @@ without a backup.
             trailing comma
 -->
 
+Planned work is tracked in [Issues](https://github.com/heyitsjakub/KyttoMCP/issues).
+
+---
+
+## [1.0.7] — 2026-09-29
+
+The first release built from the public source. MCP Doctor can now pin a
+package that a server starts without an exact version, clients with a known
+tool limit show how close you are to it, and Kytto no longer sends any
+telemetry.
+
 ### Added
 
 - **The source code is public.** Both apps — `macos/` (Swift) and `windows/`
   (.NET) — are now open source under the MIT License, in this repository. You
   can read exactly what Kytto does with your config files, check every network
   request it makes, and build it yourself instead of trusting an unsigned binary.
+- **MCP Doctor flags unpinned package versions.** A server launched as
+  `npx some-package`, `some-package@latest`, `uvx some-package` or similar starts
+  whatever release is newest each time a client launches it, with your API keys
+  in its environment. Doctor now warns about these, and after you check the
+  latest release it offers to pin that exact version. The preview shows the
+  argument before and after in every client, and the change goes through the
+  usual backup and atomic write. Kytto contacts the package registry only when
+  you press **Check latest release**.
+- **Tool-count limit per client.** VS Code refuses a chat request with more than
+  128 tools. The client screen and the matrix header now show how many tools
+  the servers switched on there offer against that limit, warn when you are
+  near or over it, and suggest switching servers off, using a smaller profile
+  or hiding tools through the Gateway. Servers not yet health-checked are
+  listed, and the count is shown as a minimum.
+
+### Fixed
+
+- **"Check latest" failed for packages with a long release history.** Kytto
+  downloaded an npm package's full metadata, which for many packages exceeds
+  the size limit Kytto enforces, and reported "The package registry response
+  was unexpectedly large." It now asks npm for the latest release only.
 
 ### Removed
 
@@ -41,7 +73,33 @@ without a backup.
   check. If you run 1.0.6.3 or earlier with the setting on, the website has
   stopped storing what it sends, so nothing is kept either way.
 
-Planned work is tracked in [Issues](https://github.com/heyitsjakub/KyttoMCP/issues).
+### Compatibility
+
+`doctor.applyFix` accepts a new action, `pinPackageVersion`, and now reports
+held copies of switched-off servers it updated (`parkedUpdated`,
+`parkedFailures`). Clients gain a `toolBudget` field. Nothing was removed. The
+backup, permission and restore protections from 1.0.6.1 are retained.
+
+### Distribution notes
+
+The macOS build is universal and runs on Apple Silicon and Intel Macs. It is
+ad-hoc signed rather than notarized, and the Windows installer is not
+Authenticode-signed. Verify the SHA-256 checksum before bypassing Gatekeeper or
+SmartScreen.
+
+**Downloads**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.7.dmg` | 4.6 MB | `a6df1c891665c1371499fc5c52b1de1431ae2e1c87c86e3362411492f69d20cb` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.7.exe` | 78.4 MB | `542ba475c207be303206df47d1087f93bcdee6a6f7964849c607ed77ba73cba3` |
+
+**Install**
+
+- **macOS:** Open the DMG and drag KyttoMCP into Applications. Control-click
+  the app and choose **Open** on first launch if Gatekeeper warns you.
+- **Windows:** Run the setup file. At the SmartScreen prompt choose
+  **More info** and then **Run anyway**.
 
 ---
 
@@ -717,7 +775,9 @@ First public beta, for macOS and Windows.
 - MCP Doctor findings with previewed fixes
 - Optional Gateway mode with metadata-only Live Activity
 
-[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.6.2...HEAD
+[Unreleased]: https://github.com/heyitsjakub/KyttoMCP/compare/v1.0.7...HEAD
+[1.0.7]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.7
+[1.0.6.3]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6.3
 [1.0.6.2]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6.2
 [1.0.6.1]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6.1
 [1.0.6]: https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6

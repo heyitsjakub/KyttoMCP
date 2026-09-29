@@ -26,6 +26,8 @@ public struct DiscoveredClient: Sendable {
     /// way — the sidebar's project scopes, whose rows all share an icon and a
     /// heading. Nil when the display name is already short.
     public let shortName: String?
+    /// The client's tool cap, carried from its descriptor. Nil when it has none.
+    public var toolLimit: ClientToolLimit? = nil
 }
 
 public struct DiscoveryResult: Sendable {
@@ -183,7 +185,8 @@ public struct Discovery: Sendable {
                     isReadOnly: descriptor.isReadOnly,
                     configurationScope: descriptor.configurationScope,
                     scopeLabel: descriptor.scopeLabel,
-                    shortName: descriptor.shortName
+                    shortName: descriptor.shortName,
+                    toolLimit: descriptor.toolLimit
                 )
             )
         }

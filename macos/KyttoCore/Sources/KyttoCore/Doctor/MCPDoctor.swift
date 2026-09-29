@@ -9,6 +9,8 @@ public enum DoctorSeverity: String, Codable, Sendable {
 public enum DoctorAction: String, Codable, Sendable {
     case runHealthCheck
     case pinResolvedCommand
+    /// Pin a runner-launched package to an exact release the user confirmed.
+    case pinPackageVersion
 }
 
 public struct DoctorFinding: Codable, Equatable, Sendable {
@@ -52,9 +54,10 @@ public struct DoctorServerReport: Codable, Equatable, Sendable {
 ///
 /// It deliberately does not guess edits from stderr. A guessed package name or
 /// environment value is exactly how a "repair" tool damages a working config.
-/// The one automatic action offered here pins an executable path that Kytto has
-/// already resolved on this machine; the app still previews and writes it via
-/// the ordinary backup/atomic-write transaction.
+/// The automatic actions offered here pin an executable path that Kytto has
+/// already resolved on this machine, or a package version the user looked up
+/// and confirmed; the app still previews and writes either via the ordinary
+/// backup/atomic-write transaction.
 public enum MCPDoctor {
 
     /// Every server's findings, including the ones no single server can see.
@@ -166,6 +169,10 @@ public enum MCPDoctor {
             ))
         }
 
+        if let launch = PackagePin.unpinnedLaunch(in: server) {
+            findings.append(unpinnedPackage(launch, canPin: PackagePin.canPin(server)))
+        }
+
         guard let health = server.health else {
             findings.append(DoctorFinding(
                 code: "not-checked",
@@ -216,6 +223,52 @@ public enum MCPDoctor {
         }
 
         return DoctorServerReport(serverID: server.id, serverName: server.name, findings: findings)
+    }
+
+    /// A package fetched by name with no exact version (§7.10).
+    ///
+    /// A warning rather than information: every client start can run a release
+    /// nobody chose, with the server's environment — tokens included — which is
+    /// the supply-chain path a compromised package takes. Not an error, because
+    /// nothing is broken today and the server may be exactly what it claims.
+    ///
+    /// Read from the configuration alone, so it needs no health check and makes
+    /// no request. The version to pin to is not in here: it comes from a lookup
+    /// the user asks for, never from the server's self-reported `serverInfo`,
+    /// which names whatever the author typed and is often not the package's
+    /// release number at all.
+    private static func unpinnedPackage(_ launch: PackageLaunch, canPin: Bool) -> DoctorFinding {
+        let registry = launch.ecosystem == .npm ? "npm" : "PyPI"
+        let request: String = switch launch.requestedVersion {
+        case nil: "names no version"
+        case let tag? where tag.first?.isLetter == true: "asks for the “\(tag)” tag"
+        case let requested?: "asks for “\(requested)”, which matches more than one release"
+        }
+        let example = !launch.canPinInPlace
+            ? "--spec \(launch.name)==VERSION"
+            : launch.spelling == .requirement ? "\(launch.name)==VERSION" : "\(launch.name)@VERSION"
+        return DoctorFinding(
+            code: "unpinned-package",
+            severity: .warning,
+            title: "The package version is not pinned",
+            detail: """
+            “\(launch.argument)” \(request), so \(launch.runner) can start a newer \(registry) \
+            release of \(launch.name) the next time a client launches it — without anyone \
+            reviewing it.
+            """,
+            remediation: canPin
+                ? """
+                Check the latest release (Kytto asks \(registry) about this package name and \
+                nothing else), then preview pinning that exact version in every editable \
+                client definition. Pinning fixes this package's own version; its dependencies \
+                still resolve within their declared ranges.
+                """
+                : """
+                Pin it by hand to an exact release, for example “\(example)”. Kytto will not \
+                add arguments this command does not already have.
+                """,
+            action: canPin ? .pinPackageVersion : nil
+        )
     }
 
     /// A tool-contract risk, as a Doctor finding.

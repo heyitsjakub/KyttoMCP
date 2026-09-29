@@ -5,12 +5,12 @@
 Free and **open source** under the MIT License — the full source of both the macOS
 and the Windows app lives in this repository. Read it, build it, or send a pull request.
 
-[![Version](https://img.shields.io/badge/beta-1.0.6.3-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
+[![Version](https://img.shields.io/badge/beta-1.0.7-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 [![Open source](https://img.shields.io/badge/open%20source-yes-brightgreen)](#source-code)
 
-[**Download Beta 1.0.6.3**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Source code](#source-code) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
+[**Download Beta 1.0.7**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Source code](#source-code) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
 
 ---
 
@@ -47,7 +47,7 @@ Every server against every client in one matrix. Toggle a server on or off, edit
 Attach multiple named JSON, JSONC or TOML configuration files as read-only custom sources with Global, Profile or Workspace display scope. Kytto discovers and watches their servers without rewriting, creating or deleting the selected files, and keeps them distinct from the five built-in writable clients.
 
 **Find out why a server fails**
-Run an on-demand MCP handshake and read what the server actually reports: tools, prompts, resources, protocol details and stderr. MCP Doctor turns that evidence into concrete findings — missing environment values, relative paths, failed handshakes, executables that only resolve inside one client's PATH — and previews any fix before writing it.
+Run an on-demand MCP handshake and read what the server actually reports: tools, prompts, resources, protocol details and stderr. MCP Doctor turns that evidence into concrete findings — missing environment values, relative paths, failed handshakes, executables that only resolve inside one client's PATH — and previews any fix before writing it. A package a server fetches by name without an exact version (`npx some-package`, `@latest`, `uvx`) is flagged, and once you check the latest release Doctor can pin that exact version in every client that uses it.
 
 **Read what a server tells your model**
 A tool's name, description and input schema go straight into the model's context, so an MCP server can give instructions without ever being called. The Tool Safety Scanner reads them the way the model does and reports what a person would not see: hidden or direction-override characters, wording that addresses the model instead of describing the tool ("ignore previous instructions"), markup that imitates a system message, a tool advertised as read-only that names credential files, and two enabled servers claiming the same tool name in one client. Contract Guard remembers each server's tool contract between health checks and reports tools that were added or removed and changed descriptions, input schemas or safety annotations. Acknowledge a change and the contract you reviewed becomes the new baseline.
@@ -55,7 +55,7 @@ A tool's name, description and input schema go straight into the model's context
 Both are advice. Nothing is switched off and no config is edited, the scan is deliberately narrow so a finding is worth reading, and a clean scan does not mean a server is trustworthy. Two known gaps are open issues: Contract Guard compares schemas as raw JSON, so reordered keys count as a change ([#12](https://github.com/heyitsjakub/KyttoMCP/issues/12)), and the scanner does not yet catch bidi isolate characters ([#13](https://github.com/heyitsjakub/KyttoMCP/issues/13)). Source: [macOS](macos/KyttoCore/Sources/KyttoCore/Health) · [Windows](windows/src/Kytto.Core/Health).
 
 **Compare tool-schema footprint**
-Clients differ in how and when they load MCP tool definitions. Kytto estimates the full-schema footprint of each server and profile as a consistent comparison, not exact per-conversation usage, and flags heavy definitions, unmeasured entries and duplicate tool names for review.
+Clients differ in how and when they load MCP tool definitions. Kytto estimates the full-schema footprint of each server and profile as a consistent comparison, not exact per-conversation usage, and flags heavy definitions, unmeasured entries and duplicate tool names for review. For clients with a known tool limit — VS Code refuses a chat request with more than 128 tools — Kytto shows how many tools the servers switched on there offer against that limit and warns when you are near or over it.
 
 **Switch between setups**
 Save local profiles such as Coding, Research or Minimal. Preview exactly what a switch will change, then apply it to one client with the normal backup and restart safeguards.
@@ -83,7 +83,7 @@ Custom sources are read-only and are not an additional writable client. Want ano
 
 ## Install
 
-Download Beta 1.0.6.3 from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from the [v1.0.6.3 Release](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.6.3).
+Download Beta 1.0.7 from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from the [v1.0.7 Release](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.7).
 
 ### macOS
 
@@ -101,12 +101,12 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.6.3.dmg
-# 825c194ae505160d841eaa50cce993ebacf41dbee4b334ba554a790c9a16744e
+shasum -a 256 KyttoMCP-1.0.7.dmg
+# a6df1c891665c1371499fc5c52b1de1431ae2e1c87c86e3362411492f69d20cb
 
 # Windows (PowerShell)
-Get-FileHash Kytto-Setup-win-x64-1.0.6.3.exe -Algorithm SHA256
-# d1efbf351fa00cf010588a790f9650542137177e44fda2ad9750b6d479f71bb9
+Get-FileHash Kytto-Setup-win-x64-1.0.7.exe -Algorithm SHA256
+# 542ba475c207be303206df47d1087f93bcdee6a6f7964849c607ed77ba73cba3
 ```
 
 ## Local by design

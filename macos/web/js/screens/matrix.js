@@ -12,6 +12,8 @@ import {
   cellKey,
   enabledTokenTotal,
   contextWindow,
+  toolBudgetFigure,
+  toolBudgetStrained,
 } from '../state.js';
 import { el, button, formatTokens, sheet, glyph, GLYPH, clientIcon, definitionList } from '../dom.js';
 import { addedIn, appeared, began, changed, changedIn, stagger } from '../anim.js';
@@ -500,7 +502,22 @@ function table(state, clients, servers) {
     cell.append(clientIcon(client));
     const scopeKind = client.configurationScope ?? 'global';
     const scope = client.scopeLabel ? `${scopeKind}: ${client.scopeLabel}` : scopeKind;
-    cell.title = [client.displayName, scope, client.isReadOnly ? 'read-only custom source' : null, clientNote(client), client.configPathDisplay]
+    // A client past (or nearly at) its tool cap says so under its icon, because
+    // the column is where switching servers off happens. Otherwise the figure
+    // waits in the tooltip: a count under every icon is furniture.
+    const budget = client.toolBudget;
+    const strained = toolBudgetStrained(budget);
+    if (strained) {
+      cell.append(el('span', `client-tool-count ${budget.state}`, toolBudgetFigure(budget)));
+    }
+    cell.title = [
+      client.displayName,
+      scope,
+      client.isReadOnly ? 'read-only custom source' : null,
+      clientNote(client),
+      budget?.limit ? `${toolBudgetFigure(budget)} tools${budget.state === 'over' ? ' — past the limit' : ''}` : null,
+      client.configPathDisplay,
+    ]
       .filter(Boolean)
       .join('\n');
     headRow.append(cell);

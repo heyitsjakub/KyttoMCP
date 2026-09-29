@@ -42,8 +42,11 @@ export function renderDoctor(state) {
       } else if (finding.action === 'pinResolvedCommand') {
         item.append(button('Preview safe fix…', 'doctor-preview-fix', {
           className: 'button primary',
-          dataset: { serverId: report.serverID },
+          dataset: { serverId: report.serverID, fixAction: 'pinResolvedCommand' },
         }));
+      } else if (finding.action === 'pinPackageVersion') {
+        const action = packagePinAction(state, report.serverID);
+        if (action) item.append(action);
       }
       card.append(item);
     }
@@ -53,8 +56,32 @@ export function renderDoctor(state) {
   return panel;
 }
 
+/**
+ * Pinning needs a version, and the only source is a registry lookup the user
+ * asks for — so until one has happened the button is that lookup, and after it
+ * the button names the release it would pin. Nothing here reaches the network
+ * on its own ("Local by design").
+ */
+function packagePinAction(state, serverId) {
+  const provenance = state.servers.find((entry) => entry.id === serverId)?.provenance;
+  if (provenance?.latestVersion) {
+    return button(`Pin to ${provenance.latestVersion}…`, 'doctor-preview-fix', {
+      className: 'button primary',
+      dataset: { serverId, fixAction: 'pinPackageVersion' },
+    });
+  }
+  if (!state.app?.capabilities?.includes('provenance')) return null;
+  const busy = state.provenanceBusyServerID === serverId;
+  const check = button(busy ? 'Checking…' : 'Check latest release', busy ? 'noop' : 'check-provenance-latest', {
+    dataset: { serverId },
+  });
+  check.disabled = busy;
+  return check;
+}
+
 export function renderDoctorFix(state) {
   const preview = state.sheet.preview;
+  if (preview.action === 'pinPackageVersion') return renderPackagePin(state, preview);
   const body = [
     el('p', null, `Pin the executable for “${preview.serverName}” to the path verified by its successful health check?`),
   ];
@@ -73,6 +100,48 @@ export function renderDoctorFix(state) {
       dataset: { serverId: preview.serverID },
     }),
   ]);
+}
+
+function renderPackagePin(state, preview) {
+  const body = [
+    el('p', null, `Pin ${preview.packageName} for “${preview.serverName}” to ${preview.version}?`),
+  ];
+
+  // Copies usually agree. When they do not, each distinct change is shown with
+  // the clients it applies to, so the preview is exactly what will be written.
+  const groups = new Map();
+  for (const change of preview.argumentChanges) {
+    const key = `${change.current}\u0000${change.replacement}`;
+    const group = groups.get(key) ?? { current: change.current, replacement: change.replacement, clientIDs: [] };
+    group.clientIDs.push(change.clientID);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    const comparison = el('div', 'doctor-fix-comparison');
+    comparison.append(commandBlock('Argument now', group.current));
+    comparison.append(commandBlock('After', group.replacement));
+    body.push(comparison);
+    if (groups.size > 1) body.push(el('p', 'muted', `In ${clientNames(state, group.clientIDs)}.`));
+  }
+
+  body.push(el('p', 'muted', `${preview.version} is the latest release the registry reported when you checked. Pinning stops newer releases from starting without you choosing them; it does not vouch for this one, and its dependencies still resolve within their own ranges.`));
+  body.push(el('p', 'muted', `Affected client definitions: ${clientNames(state, preview.clientIDs)}. Kytto changes only this one argument, backs up every affected config, preserves unrelated content and writes atomically.`));
+  if (state.sheet.error) body.push(el('p', 'failure-message', state.sheet.error));
+
+  return sheet('Pin package version', body, [
+    button('Cancel', 'close-sheet', { className: 'button subtle' }),
+    el('span', 'spacer'),
+    button(state.sheet.busy ? 'Pinning…' : `Pin to ${preview.version}`, state.sheet.busy ? 'noop' : 'doctor-apply-fix', {
+      className: state.sheet.busy ? 'button primary busy' : 'button primary',
+      dataset: { serverId: preview.serverID },
+    }),
+  ]);
+}
+
+function clientNames(state, clientIDs) {
+  return clientIDs
+    .map((id) => state.clients.find((client) => client.id === id)?.displayName ?? id)
+    .join(', ');
 }
 
 function commandBlock(label, command) {

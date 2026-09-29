@@ -191,6 +191,19 @@ attached custom sources follow them with opaque `custom.<uuid>` ids.
 | `isReadOnly` | True for custom sources; all write controls must remain unavailable |
 | `configurationScope` | `global` \| `profile` \| `workspace` |
 | `scopeLabel` | Optional user-visible profile or workspace name |
+| `toolBudget` | `{ toolCount, maskedToolCount, unmeasuredServerIDs, limit, state, pastLimitSummary }` — see below |
+
+`toolBudget` counts the tools this client hands its model: every server
+`enabled` in it with a passing health check contributes its measured
+`toolCount`, less whatever its Gateway route's allow list hides
+(`maskedToolCount`, already subtracted). Servers switched on with nothing to
+count — never checked, failed, remote, waiting for sign-in — are named in
+`unmeasuredServerIDs`, and while that list is non-empty `toolCount` is a floor
+the UI prefixes with `≥`. `limit` is the client's documented tool cap from the
+registry, or null when it has none; `state` is `ok` \| `near` (≥ 80 % of the
+cap) \| `over`, or null with no cap. `pastLimitSummary` is the registry's
+sentence for what the client does past the cap. Computed natively
+(`ToolBudget.evaluate`); the UI does not decide what counts.
 
 `orphanedConfig` means a config exists but the client does not — a leftover
 `~/.cursor` after an uninstall. Shown rather than hidden.
@@ -263,7 +276,10 @@ rather than work around it.
 definitions and environment values do not cross IPC.
 
 `doctorReports` contains actionable configuration/health findings and opaque
-action names. `contractAlerts` contains tool names and model-facing contract
+action names (`runHealthCheck`, `pinResolvedCommand`, `pinPackageVersion`). An
+`unpinned-package` finding carries no version: the UI offers "Check latest
+release" (`provenance.checkLatest`) until the server's `provenance.latestVersion`
+is set, then "Pin to …" through `doctor.previewFix`. `contractAlerts` contains tool names and model-facing contract
 change summaries. Neither contains environment values or tool-call payloads.
 
 `drift` is present for a server only when its clients disagree about what it
@@ -286,21 +302,51 @@ the confusion worth surfacing, and they are never something to copy out of (§4)
 ### `doctor.previewFix` → `DoctorFixPreviewDTO`
 
 ```json
-{ "serverID": "github" }
+{ "serverID": "github", "action": "pinResolvedCommand" }
 ```
 
-Returns the configured command, the absolute path verified by the last passing
-health check and affected client ids. It does not write.
+`action` names the finding's repair: `pinResolvedCommand` (the default when it
+is absent) or `pinPackageVersion`. It does not write, and it makes no request.
+
+```json
+{
+  "serverID": "github",
+  "serverName": "github",
+  "currentCommand": "npx",
+  "replacementCommand": "/opt/homebrew/bin/npx",
+  "clientIDs": ["claudeCode", "cursor"],
+  "action": "pinResolvedCommand",
+  "packageName": null,
+  "version": null,
+  "argumentChanges": []
+}
+```
+
+For `pinResolvedCommand`: the configured command, the absolute path verified by
+the last passing health check and affected client ids.
+
+For `pinPackageVersion`: `packageName`, the `version` it would pin, and one
+`argumentChanges` entry `{ clientID, current, replacement }` per client copy
+whose argument changes — copies can differ, and the preview is exactly what
+will be written. `currentCommand` and `replacementCommand` are both the
+unchanged executable. The version is the one `provenance.checkLatest` returned
+for this package in this session; without that lookup the preview is refused
+(`appState`), so the network is only ever reached by the user's own "Check
+latest" (§7.10).
 
 ### `doctor.applyFix` → `AuthoringResultDTO`
 
 ```json
-{ "serverID": "github" }
+{ "serverID": "github", "action": "pinPackageVersion", "version": "2025.4.8" }
 ```
 
-Applies only the validatable executable-path repair through the ordinary
-multi-client authoring transaction. Every affected configuration is backed up
-and written atomically; a stale or missing passing check rejects it.
+Applies only a validatable repair through the ordinary multi-client authoring
+transaction. Every affected configuration is backed up and written atomically.
+`pinResolvedCommand` is rejected by a stale or missing passing check.
+`pinPackageVersion` requires `version`, and writes only if it still equals the
+version the preview showed; it splices that one `args` string in each JSON or
+TOML copy and in any off copy Kytto is holding (`parkedUpdated` /
+`parkedFailures`), and nothing else in the file.
 
 ### `contract.acknowledge` → `StateDTO`
 

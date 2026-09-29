@@ -9,6 +9,8 @@ public enum TOMLEditError: Error, Equatable {
     case inlineDefinition(String)
     case valueNotFound([String])
     case ambiguousValue([String])
+    /// The value is not what the caller last read there.
+    case valueMismatch([String])
 }
 
 /// Structural edits, expressed as splices.
@@ -100,6 +102,44 @@ public extension TOMLDocument {
             throw TOMLEditError.valueNotFound(serverPath + ["env", environmentKey])
         }
         return replacing(pair.value.span, with: TOMLText.string(value))
+    }
+
+    /// Replaces one string in a server's `args` array without reserializing the
+    /// array, its table or an inline definition. The splice MCP Doctor's package
+    /// pin uses (§7.10).
+    ///
+    /// `position` counts string elements only, as `ServerFields` does, and
+    /// `expecting` is what that element must still say.
+    func settingServerArgument(
+        at position: Int,
+        expecting: String,
+        to value: String,
+        forServer serverName: String,
+        under serversKey: String
+    ) throws -> String {
+        let serverPath = [serversKey, serverName]
+        let fields: [TOMLPair]
+        if let table = table(at: serverPath) {
+            fields = table.pairs
+        } else {
+            let servers = table(at: [serversKey])?.pairs.filter { $0.name == serverName } ?? []
+            guard servers.count <= 1 else { throw TOMLEditError.ambiguousValue(serverPath) }
+            guard let inline = servers.first?.value.inlinePairs else {
+                throw TOMLEditError.valueNotFound(serverPath)
+            }
+            fields = inline
+        }
+
+        let matches = fields.filter { $0.name == "args" }
+        guard matches.count <= 1 else { throw TOMLEditError.ambiguousValue(serverPath + ["args"]) }
+        guard let arguments = matches.first?.value.elements else {
+            throw TOMLEditError.valueNotFound(serverPath + ["args"])
+        }
+        let strings = arguments.filter { $0.stringValue != nil }
+        guard strings.indices.contains(position),
+              strings[position].stringValue == expecting
+        else { throw TOMLEditError.valueMismatch(serverPath + ["args"]) }
+        return replacing(strings[position].span, with: TOMLText.string(value))
     }
 
     /// Adds or replaces a server's definition.

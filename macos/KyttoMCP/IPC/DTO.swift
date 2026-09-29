@@ -114,8 +114,10 @@ struct ClientDTO: Encodable {
     let isReadOnly: Bool
     let configurationScope: String
     let scopeLabel: String
+    /// How many tools this client hands its model, against its cap if it has one.
+    let toolBudget: ClientToolBudgetDTO
 
-    init(_ client: DiscoveredClient) {
+    init(_ client: DiscoveredClient, toolBudget: ClientToolBudget) {
         id = client.id.rawValue
         displayName = client.displayName
         shortName = client.shortName
@@ -134,6 +136,28 @@ struct ClientDTO: Encodable {
         isReadOnly = client.isReadOnly
         configurationScope = client.configurationScope.rawValue
         scopeLabel = client.scopeLabel
+        self.toolBudget = ClientToolBudgetDTO(toolBudget)
+    }
+}
+
+/// A count and a verdict. Server ids name what was not counted; no tool list
+/// crosses here — the server's own `health.tools` already carries those.
+struct ClientToolBudgetDTO: Encodable {
+    let toolCount: Int
+    let maskedToolCount: Int
+    let unmeasuredServerIDs: [String]
+    let limit: Int?
+    /// `ok` | `near` | `over`, or null when the client has no known cap.
+    let state: String?
+    let pastLimitSummary: String?
+
+    init(_ budget: ClientToolBudget) {
+        toolCount = budget.toolCount
+        maskedToolCount = budget.maskedToolCount
+        unmeasuredServerIDs = budget.unmeasuredServerIDs
+        limit = budget.limit?.maxTools
+        state = budget.state?.rawValue
+        pastLimitSummary = budget.limit?.pastLimitSummary
     }
 }
 
@@ -343,7 +367,10 @@ struct StateDTO: Encodable {
     @MainActor
     init(_ model: AppModel) {
         let result = model.current()
-        clients = result.clients.map(ClientDTO.init)
+        let routes = model.routes()
+        clients = result.clients.map { client in
+            ClientDTO(client, toolBudget: model.toolBudget(for: client, in: result, routes: routes))
+        }
         servers = result.servers.map { server in
             ServerDTO(server, provenance: model.provenance(for: server))
         }
@@ -939,6 +966,10 @@ struct DoctorFixPreviewDTO: Encodable {
     let currentCommand: String
     let replacementCommand: String
     let clientIDs: [String]
+    let action: String
+    let packageName: String?
+    let version: String?
+    let argumentChanges: [DoctorArgumentChangeDTO]
 
     init(_ preview: DoctorFixPreview) {
         serverID = preview.serverID
@@ -946,6 +977,22 @@ struct DoctorFixPreviewDTO: Encodable {
         currentCommand = preview.currentCommand
         replacementCommand = preview.replacementCommand
         clientIDs = preview.clientIDs.map(\.rawValue)
+        action = preview.action.rawValue
+        packageName = preview.packageName
+        version = preview.version
+        argumentChanges = preview.argumentChanges.map(DoctorArgumentChangeDTO.init)
+    }
+}
+
+struct DoctorArgumentChangeDTO: Encodable {
+    let clientID: String
+    let current: String
+    let replacement: String
+
+    init(_ change: DoctorArgumentChange) {
+        clientID = change.clientID.rawValue
+        current = change.current
+        replacement = change.replacement
     }
 }
 

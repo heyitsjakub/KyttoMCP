@@ -239,6 +239,9 @@ public struct ClientDescriptor: Sendable {
     /// carries just the distinguishing leaf. Nil means the display name is
     /// already short.
     public var shortName: String? = nil
+    /// How many tools this client hands the model before it drops or refuses
+    /// the rest. Nil when there is no documented cap — see `ClientToolLimit`.
+    public var toolLimit: ClientToolLimit? = nil
 
     /// The file and key holding servers the user can add, edit and remove.
     ///
