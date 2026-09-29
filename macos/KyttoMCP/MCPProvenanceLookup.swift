@@ -37,7 +37,9 @@ final class MCPProvenanceLookup {
         }
     }
 
-    private static let maximumResponseSize = 128 * 1024
+    /// npm answers with one version document (a few KB); PyPI's JSON still
+    /// carries every release, and popular MCP packages already pass 200 KB.
+    private static let maximumResponseSize = 4 * 1024 * 1024
     private let session: URLSession
     private let now: () -> Date
 
@@ -89,8 +91,10 @@ final class MCPProvenanceLookup {
         switch kind {
         case .npm:
             guard isSafePackage(packageName, allowingScopedName: true) else { return nil }
+            // The version document for the `latest` dist-tag, not the full
+            // packument: that lists every release and runs to hundreds of KB.
             components.host = "registry.npmjs.org"
-            components.path = "/\(packageName)"
+            components.path = "/\(packageName)/latest"
         case .python:
             guard isSafePackage(packageName, allowingScopedName: false) else { return nil }
             components.host = "pypi.org"
@@ -134,7 +138,7 @@ final class MCPProvenanceLookup {
     private static func version(in object: [String: Any], kind: MCPProvenanceKind) -> String? {
         switch kind {
         case .npm:
-            return (object["dist-tags"] as? [String: Any])?["latest"] as? String
+            return object["version"] as? String
         case .python:
             return (object["info"] as? [String: Any])?["version"] as? String
         default:

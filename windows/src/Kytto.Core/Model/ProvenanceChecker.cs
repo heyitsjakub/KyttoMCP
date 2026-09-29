@@ -17,6 +17,11 @@ public sealed class ProvenanceChecker : IDisposable
 {
     public const string NpmRegistry = "https://registry.npmjs.org/";
     public const string PythonRegistry = "https://pypi.org/pypi/";
+
+    // npm is asked for the `latest` version document (a few KB) rather than the
+    // full packument, which lists every release and runs to hundreds of KB.
+    // PyPI's JSON still carries every release; popular MCP packages pass 200 KB.
+    private const int MaxResponseBytes = 4 * 1024 * 1024;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
     private readonly HttpClient _http;
     private readonly bool _ownsHttp;
@@ -70,7 +75,7 @@ public sealed class ProvenanceChecker : IDisposable
             }
 
             var body = await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);
-            if (body.Length > 64 * 1024) throw new ProvenanceCheckException("The package response was too large.");
+            if (body.Length > MaxResponseBytes) throw new ProvenanceCheckException("The package response was too large.");
             using var document = JsonDocument.Parse(body);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
@@ -78,9 +83,7 @@ public sealed class ProvenanceChecker : IDisposable
             }
             var root = document.RootElement;
             var latest = provenance.SourceKind == ProvenanceSourceKinds.Npm
-                ? root.TryGetProperty("dist-tags", out var tags) &&
-                  tags.ValueKind == JsonValueKind.Object &&
-                  tags.TryGetProperty("latest", out var npmLatest)
+                ? root.TryGetProperty("version", out var npmLatest)
                     ? npmLatest
                     : default
                 : root.TryGetProperty("info", out var info) &&
@@ -133,7 +136,7 @@ public sealed class ProvenanceChecker : IDisposable
         var package = Uri.EscapeDataString(provenance.PackageName!);
         return provenance.SourceKind switch
         {
-            ProvenanceSourceKinds.Npm => new Uri(NpmRegistry + package, UriKind.Absolute),
+            ProvenanceSourceKinds.Npm => new Uri(NpmRegistry + package + "/latest", UriKind.Absolute),
             ProvenanceSourceKinds.Python => new Uri(
                 PythonRegistry + package + "/json", UriKind.Absolute),
             _ => throw new ProvenanceCheckException(

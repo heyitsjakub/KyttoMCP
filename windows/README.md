@@ -11,7 +11,7 @@ merges it into one matrix: a row per server, a column per client, a switch per
 cell. It is a Windows port of the Kytto macOS app. Free and open source under the
 MIT License.
 
-Status: beta. The current release is 1.0.6.3 ([release notes](docs/releases/)).
+Status: beta. The current release is 1.0.7 ([release notes](docs/releases/)).
 
 ## What it does
 
@@ -35,7 +35,9 @@ Status: beta. The current release is 1.0.6.3 ([release notes](docs/releases/)).
   listed in the app with a one-click revert.
 - **Profiles, MCP Doctor and Contract Guard.** Named server sets applied to one
   client with a full preview; actionable findings from config and health
-  evidence; alerts when a server's tool contract changes between checks.
+  evidence, including packages started by `npx`/`uvx` without a pinned version,
+  which Doctor can pin to the release you just looked up; alerts when a server's
+  tool contract changes between checks.
 - **Read-only custom sources.** Attach other JSON, JSONC or TOML MCP config files
   to see them in the matrix. Kytto never writes them.
 - **Optional local gateway.** Opt-in per server and client: the client launches

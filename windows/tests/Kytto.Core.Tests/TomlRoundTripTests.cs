@@ -48,7 +48,9 @@ public class TomlRoundTripTests
             if (before[i] != after[i]) { firstChange = i; break; }
         }
         Assert.True(firstChange >= 0, "nothing changed");
-        Assert.Equal("enabled = false", after[firstChange]);
+        // The editor writes the file's own line ending; a Windows checkout of
+        // the fixture (core.autocrlf) is CRLF, so the split leaves a trailing \r.
+        Assert.Equal("enabled = false", after[firstChange].TrimEnd('\r'));
 
         var withoutInsertion = after.ToList();
         withoutInsertion.RemoveAt(firstChange);

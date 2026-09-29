@@ -178,8 +178,7 @@ internal static class CommandRegistry
                 result.Warnings);
         });
 
-        router.Register("clients.list", () =>
-            model.Current().Clients.Select(DtoMapping.ToDto).ToArray());
+        router.Register("clients.list", () => model.ClientDtos(model.Current()));
 
         router.Register("servers.list", () =>
             model.Current().Servers.Select(DtoMapping.ToDto).ToArray());
@@ -227,7 +226,7 @@ internal static class CommandRegistry
         // MARK: - MCP Doctor and Contract Guard (§7.10)
 
         router.Register<DoctorFixPayload, DoctorFixPreviewDto>("doctor.previewFix", payload =>
-            model.DoctorFixPreview(payload.ServerID).ToDto());
+            model.DoctorFixPreview(payload.ServerID, payload.RequestedAction()).ToDto());
 
         router.Register<DoctorFixPayload, StateDto>("contract.acknowledge", payload =>
         {
@@ -235,8 +234,20 @@ internal static class CommandRegistry
             return model.ToStateDto();
         });
 
-        router.Register<DoctorFixPayload, AuthoringResultDto>("doctor.applyFix", payload =>
-            Authored(model.ApplyDoctorFix(payload.ServerID), model));
+        // The unify shape rather than the plain authoring one: a package pin also
+        // patches switched-off copies Kytto is holding, and one it could not patch
+        // would come back unpinned when switched on — which the page has to say.
+        router.Register<DoctorFixPayload, UnifyResultDto>("doctor.applyFix", payload =>
+        {
+            var result = model.ApplyDoctorFix(payload.ServerID, payload.RequestedAction(), payload.Version);
+            return new UnifyResultDto(
+                ServerName: result.ServerName,
+                Changed: result.Changed.Select(id => id.Raw()).ToArray(),
+                ParkedUpdated: result.ParkedUpdated.Select(id => id.Raw()).ToArray(),
+                ParkedFailures: result.ParkedFailures.Select(id => id.Raw()).ToArray(),
+                RequiresRestart: result.RequiresRestart,
+                State: model.ToStateDto());
+        });
 
         // MARK: - Drift (§7.12)
 
@@ -682,7 +693,23 @@ internal sealed record GatewayRoutePayload(string RouteID);
 /// </param>
 internal sealed record ExposedToolsPayload(string RouteID, IReadOnlyList<string>? ToolNames);
 
-internal sealed record DoctorFixPayload(string ServerID);
+/// <param name="Action">
+/// Which repair: <c>pinResolvedCommand</c> or <c>pinPackageVersion</c>. Absent means
+/// the executable pin, the only one there used to be.
+/// </param>
+/// <param name="Version">
+/// <c>pinPackageVersion</c> only: the release the preview showed. Native writes it
+/// only if it is still the version it looked up.
+/// </param>
+internal sealed record DoctorFixPayload(string ServerID, string? Action = null, string? Version = null)
+{
+    internal Kytto.Core.Doctor.DoctorAction RequestedAction() => Action switch
+    {
+        null or "pinResolvedCommand" => Kytto.Core.Doctor.DoctorAction.PinResolvedCommand,
+        "pinPackageVersion" => Kytto.Core.Doctor.DoctorAction.PinPackageVersion,
+        _ => throw new BadArgumentException($"Unknown repair {Action}."),
+    };
+}
 
 internal sealed record UnifyPayload(string ServerID, string SourceClientID);
 

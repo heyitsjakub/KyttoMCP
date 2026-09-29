@@ -87,7 +87,11 @@ public static class ClientRegistry
             "an error. Extensions carry their command in `manifest.json` at " +
             "`server.mcp_config` and their on/off state in a separate settings file. " +
             "Extension args contain `${__dirname}`, which is relative to the bundle " +
-            "directory and must not be resolved for display.");
+            "directory and must not be resolved for display.",
+        // No tool limit: none is documented. A cut to the alphabetically first 256
+        // connector tools in July 2026 was a regression and has been fixed
+        // (https://www.mintmcp.com/docs/mcp-client-issues-claude), not a cap.
+        ToolLimit: null);
 
     // MARK: - Claude Code
 
@@ -123,7 +127,11 @@ public static class ClientRegistry
             "Enablement lives " +
             "in a different file entirely: `~/.claude/settings.json` → `deniedMcpServers`, " +
             "an array of objects with a `serverName` field. A denied server stays in the " +
-            "config and must still be listed, shown as off.");
+            "config and must still be listed, shown as off.",
+        // No tool limit: MCP tools are deferred behind tool search by default, with
+        // a catalog of up to 10,000
+        // (https://code.claude.com/docs/en/agent-sdk/tool-search).
+        ToolLimit: null);
 
     // MARK: - Cursor
 
@@ -154,7 +162,14 @@ public static class ClientRegistry
             "`auth` fields we pass through untouched. Cursor's own enable/disable toggle " +
             "stores state internally, not in `mcp.json`, so Kytto cannot read or write it " +
             "— presence is the only lever. Note that `~/.cursor` survives uninstalling " +
-            "Cursor, so it is not evidence the client is installed.");
+            "Cursor, so it is not evidence the client is installed.",
+        // No tool limit any more. Cursor used to send only the first 40 tools and
+        // silently drop the rest
+        // (https://forum.cursor.com/t/tools-limited-to-40-total/67976). Since
+        // January 2026 the agent receives tool names only and looks tools up on
+        // demand (https://cursor.com/blog/dynamic-context-discovery), and the
+        // current docs (https://cursor.com/docs/context/mcp) state no cap.
+        ToolLimit: null);
 
     // MARK: - VS Code
 
@@ -186,7 +201,15 @@ public static class ClientRegistry
             "survive a write. VS Code's own enabled/disabled state is kept in " +
             "`globalStorage/state.vscdb`, a SQLite database we will not write to, so " +
             "presence is the only lever here too. The file often does not exist yet on " +
-            "an install that has never configured MCP.");
+            "an install that has never configured MCP.",
+        // "A chat request can have a maximum of 128 tools enabled at a time."
+        // https://code.visualstudio.com/docs/agents/run/tools
+        ToolLimit: new ClientToolLimit(
+            MaxTools: 128,
+            PastLimitSummary:
+                "VS Code allows at most 128 tools in one chat request. Past that, " +
+                "agent mode refuses the request (\"Cannot have more than 128 tools per " +
+                "request\") unless the experimental virtual tools setting groups them."));
 
     // MARK: - Codex
 
@@ -230,5 +253,9 @@ public static class ClientRegistry
             "is added. Two front ends share one config: the ChatGPT app and the `codex` " +
             "CLI. Plugins under `~/.codex/plugins` can bundle their own `.mcp.json` in " +
             "the ordinary `mcpServers` shape; those are installed packages in a cache " +
-            "directory the client repopulates, so they are read and shown but never written.");
+            "directory the client repopulates, so they are read and shown but never written.",
+        // No tool limit: none is documented, and MCP tools are deferred behind tool
+        // search where the model supports it
+        // (https://github.com/openai/codex/pull/29486).
+        ToolLimit: null);
 }

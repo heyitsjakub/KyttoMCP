@@ -20,7 +20,7 @@ namespace Kytto.App.Ipc;
 /// </remarks>
 internal static class DtoMapping
 {
-    internal static ClientDto ToDto(this DiscoveredClient client) => new(
+    internal static ClientDto ToDto(this DiscoveredClient client, ClientToolBudget toolBudget) => new(
         Id: client.Id.Raw(),
         DisplayName: client.DisplayName,
         ShortName: client.ShortName,
@@ -41,7 +41,28 @@ internal static class DtoMapping
         SchemaQuirks: client.SchemaQuirks,
         IsReadOnly: client.IsReadOnly,
         ConfigurationScope: client.ConfigurationScope.Raw(),
-        ScopeLabel: string.IsNullOrWhiteSpace(client.ScopeLabel) ? null : client.ScopeLabel);
+        ScopeLabel: string.IsNullOrWhiteSpace(client.ScopeLabel) ? null : client.ScopeLabel,
+        ToolBudget: toolBudget.ToDto());
+
+    internal static ClientToolBudgetDto ToDto(this ClientToolBudget budget) => new(
+        ToolCount: budget.ToolCount,
+        MaskedToolCount: budget.MaskedToolCount,
+        UnmeasuredServerIDs: budget.UnmeasuredServerIDs,
+        Limit: budget.Limit?.MaxTools,
+        State: budget.State?.Raw(),
+        PastLimitSummary: budget.Limit?.PastLimitSummary);
+
+    /// <summary>
+    /// Every client with its tool count against its cap. The route store is read
+    /// once here rather than once per client.
+    /// </summary>
+    internal static ClientDto[] ClientDtos(this AppModel model, DiscoveryResult current)
+    {
+        var routes = model.GatewayRoutes();
+        return current.Clients
+            .Select(client => client.ToDto(AppModel.ToolBudgetFor(client, current, routes)))
+            .ToArray();
+    }
 
     internal static ServerDto ToDto(this Server server) => new(
         Id: server.Id,
@@ -161,7 +182,16 @@ internal static class DtoMapping
         preview.ServerName,
         preview.CurrentCommand,
         preview.ReplacementCommand,
-        preview.ClientIDs.Select(client => client.Raw()).ToArray());
+        preview.ClientIDs.Select(client => client.Raw()).ToArray(),
+        Raw(preview.Action),
+        preview.PackageName,
+        preview.Version,
+        preview.ArgumentChanges
+            .Select(change => new DoctorArgumentChangeDto(
+                change.ClientID.Raw(),
+                change.Current,
+                change.Replacement))
+            .ToArray());
 
     internal static UnifyPreviewDto ToDto(this UnifyPreview preview) => new(
         ServerID: preview.ServerID,
@@ -241,7 +271,7 @@ internal static class DtoMapping
     {
         var current = model.Current();
         return new StateDto(
-            Clients: current.Clients.Select(ToDto).ToArray(),
+            Clients: model.ClientDtos(current),
             Servers: current.Servers.Select(ToDto).ToArray(),
             Diagnostics: current.Diagnostics.Select(ToDto).ToArray(),
             PendingRestarts: model.PendingRestarts.ToDictionary(

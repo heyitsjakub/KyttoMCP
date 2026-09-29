@@ -444,6 +444,27 @@ repairs are deliberately narrow: v1 may pin only an absolute executable path
 already verified by a successful health check, after an exact preview and through
 the ordinary backup/atomic-write transaction. Stderr-based guesses remain advice.
 
+A package a runner fetches by name without an exact version — `npx -y pkg`,
+`pkg@latest`, `^1.2`, `uvx pkg`, `pipx run --spec "pkg>=1"` — is an
+`unpinned-package` **warning**: each client start can run a release nobody
+chose, with the server's environment. It is read from the configuration alone
+(`PackageLaunch`, the same parser provenance takes its package name from) and
+covers `npx`, `npm exec`, `pnpm dlx`, `yarn dlx`, `bunx`/`bun x`, `uvx`/`uv tool
+run` and `pipx run`, however Windows spells them: `npx.cmd`, `uvx.exe`, a full
+path, or wrapped as `cmd /c npx …` as separate arguments. Local paths and scripts,
+tarballs, git and URL specs, npm aliases, GitHub shorthand, several `--package`
+flags, a command line quoted into one `cmd /c` argument, Docker images and plain
+executables are not flagged. The repair splices the one argument to an exact
+release in every editable copy, a switched-off copy Kytto is holding included,
+and only to the version the user's own "Check latest release" lookup returned —
+never to `serverInfo.version`, which is self-reported and often not the
+package's release number. Lookups are remembered across launches on Windows, so
+"the version you just checked" is bounded in time instead: one older than 24
+hours is looked up again before it can be pinned. Where a version cannot be added
+without a new argument (`pipx run pkg`), the finding is advice only. Pinning
+fixes the package's own version; its dependencies still resolve within their
+ranges.
+
 Contract Guard compares consecutive successful `tools/list` results. Surface
 added and removed tools plus changes to descriptions, input schemas and safety
 annotations. The compared contract is model-facing behavior and contains no

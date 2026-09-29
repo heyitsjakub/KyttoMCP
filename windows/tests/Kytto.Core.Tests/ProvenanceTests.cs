@@ -66,7 +66,7 @@ public sealed class ProvenanceTests
             requested = request.RequestUri;
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("{\"dist-tags\":{\"latest\":\"2.0.0\"}}", Encoding.UTF8, "application/json"),
+                Content = new StringContent("{\"name\":\"@scope/package\",\"version\":\"2.0.0\"}", Encoding.UTF8, "application/json"),
                 RequestMessage = new HttpRequestMessage(request.Method, request.RequestUri),
             };
         }));
@@ -85,7 +85,7 @@ public sealed class ProvenanceTests
             provenance,
             new DateTimeOffset(2026, 8, 26, 12, 0, 0, TimeSpan.Zero));
 
-        Assert.Equal("https://registry.npmjs.org/%40scope%2Fpackage", requested?.OriginalString);
+        Assert.Equal("https://registry.npmjs.org/%40scope%2Fpackage/latest", requested?.OriginalString);
         Assert.Equal("2.0.0", result.LatestVersion);
         Assert.Equal("unchecked", result.MaintenanceState);
     }
@@ -95,7 +95,7 @@ public sealed class ProvenanceTests
     {
         using var client = new HttpClient(new DelegateHandler(request => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent("{\"dist-tags\":\"not-an-object\"}", Encoding.UTF8, "application/json"),
+            Content = new StringContent("{\"version\":{\"not\":\"a-string\"}}", Encoding.UTF8, "application/json"),
             RequestMessage = new HttpRequestMessage(request.Method, request.RequestUri),
         }));
         using var checker = new ProvenanceChecker(client);

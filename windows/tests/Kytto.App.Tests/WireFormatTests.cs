@@ -281,10 +281,49 @@ public class WireFormatTests
             "Workspace source.",
             true,
             "workspace",
-            @"C:\Users\you\Projects\shop"));
+            @"C:\Users\you\Projects\shop",
+            NoToolBudget));
 
         Assert.Equal("…\\shop", encoded.GetProperty("shortName").GetString());
         Assert.Equal("Claude Code · …\\shop", encoded.GetProperty("displayName").GetString());
+    }
+
+    /// <summary>
+    /// The matrix header and the client screen read these keys straight off the
+    /// client, and <c>unmeasuredServerIDs</c> is the one that decides whether the
+    /// figure gets its <c>≥</c>.
+    /// </summary>
+    [Fact]
+    public void AClientCarriesItsToolBudgetUnderTheSharedKeys()
+    {
+        var encoded = Encode(new ClientDto(
+            "vsCode", "VS Code", null, "client-vscode", "ready",
+            @"%APPDATA%\Code\User\mcp.json", "JSON", "Presence.", 3, "JSONC.", false,
+            "global", null,
+            new ClientToolBudgetDto(
+                ToolCount: 137,
+                MaskedToolCount: 0,
+                UnmeasuredServerIDs: ["github-remote"],
+                Limit: 128,
+                State: "over",
+                PastLimitSummary: "VS Code allows at most 128 tools in one chat request.")));
+
+        Assert.Equal(
+            ["id", "displayName", "shortName", "iconAsset", "state", "configPathDisplay",
+             "configFormatDisplay", "offSwitchSummary", "serverCount", "schemaQuirks",
+             "isReadOnly", "configurationScope", "scopeLabel", "toolBudget"],
+            KeysOf(encoded));
+        var budget = encoded.GetProperty("toolBudget");
+        Assert.Equal(
+            ["toolCount", "maskedToolCount", "unmeasuredServerIDs", "limit", "state",
+             "pastLimitSummary"],
+            KeysOf(budget));
+        Assert.Equal("over", budget.GetProperty("state").GetString());
+
+        // No cap is a count with nulls beside it, not a missing object.
+        var uncapped = Encode(NoToolBudget);
+        Assert.Equal(JsonValueKind.Null, uncapped.GetProperty("limit").ValueKind);
+        Assert.Equal(JsonValueKind.Null, uncapped.GetProperty("state").ValueKind);
     }
 
     [Fact]
@@ -368,6 +407,54 @@ public class WireFormatTests
     }
 
     /// <summary>
+    /// The package pin rides on the executable pin's preview. The web layer reads
+    /// <c>action</c> to choose the sheet and echoes <c>version</c> back to apply, so
+    /// a misspelled key here would pin nothing, or the wrong thing, without an error.
+    /// </summary>
+    [Fact]
+    public void ADoctorFixPreviewCarriesThePackagePin()
+    {
+        var encoded = Encode(new DoctorFixPreviewDto(
+            ServerID: "github",
+            ServerName: "GitHub",
+            CurrentCommand: "npx",
+            ReplacementCommand: "npx",
+            ClientIDs: ["codex", "cursor"],
+            Action: "pinPackageVersion",
+            PackageName: "@modelcontextprotocol/server-github",
+            Version: "2025.4.8",
+            ArgumentChanges: [new DoctorArgumentChangeDto(
+                "cursor",
+                "@modelcontextprotocol/server-github",
+                "@modelcontextprotocol/server-github@2025.4.8")]));
+
+        Assert.Equal(
+            ["serverID", "serverName", "currentCommand", "replacementCommand", "clientIDs",
+             "action", "packageName", "version", "argumentChanges"],
+            KeysOf(encoded));
+        Assert.Equal(
+            ["clientID", "current", "replacement"],
+            KeysOf(encoded.GetProperty("argumentChanges")[0]));
+
+        var payload = JsonSerializer.Deserialize<DoctorFixPayload>(
+            """{ "serverID": "github", "action": "pinPackageVersion", "version": "2025.4.8" }""",
+            Envelope.Json);
+        Assert.NotNull(payload);
+        Assert.Equal(Kytto.Core.Doctor.DoctorAction.PinPackageVersion, payload.RequestedAction());
+        Assert.Equal("2025.4.8", payload.Version);
+
+        // The executable pin predates `action`, and the page may still send only the id.
+        var legacy = JsonSerializer.Deserialize<DoctorFixPayload>("""{ "serverID": "github" }""", Envelope.Json);
+        Assert.NotNull(legacy);
+        Assert.Equal(Kytto.Core.Doctor.DoctorAction.PinResolvedCommand, legacy.RequestedAction());
+        Assert.Throws<BadArgumentException>(() => (legacy with { Action = "runHealthCheck" }).RequestedAction());
+
+        // A pin that cannot be honoured yet is state, not a bad request.
+        using var failure = JsonDocument.Parse(Envelope.Failure(new PackagePinStateException("Check first.")));
+        Assert.Equal("appState", failure.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    /// <summary>
     /// The payloads travel the other way, so the same spelling has to decode.
     /// </summary>
     [Fact]
@@ -395,4 +482,6 @@ public class WireFormatTests
 
     private static StateDto EmptyState => new(
         [], [], [], new Dictionary<string, int>(), [], [], [], []);
+
+    private static ClientToolBudgetDto NoToolBudget => new(0, 0, [], null, null, null);
 }

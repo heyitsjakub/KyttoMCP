@@ -92,7 +92,7 @@ internal static class Envelope
         BadArgumentException => "badArgument",
         IpcException ipc => ipc.Code,
         JsonException => "badPayload",
-        GatewayManagedException or NoDriftException => "appState",
+        GatewayManagedException or NoDriftException or PackagePinStateException => "appState",
         ConfigWriteException or ConfigTransactionException => "configWrite",
         BackupException => "backup",
         ToggleException => "toggle",

@@ -8,9 +8,9 @@ struct ProvenanceLookupTests {
     @Test("latest npm metadata is fetched only through the explicit lookup")
     func npmMetadata() async throws {
         let packageName = "@example/server-\(UUID().uuidString.lowercased())"
-        let path = "/\(packageName)"
+        let path = "/\(packageName)/latest"
         ProvenanceURLProtocol.install(
-            Data(#"{"dist-tags":{"latest":"2.3.0"}}"#.utf8),
+            Data(#"{"name":"example","version":"2.3.0"}"#.utf8),
             for: path
         )
         defer { ProvenanceURLProtocol.removePayload(for: path) }
@@ -35,13 +35,13 @@ struct ProvenanceLookupTests {
     @Test("unknown and non-comparable registry metadata cannot produce a maintenance claim")
     func unsafeMetadataIsRejected() async throws {
         let packageName = "@example/unsafe-\(UUID().uuidString.lowercased())"
-        let path = "/\(packageName)"
+        let path = "/\(packageName)/latest"
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ProvenanceURLProtocol.self]
         let lookup = MCPProvenanceLookup(session: URLSession(configuration: configuration))
 
         ProvenanceURLProtocol.install(
-            Data(#"{"dist-tags":{"latest":"next"}}"#.utf8),
+            Data(#"{"name":"example","version":"next"}"#.utf8),
             for: path
         )
         defer { ProvenanceURLProtocol.removePayload(for: path) }

@@ -128,8 +128,8 @@ enum CommandRegistry {
             ))
         }
 
-        router.register("doctor.applyFix") { (payload: DoctorFixPayload) -> AuthoringResultDTO in
-            AuthoringResultDTO(try model.applyDoctorFix(
+        router.register("doctor.applyFix") { (payload: DoctorFixPayload) -> UnifyResultDTO in
+            UnifyResultDTO(try model.applyDoctorFix(
                 serverID: payload.serverID,
                 action: try payload.doctorAction(),
                 confirmedVersion: payload.version

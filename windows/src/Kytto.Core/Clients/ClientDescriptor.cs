@@ -265,7 +265,12 @@ public sealed record ClientDescriptor(
     IReadOnlyList<string> ExecutableNames,
     IReadOnlyList<ConfigSource> Sources,
     /// <summary>How this client differs. Read this before touching its parsing.</summary>
-    string SchemaQuirks)
+    string SchemaQuirks,
+    /// <summary>
+    /// How many tools this client hands the model before it drops or refuses the
+    /// rest. Null when there is no documented cap — see <see cref="ClientToolLimit"/>.
+    /// </summary>
+    ClientToolLimit? ToolLimit = null)
 {
     /// <summary>
     /// The file and key holding servers the user can add, edit and remove.

@@ -70,6 +70,26 @@ public sealed record ServerProvenance(
                 "unchecked");
         }
 
+        // Runners go through `PackageLaunch`, the parser MCP Doctor pins with, so
+        // the name shown here and the name a version lookup asks about cannot
+        // disagree (§7.10). What it declines to read falls through to the older,
+        // looser inference below, which only ever names a package and never
+        // drives a write.
+        if (PackageLaunch.Parse(command, args) is { } launch)
+        {
+            return new ServerProvenance(
+                launch.Ecosystem == PackageEcosystem.Npm
+                    ? ProvenanceSourceKinds.Npm
+                    : ProvenanceSourceKinds.Python,
+                launch.Name,
+                null,
+                RequestedRelease(launch),
+                null,
+                null,
+                ProvenanceConfidences.Inferred,
+                "unchecked");
+        }
+
         var executable = ExecutableName(command);
         if (executable is "npx" or "npm" or "pnpm" or "yarn" or "bunx" or "bun")
         {
@@ -163,6 +183,17 @@ public sealed record ServerProvenance(
         null,
         ProvenanceConfidences.Inferred,
         "unchecked");
+
+    /// <summary>The release a launch asks for, when it names one plainly.</summary>
+    /// <remarks>
+    /// <c>pkg@1.2.3</c> and <c>pkg==1.2.3</c> both read as <c>1.2.3</c>; a tag or a
+    /// range is not a version anything is installed at.
+    /// </remarks>
+    private static string? RequestedRelease(PackageLaunch launch)
+    {
+        var requested = launch.RequestedVersion?.TrimStart('=').Trim();
+        return requested is { Length: > 0 } && IsVersion(requested) ? requested : null;
+    }
 
     private static (string? Name, string? Version) FindNpmPackage(
         string executable,

@@ -2,9 +2,10 @@
 //
 // Shaped after a real machine — Claude Desktop carrying its servers as
 // extensions, one server denied in Claude Code, a leftover Cursor config with no
-// Cursor installed, VS Code installed but never configured, and a server switched
-// off in Codex without leaving its config — so working on the UI in a browser
-// means working against states that actually occur.
+// Cursor installed, VS Code carrying more tools than a Copilot chat request
+// accepts, and a server switched off in Codex without leaving its config — so
+// working on the UI in a browser means working against states that actually
+// occur.
 //
 // Stateful on purpose: toggling here really flips a cell, records a pending
 // restart and adds a backup, so write-path UI can be built and seen without the
@@ -13,8 +14,8 @@
 // Loaded only by dev.html. Nothing in the shipped app imports this file.
 
 // `?undetected=vsCode` gives the matrix a real notInstalled column without
-// changing the default fixture, where VS Code exercises the editable noConfig
-// state. Both variants are isolated in this in-memory harness.
+// changing the default fixture, where VS Code is past its tool limit. Both
+// variants are isolated in this in-memory harness.
 const UNDETECTED_CLIENT =
   typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('undetected');
 
@@ -104,11 +105,11 @@ const CLIENTS = [
     id: 'vsCode',
     displayName: 'VS Code',
     iconAsset: 'client-vscode',
-    state: UNDETECTED_CLIENT === 'vsCode' ? 'notInstalled' : 'noConfig',
+    state: UNDETECTED_CLIENT === 'vsCode' ? 'notInstalled' : 'ready',
     configPathDisplay: '~/Library/Application Support/Code/User/mcp.json',
     configFormatDisplay: 'JSON',
     offSwitchSummary: OFF_SWITCH.presence,
-    serverCount: 0,
+    serverCount: 3,
     schemaQuirks:
       'The only client that keys servers under servers rather than mcpServers. The file is JSONC — comments and trailing commas are expected and must survive a write.',
   },
@@ -377,6 +378,18 @@ const world = {
       originKind: 'configFile',
       isBundled: false,
       enabledIn: { claudeDesktop: 'absent', claudeCode: 'enabled', cursor: 'enabled', vsCode: 'absent', codex: 'disabled' },
+      // Never looked up, so MCP Doctor's unpinned-package finding offers
+      // "Check latest release" rather than a pin — the first half of that UX.
+      provenance: {
+        sourceKind: 'npm',
+        packageName: '@modelcontextprotocol/server-github',
+        sourceURL: null,
+        installedVersion: null,
+        latestVersion: null,
+        latestCheckedAt: null,
+        confidence: 'inferred',
+        maintenanceState: 'healthy',
+      },
       // Last checked by a Kytto that measured whole servers and not tools, which
       // is what every existing install looks like until it is checked again.
       // The breakdown has to degrade to the server's own order here, and the
@@ -391,6 +404,18 @@ const world = {
       command: 'npx',
       args: ['-y', 'xcodebuildmcp@latest', 'mcp'],
       commandSummary: 'npx -y xcodebuildmcp@latest mcp',
+      // Checked a moment ago, so the Doctor offers the pin itself rather than
+      // the lookup — the other half of the unpinned-package UX.
+      provenance: {
+        sourceKind: 'npm',
+        packageName: 'xcodebuildmcp',
+        sourceURL: null,
+        installedVersion: null,
+        latestVersion: '1.14.1',
+        latestCheckedAt: Date.now() / 1000 - 120,
+        confidence: 'inferred',
+        maintenanceState: 'unhealthy',
+      },
       originKind: 'configFile',
       isBundled: false,
       enabledIn: { claudeDesktop: 'absent', claudeCode: 'disabled', cursor: 'absent', vsCode: 'absent', codex: 'absent' },
@@ -460,6 +485,44 @@ const world = {
         ...Object.fromEntries(CLAUDE_PROJECTS.map((project) => [project.id, 'enabled'])),
       },
     }),
+    // VS Code past its 128-tool cap, which is how people meet it: one server
+    // that ships a hundred tools, one ordinary one on top, and a remote nobody
+    // has checked — so the count is a floor, and already over.
+    server('azure', {
+      command: 'npx',
+      args: ['-y', '@azure/mcp@latest', 'server', 'start'],
+      commandSummary: 'npx -y @azure/mcp@latest server start',
+      originKind: 'configFile',
+      isBundled: false,
+      enabledIn: { claudeDesktop: 'absent', claudeCode: 'absent', cursor: 'absent', vsCode: 'enabled', codex: 'absent' },
+      health: passingHealth(112, [
+        { name: 'storage_account_list', description: 'List storage accounts.', inputSchemaJSON: null, annotations: { readOnlyHint: true } },
+        { name: 'group_list', description: 'List resource groups.', inputSchemaJSON: null, annotations: { readOnlyHint: true } },
+      ]),
+      tokenWeight: weight(31_800),
+    }),
+    server('playwright', {
+      command: 'npx',
+      args: ['-y', '@playwright/mcp@latest'],
+      commandSummary: 'npx -y @playwright/mcp@latest',
+      originKind: 'configFile',
+      isBundled: false,
+      enabledIn: { claudeDesktop: 'absent', claudeCode: 'absent', cursor: 'absent', vsCode: 'enabled', codex: 'absent' },
+      health: passingHealth(25, [
+        { name: 'browser_navigate', description: 'Navigate to a URL.', inputSchemaJSON: null, annotations: null },
+        { name: 'browser_snapshot', description: 'Capture an accessibility snapshot of the page.', inputSchemaJSON: null, annotations: { readOnlyHint: true } },
+      ]),
+      tokenWeight: weight(6_900),
+    }),
+    server('github-remote', {
+      transport: 'http',
+      command: null,
+      url: 'https://api.githubcopilot.com/mcp/',
+      commandSummary: 'https://api.githubcopilot.com/mcp/',
+      originKind: 'configFile',
+      isBundled: false,
+      enabledIn: { claudeDesktop: 'absent', claudeCode: 'absent', cursor: 'absent', vsCode: 'enabled', codex: 'absent' },
+    }),
   ],
   diagnostics: [
     {
@@ -518,8 +581,96 @@ const recordWrite = (clientID) => {
   });
 };
 
+/// Mirrors `ClientToolLimit` in the native registry: only documented caps.
+const TOOL_LIMITS = {
+  vsCode: {
+    maxTools: 128,
+    pastLimitSummary:
+      'VS Code allows at most 128 tools in one chat request. Past that, agent mode ' +
+      'refuses the request ("Cannot have more than 128 tools per request") unless ' +
+      'the experimental virtual tools setting groups them.',
+  },
+};
+
+/// Mirrors `ToolBudget.Evaluate`, recomputed per snapshot so a toggle moves it.
+const toolBudget = (clientID) => {
+  let toolCount = 0;
+  let maskedToolCount = 0;
+  const unmeasuredServerIDs = [];
+  for (const entry of world.servers) {
+    if (entry.enabledIn[clientID] !== 'enabled') continue;
+    if (entry.health?.status !== 'passed') {
+      unmeasuredServerIDs.push(entry.id);
+      continue;
+    }
+    const offered = entry.health.toolCount ?? entry.health.tools.length;
+    const route = world.gatewayRoutes.find((candidate) => candidate.serverID === entry.id && candidate.clientID === clientID);
+    let visible = offered;
+    if (route?.exposedTools) {
+      const names = new Set(entry.health.tools.map((tool) => tool.name));
+      const exposed = new Set(route.exposedTools);
+      visible = names.size >= offered
+        ? [...exposed].filter((name) => names.has(name)).length
+        : Math.min(exposed.size, offered);
+    }
+    toolCount += visible;
+    maskedToolCount += offered - visible;
+  }
+  const limit = TOOL_LIMITS[clientID] ?? null;
+  const state = !limit
+    ? null
+    : toolCount > limit.maxTools ? 'over' : toolCount >= limit.maxTools * 0.8 ? 'near' : 'ok';
+  return {
+    toolCount,
+    maskedToolCount,
+    unmeasuredServerIDs: unmeasuredServerIDs.sort(),
+    limit: limit?.maxTools ?? null,
+    state,
+    pastLimitSummary: limit?.pastLimitSummary ?? null,
+  };
+};
+
+/// Mirrors MCP Doctor's `unpinned-package`: present while the fixture server
+/// still launches its package without an exact version, gone once it is pinned.
+const packageArgument = (target) => {
+  const packageName = target?.provenance?.packageName;
+  if (!packageName) return null;
+  return target.args.find((arg) => arg === packageName || arg.startsWith(`${packageName}@`)) ?? null;
+};
+
+const unpinnedPackageFinding = (serverID) => {
+  const target = world.servers.find((entry) => entry.id === serverID);
+  const argument = packageArgument(target);
+  if (!argument || /@\d+\.\d+\.\d+$/.test(argument)) return [];
+  const { packageName } = target.provenance;
+  const requested = argument === packageName
+    ? 'names no version'
+    : `asks for the “${argument.slice(packageName.length + 1)}” tag`;
+  return [{
+    code: 'unpinned-package',
+    severity: 'warning',
+    title: 'The package version is not pinned',
+    detail: `“${argument}” ${requested}, so ${target.command} can start a newer npm release of ${packageName} the next time a client launches it — without anyone reviewing it.`,
+    remediation: 'Check the latest release (Kytto asks npm about this package name and nothing else), then preview pinning that exact version in every editable client definition. Pinning fixes this package’s own version; its dependencies still resolve within their declared ranges.',
+    action: 'pinPackageVersion',
+  }];
+};
+
+/// The argument each editable fixture copy would have after a package pin.
+const packagePinChanges = (target) => {
+  const current = packageArgument(target);
+  const { packageName, latestVersion } = target.provenance ?? {};
+  if (!current || !latestVersion) return [];
+  return Object.entries(target.enabledIn)
+    .filter(([clientID, value]) => value !== 'absent' && CLIENTS.some((client) => client.id === clientID && !client.isReadOnly))
+    .map(([clientID]) => ({ clientID, current, replacement: `${packageName}@${latestVersion}` }));
+};
+
+/// What a registry lookup answers in the harness. No request is made.
+const FIXTURE_LATEST = { '@modelcontextprotocol/server-github': '2025.4.8', xcodebuildmcp: '1.14.1' };
+
 const snapshot = () => ({
-  clients: CLIENTS,
+  clients: CLIENTS.map((client) => ({ ...client, toolBudget: toolBudget(client.id) })),
   servers: structuredClone(world.servers),
   diagnostics: structuredClone(world.diagnostics),
   pendingRestarts: { ...world.pendingRestarts },
@@ -528,7 +679,7 @@ const snapshot = () => ({
     {
       serverID: 'github',
       serverName: 'github',
-      findings: [{
+      findings: [...unpinnedPackageFinding('github'), {
         code: 'unpinned-command',
         severity: 'info',
         title: 'The executable depends on the client PATH',
@@ -540,7 +691,7 @@ const snapshot = () => ({
     {
       serverID: 'xcodebuildmcp',
       serverName: 'XcodeBuildMCP',
-      findings: [{
+      findings: [...unpinnedPackageFinding('xcodebuildmcp'), {
         code: 'executable-not-found',
         severity: 'error',
         title: 'The executable or one of its files was not found',
@@ -678,7 +829,7 @@ const HANDLERS = {
   'app.info': () => ({
     version: '1.0',
     build: '1',
-    capabilities: ['config.read', 'config.write', 'backups', 'gateway.stdio', 'gateway.masking', 'updates', 'skills'],
+    capabilities: ['config.read', 'config.write', 'backups', 'gateway.stdio', 'gateway.masking', 'updates', 'skills', 'provenance'],
     platformDisplayName: 'fixtures',
     // Deliberately neither "Keychain" nor "Credential Manager": the harness is
     // not pretending to be either platform, and a screen that reads correctly
@@ -925,20 +1076,69 @@ const HANDLERS = {
     ],
   }),
 
-  'doctor.previewFix': ({ serverID }) => {
+  'doctor.previewFix': ({ serverID, action }) => {
     const target = world.servers.find((entry) => entry.id === serverID);
     if (!target) throw Object.assign(new Error('No such server'), { code: 'unknownServer' });
-    return { serverID, serverName: target.name, currentCommand: target.command, replacementCommand: '/opt/homebrew/bin/npx', clientIDs: Object.entries(target.enabledIn).filter(([, value]) => value !== 'absent').map(([id]) => id) };
+    if (action === 'pinPackageVersion') {
+      const { packageName, latestVersion } = target.provenance ?? {};
+      if (!latestVersion) {
+        throw Object.assign(
+          new Error(`Check the latest release of ${packageName} first. Kytto pins only a version you looked up.`),
+          { code: 'appState' },
+        );
+      }
+      const argumentChanges = packagePinChanges(target);
+      return {
+        serverID, serverName: target.name, currentCommand: target.command, replacementCommand: target.command,
+        clientIDs: argumentChanges.map((change) => change.clientID),
+        action, packageName, version: latestVersion, argumentChanges,
+      };
+    }
+    return {
+      serverID, serverName: target.name, currentCommand: target.command, replacementCommand: '/opt/homebrew/bin/npx',
+      clientIDs: Object.entries(target.enabledIn).filter(([, value]) => value !== 'absent').map(([id]) => id),
+      action: 'pinResolvedCommand', packageName: null, version: null, argumentChanges: [],
+    };
   },
 
-  'doctor.applyFix': ({ serverID }) => {
+  'doctor.applyFix': ({ serverID, action, version }) => {
     const target = world.servers.find((entry) => entry.id === serverID);
     if (!target) throw Object.assign(new Error('No such server'), { code: 'unknownServer' });
+    if (action === 'pinPackageVersion') {
+      if (!version || version !== target.provenance?.latestVersion) {
+        throw Object.assign(
+          new Error('The checked version changed after the preview. Kytto did not write anything; preview the pin again.'),
+          { code: 'appState' },
+        );
+      }
+      const changes = packagePinChanges(target);
+      const [change] = changes;
+      target.args = target.args.map((arg) => (arg === change.current ? change.replacement : arg));
+      target.commandSummary = [target.command, ...target.args].join(' ');
+      const changed = changes.map((entry) => entry.clientID);
+      for (const id of changed) recordWrite(id);
+      return { serverName: target.name, changed, parkedUpdated: [], parkedFailures: [], requiresRestart: changed.length > 0, state: snapshot() };
+    }
     target.command = '/opt/homebrew/bin/npx';
     target.commandSummary = [target.command, ...target.args].join(' ');
     const changed = Object.entries(target.enabledIn).filter(([, value]) => value !== 'absent').map(([id]) => id);
     for (const id of changed) recordWrite(id);
-    return { serverName: target.name, changed, requiresRestart: true, state: snapshot() };
+    return { serverName: target.name, changed, parkedUpdated: [], parkedFailures: [], requiresRestart: true, state: snapshot() };
+  },
+
+  'provenance.checkLatest': ({ serverID }) => {
+    const target = world.servers.find((entry) => entry.id === serverID);
+    if (!target) throw Object.assign(new Error('No such server'), { code: 'unknownServer' });
+    const packageName = target.provenance?.packageName;
+    if (!packageName) {
+      throw Object.assign(new Error(`Kytto could not identify a package name for "${target.name}".`), { code: 'provenanceCheck' });
+    }
+    target.provenance = {
+      ...target.provenance,
+      latestVersion: FIXTURE_LATEST[packageName] ?? '1.0.0',
+      latestCheckedAt: Date.now() / 1000,
+    };
+    return { provenance: structuredClone(target.provenance), state: snapshot() };
   },
 
   'clipboard.writeText': () => ({}),

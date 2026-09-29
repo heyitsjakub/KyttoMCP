@@ -334,7 +334,7 @@ for this package in this session; without that lookup the preview is refused
 (`appState`), so the network is only ever reached by the user's own "Check
 latest" (§7.10).
 
-### `doctor.applyFix` → `AuthoringResultDTO`
+### `doctor.applyFix` → `UnifyResultDTO`
 
 ```json
 { "serverID": "github", "action": "pinPackageVersion", "version": "2025.4.8" }

@@ -16,7 +16,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Kytto.App</RootNamespace>
     <AssemblyName>Kytto</AssemblyName>
-    <Version>1.0.6.3</Version>
+    <Version>1.0.7</Version>
     <!--
       The same drawing as the Mac's AppIcon.appiconset, rebuilt as the one file
       Windows reads it from: frames at 16/20/24/32/40/48/64/128/256 so the tray,

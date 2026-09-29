@@ -749,9 +749,9 @@ async function confirmUnify(serverId, sourceClientId) {
 
 // MARK: - MCP Doctor
 
-async function previewDoctorFix(serverId) {
+async function previewDoctorFix(serverId, fixAction = 'pinResolvedCommand') {
   try {
-    const preview = await invoke('doctor.previewFix', { serverID: serverId });
+    const preview = await invoke('doctor.previewFix', { serverID: serverId, action: fixAction });
     setState({ sheet: { kind: 'doctorFix', serverId, preview, busy: false, error: null } });
   } catch (error) {
     reportFailure(error);
@@ -759,16 +759,45 @@ async function previewDoctorFix(serverId) {
 }
 
 async function applyDoctorFix(serverId) {
+  // The version travels back so the native side writes only the release this
+  // preview showed, not whatever a later lookup found.
+  const { preview } = getState().sheet;
   setState({ sheet: { ...getState().sheet, busy: true, error: null } });
   try {
-    const result = await invoke('doctor.applyFix', { serverID: serverId });
+    const result = await invoke('doctor.applyFix', {
+      serverID: serverId,
+      action: preview.action ?? 'pinResolvedCommand',
+      version: preview.version ?? null,
+    });
     applyState(result.state);
-    const notice = { kind: 'info', message: `Pinned the verified executable for “${result.serverName}”. Affected configurations were backed up first.` };
+    const notice = doctorFixNotice(preview, result);
     setState({ sheet: null, notice });
     await refreshAfterMutation(['Backups', 'Profiles'], notice);
   } catch (error) {
     setState({ sheet: { ...getState().sheet, busy: false, error: error.message } });
   }
+}
+
+/**
+ * What a repair did, in words. A package pin that could not reach a switched-off
+ * copy Kytto is holding is a warning: switching that copy on would bring the
+ * unpinned version back.
+ */
+function doctorFixNotice(preview, result) {
+  if (preview.action !== 'pinPackageVersion') {
+    return { kind: 'info', message: `Pinned the verified executable for “${result.serverName}”. Affected configurations were backed up first.` };
+  }
+  const parkedFailures = result.parkedFailures ?? [];
+  if (parkedFailures.length > 0) {
+    const names = parkedFailures
+      .map((id) => getState().clients.find((client) => client.id === id)?.displayName ?? id)
+      .join(', ');
+    return {
+      kind: 'warning',
+      message: `Pinned ${preview.packageName} to ${preview.version} for “${result.serverName}”, but Kytto could not update the switched-off copy it holds for ${names}. Switching it on there would bring back the unpinned version.`,
+    };
+  }
+  return { kind: 'info', message: `Pinned ${preview.packageName} to ${preview.version} for “${result.serverName}”. Affected configurations were backed up first.` };
 }
 
 /** Turns a write failure into something the user can act on. */
@@ -1409,7 +1438,7 @@ root.addEventListener('click', async (event) => {
       await confirmUnify(target.dataset.serverId, target.dataset.clientId);
       break;
     case 'doctor-preview-fix':
-      await previewDoctorFix(target.dataset.serverId);
+      await previewDoctorFix(target.dataset.serverId, target.dataset.fixAction);
       break;
     case 'doctor-apply-fix':
       await applyDoctorFix(target.dataset.serverId);

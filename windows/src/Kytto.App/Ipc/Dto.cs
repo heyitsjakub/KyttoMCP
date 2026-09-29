@@ -65,7 +65,22 @@ internal sealed record ClientDto(
     string SchemaQuirks,
     bool IsReadOnly,
     string ConfigurationScope,
-    string? ScopeLabel);
+    string? ScopeLabel,
+    /// How many tools this client hands its model, against its cap if it has one.
+    ClientToolBudgetDto ToolBudget);
+
+/// <summary>
+/// A count and a verdict. Server ids name what was not counted; no tool list
+/// crosses here — the server's own <c>health.tools</c> already carries those.
+/// </summary>
+internal sealed record ClientToolBudgetDto(
+    int ToolCount,
+    int MaskedToolCount,
+    IReadOnlyList<string> UnmeasuredServerIDs,
+    int? Limit,
+    /// <c>ok</c> | <c>near</c> | <c>over</c>, or null when the client has no known cap.
+    string? State,
+    string? PastLimitSummary);
 
 internal sealed record EnvEntryDto(
     string Key,
@@ -424,12 +439,25 @@ internal sealed record ContractAlertDto(
     double ChangedAt,
     IReadOnlyList<ContractChangeDto> Changes);
 
+/// <param name="Action">Which repair this previews: <c>pinResolvedCommand</c> or <c>pinPackageVersion</c>.</param>
+/// <param name="PackageName"><c>pinPackageVersion</c> only.</param>
+/// <param name="Version"><c>pinPackageVersion</c> only: the release the web layer echoes back to apply.</param>
+/// <param name="ArgumentChanges"><c>pinPackageVersion</c> only; empty otherwise.</param>
 internal sealed record DoctorFixPreviewDto(
     string ServerID,
     string ServerName,
     string CurrentCommand,
     string ReplacementCommand,
-    IReadOnlyList<string> ClientIDs);
+    IReadOnlyList<string> ClientIDs,
+    string Action,
+    string? PackageName,
+    string? Version,
+    IReadOnlyList<DoctorArgumentChangeDto> ArgumentChanges);
+
+internal sealed record DoctorArgumentChangeDto(
+    string ClientID,
+    string Current,
+    string Replacement);
 
 internal sealed record UnifyPreviewDto(
     string ServerID,

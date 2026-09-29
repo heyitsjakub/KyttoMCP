@@ -989,7 +989,7 @@ struct DoctorArgumentChangeDTO: Encodable {
     let current: String
     let replacement: String
 
-    init(_ change: DoctorArgumentChange) {
+    nonisolated init(_ change: DoctorArgumentChange) {
         clientID = change.clientID.rawValue
         current = change.current
         replacement = change.replacement

@@ -14,6 +14,18 @@ public enum TomlEditErrorKind
     /// because doing it safely means re-serialising a line it did not write.
     /// </summary>
     InlineDefinition,
+
+    /// <summary>No value where one was expected, e.g. a server without <c>args</c>.</summary>
+    ValueNotFound,
+
+    /// <summary>The same key is written twice, so which one a client reads is a guess.</summary>
+    AmbiguousValue,
+
+    /// <summary>
+    /// The value is not what the caller last read there, so the edit it was
+    /// planned against no longer applies.
+    /// </summary>
+    ValueMismatch,
 }
 
 public sealed class TomlEditException(TomlEditErrorKind kind, string subject)
@@ -26,6 +38,11 @@ public sealed class TomlEditException(TomlEditErrorKind kind, string subject)
     {
         TomlEditErrorKind.TableNotFound => $"No table at {subject}.",
         TomlEditErrorKind.NotATable => $"{subject} is not a table.",
+        TomlEditErrorKind.ValueNotFound => $"No value at {subject}.",
+        TomlEditErrorKind.AmbiguousValue =>
+            $"{subject} is written more than once. Kytto will not guess which one counts.",
+        TomlEditErrorKind.ValueMismatch =>
+            $"{subject} no longer says what Kytto read there, so nothing was changed.",
         _ => $"\"{subject}\" is written as an inline table. Kytto will not rewrite that line.",
     };
 }
@@ -155,6 +172,54 @@ public static class TomlEditor
         return self.Replacing(
             new TomlSpan(anchor, anchor),
             $"{self.Newline()}{TomlText.Key(flagKey)} = {TomlText.Bool(value)}");
+    }
+
+    /// <summary>
+    /// Replaces one string in a server's <c>args</c> array without reserialising
+    /// the array, its table or an inline definition. The splice MCP Doctor's
+    /// package pin uses (§7.10).
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="SettingServer"/>, an inline <c>name = { … }</c> definition
+    /// is fine here: only the one string literal inside it changes, which is a
+    /// splice, not a rewrite of a line Kytto did not write.
+    /// </remarks>
+    /// <param name="position">Counts string elements only, as <c>ServerFields</c> does.</param>
+    /// <param name="expecting">What that element must still say.</param>
+    public static string SettingServerArgument(
+        this TomlDocument self,
+        int position,
+        string expecting,
+        string value,
+        string name,
+        string key)
+    {
+        var server = $"{key}.{name}";
+        IReadOnlyList<TomlPair> fields;
+        if (self.Table(key, name) is { } table)
+        {
+            fields = table.Pairs;
+        }
+        else
+        {
+            var inline = self.Table(key)?.Pairs.Where(pair => pair.Name == name).ToArray() ?? [];
+            if (inline.Length > 1) throw new TomlEditException(TomlEditErrorKind.AmbiguousValue, server);
+            fields = inline.FirstOrDefault()?.Value.InlinePairs
+                ?? throw new TomlEditException(TomlEditErrorKind.ValueNotFound, server);
+        }
+
+        var matches = fields.Where(pair => pair.Name == "args").ToArray();
+        if (matches.Length > 1) throw new TomlEditException(TomlEditErrorKind.AmbiguousValue, $"{server}.args");
+        var arguments = matches.FirstOrDefault()?.Value.Elements
+            ?? throw new TomlEditException(TomlEditErrorKind.ValueNotFound, $"{server}.args");
+
+        var strings = arguments.Where(element => element.StringValue is not null).ToArray();
+        if (position < 0 || position >= strings.Length ||
+            !string.Equals(strings[position].StringValue, expecting, StringComparison.Ordinal))
+        {
+            throw new TomlEditException(TomlEditErrorKind.ValueMismatch, $"{server}.args");
+        }
+        return self.Replacing(strings[position].Span, TomlText.String(value));
     }
 
     // MARK: - Line geometry

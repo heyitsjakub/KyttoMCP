@@ -33,6 +33,11 @@ public sealed record AuthoringResult(
     public bool RequiresRestart => Changed.Count > 0;
 }
 
+/// <summary>One argument to change in one client's copy of a server.</summary>
+/// <param name="Index">Position in that copy's <c>args</c>, counting strings only.</param>
+/// <param name="Expected">What the argument says now; the edit is refused if it says otherwise.</param>
+public sealed record ArgumentEdit(int Index, string Expected, string Replacement);
+
 public sealed class AuthoringException(string message) : Exception(message)
 {
     public static AuthoringException Invalid(IReadOnlyList<ServerDraft.Problem> problems) =>
@@ -186,6 +191,113 @@ public sealed class ServerAuthoring(
                 parkedUpdated.Add(clientId);
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                parkedFailures.Add(clientId);
+            }
+        }
+
+        return result with { ParkedUpdated = parkedUpdated, ParkedFailures = parkedFailures };
+    }
+
+    // MARK: - One argument
+
+    /// <summary>Replaces a single <c>args</c> element in each listed client's copy, and nothing else.</summary>
+    /// <remarks>
+    /// <para>
+    /// The narrow sibling of <see cref="Update"/>: that re-renders the whole
+    /// definition, which is right for an edit the user typed and wrong for a repair
+    /// that changes one token (§7.10). Here every file sees one string literal
+    /// spliced, inside the same transaction as any other authoring write — digest
+    /// check, backup, atomic write, rollback (§6). Every target is prepared before
+    /// anything is written, so an argument that no longer says what was previewed
+    /// fails the whole edit with nothing written.
+    /// </para>
+    /// <para>
+    /// A switched-off copy Kytto is holding is patched too, where it lives, or
+    /// switching it back on would restore the old argument — and writing it into
+    /// the file instead would switch it on.
+    /// </para>
+    /// </remarks>
+    public AuthoringResult ReplaceArgument(
+        Server server,
+        IReadOnlyDictionary<ClientId, ArgumentEdit> edits)
+    {
+        if (edits.Count == 0) throw AuthoringException.NotFound(server.Name);
+        foreach (var clientId in edits.Keys)
+        {
+            var copy = server.DefinitionsByClient.GetValueOrDefault(clientId);
+            if (copy?.IsBundled == true) throw AuthoringException.NotEditable(server.Name);
+            if (copy?.IsReadOnly == true) throw AuthoringException.ReadOnlySource(server.Name);
+        }
+
+        var parked = new List<ClientId>();
+        var inFile = new List<ClientId>();
+        foreach (var clientId in edits.Keys.OrderBy(client => client.Raw(), StringComparer.Ordinal))
+        {
+            if (parkStore.Parked(clientId, server.Name) is not null) parked.Add(clientId);
+            else inFile.Add(clientId);
+        }
+
+        var serverWrites = new List<ClientWrite>();
+        foreach (var clientId in inFile)
+        {
+            var edit = edits[clientId];
+            var source = _descriptors
+                .FirstOrDefault(descriptor => descriptor.Id == clientId)?.EditableServerMap
+                ?? throw AuthoringException.NoSourceForClient(clientId);
+
+            var path = _resolver.ResolveServerMap(source.File, clientId);
+            var pathDisplay = _resolver.DisplayServerMap(source.File, clientId);
+            var expecting = ledger.DigestFor(path);
+
+            var prepared = source.Format == ConfigFormat.Json
+                ? writer.Prepare<JsonDocument>(path, clientId, pathDisplay, expecting,
+                    document => document.ReplacingString(
+                        [source.ServersKey, NameOf(server, document, source.ServersKey), "args"],
+                        edit.Index,
+                        edit.Expected,
+                        edit.Replacement))
+                : writer.Prepare<TomlDocument>(path, clientId, pathDisplay, expecting,
+                    document => document.SettingServerArgument(
+                        edit.Index,
+                        edit.Expected,
+                        edit.Replacement,
+                        NameOf(server, document, source.ServersKey),
+                        source.ServersKey));
+            serverWrites.Add(new ClientWrite(clientId, prepared));
+        }
+
+        IReadOnlyList<WriteReceipt> receipts = serverWrites.Count == 0
+            ? []
+            : writer.Commit(serverWrites.Select(item => item.Write).ToArray());
+        RecordDigests(serverWrites, receipts);
+        var result = Result(server.Name, serverWrites, receipts);
+
+        // Same stance as `Unify`: the config writes have landed, so a held copy
+        // that cannot be patched is reported rather than thrown.
+        var parkedUpdated = new List<ClientId>();
+        var parkedFailures = new List<ClientId>();
+        foreach (var clientId in parked)
+        {
+            var edit = edits[clientId];
+            var entry = parkStore.Parked(clientId, server.Name);
+            var format = _descriptors
+                .FirstOrDefault(descriptor => descriptor.Id == clientId)?.EditableServerMap?.Format;
+            if (entry is null || format != ConfigFormat.Json)
+            {
+                parkedFailures.Add(clientId);
+                continue;
+            }
+
+            try
+            {
+                var text = JsonDocument.Parse(entry.SourceText).ReplacingString(
+                    ["args"], edit.Index, edit.Expected, edit.Replacement);
+                parkStore.Park(clientId, entry.ServerName, text);
+                parkedUpdated.Add(clientId);
+            }
+            catch (Exception error) when (
+                error is JsonEditException or JsonParseException or IOException or UnauthorizedAccessException)
             {
                 parkedFailures.Add(clientId);
             }
@@ -450,6 +562,11 @@ public sealed class ServerAuthoring(
     /// </remarks>
     private static string NameOf(Server server, TomlDocument document, string key) =>
         document.ServerNames(key).FirstOrDefault(name => Server.Identity(name) == server.Id)
+        ?? server.Name;
+
+    /// <summary>The same, for a JSON server map.</summary>
+    private static string NameOf(Server server, JsonDocument document, string key) =>
+        document.ValueAt(key)?.Keys.FirstOrDefault(name => Server.Identity(name) == server.Id)
         ?? server.Name;
 
     private static IReadOnlyList<ClientId> ClientsHolding(Server server) =>

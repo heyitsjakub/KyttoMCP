@@ -6,7 +6,14 @@ namespace Kytto.Core.Doctor;
 
 public enum DoctorSeverity { Info, Warning, Error }
 
-public enum DoctorAction { RunHealthCheck, PinResolvedCommand }
+public enum DoctorAction
+{
+    RunHealthCheck,
+    PinResolvedCommand,
+
+    /// <summary>Pin a runner-launched package to an exact release the user looked up.</summary>
+    PinPackageVersion,
+}
 
 public sealed record DoctorFinding(
     string Code,
@@ -23,8 +30,10 @@ public sealed record DoctorServerReport(
 
 /// <summary>Turns config and health evidence into concrete next steps (§7.10).</summary>
 /// <remarks>
-/// Stderr is classified only into advice. The sole automatic repair is an
-/// executable path already established by a successful health check.
+/// Stderr is classified only into advice. The automatic repairs pin an executable
+/// path already established by a successful health check, or a package version
+/// the user looked up; either is previewed and written through the ordinary
+/// backup/atomic-write transaction.
 /// </remarks>
 public static class McpDoctor
 {
@@ -143,6 +152,11 @@ public static class McpDoctor
                 DoctorAction.RunHealthCheck));
         }
 
+        if (PackagePin.UnpinnedLaunch(server) is { } launch)
+        {
+            findings.Add(UnpinnedPackage(launch, PackagePin.CanPin(server)));
+        }
+
         if (server.Health is not { } health)
         {
             findings.Add(new DoctorFinding(
@@ -195,6 +209,55 @@ public static class McpDoctor
         }
 
         return new DoctorServerReport(server.Id, server.Name, findings);
+    }
+
+    /// <summary>A package fetched by name with no exact version (§7.10).</summary>
+    /// <remarks>
+    /// <para>
+    /// A warning rather than information: every client start can run a release
+    /// nobody chose, with the server's environment — tokens included — which is the
+    /// supply-chain path a compromised package takes. Not an error, because nothing
+    /// is broken today and the server may be exactly what it claims.
+    /// </para>
+    /// <para>
+    /// Read from the configuration alone, so it needs no health check and makes no
+    /// request. The version to pin to is not in here: it comes from a lookup the
+    /// user asks for, never from the server's self-reported <c>serverInfo</c>,
+    /// which names whatever the author typed and is often not the package's
+    /// release number at all.
+    /// </para>
+    /// </remarks>
+    private static DoctorFinding UnpinnedPackage(PackageLaunch launch, bool canPin)
+    {
+        var registry = launch.Ecosystem == PackageEcosystem.Npm ? "npm" : "PyPI";
+        var request = launch.RequestedVersion switch
+        {
+            null or "" => "names no version",
+            { Length: > 0 } tag when char.IsLetter(tag[0]) => $"asks for the “{tag}” tag",
+            var requested => $"asks for “{requested}”, which matches more than one release",
+        };
+        var example = !launch.CanPinInPlace
+            ? $"--spec {launch.Name}==VERSION"
+            : launch.Spelling == PackageSpelling.Requirement
+                ? $"{launch.Name}==VERSION"
+                : $"{launch.Name}@VERSION";
+        return new DoctorFinding(
+            "unpinned-package",
+            DoctorSeverity.Warning,
+            "The package version is not pinned",
+            $"“{launch.Argument}” {request}, so {launch.Runner} can start a newer {registry} " +
+            $"release of {launch.Name} the next time a client launches it — without anyone " +
+            "reviewing it.",
+            canPin
+                ? $"Check the latest release (Kytto asks {registry} about this package name and " +
+                  "nothing else), then preview pinning that exact version in every editable " +
+                  "client definition. Pinning fixes this package's own version; its dependencies " +
+                  "still resolve within their declared ranges."
+                : $"Pin it by hand to an exact release, for example “{example}”. " +
+                  (launch.CanPinInPlace
+                      ? "Kytto has no editable copy of this definition to change."
+                      : "Kytto will not add arguments this command does not already have."),
+            canPin ? DoctorAction.PinPackageVersion : null);
     }
 
     /// <summary>A tool-contract risk, as a Doctor finding.</summary>

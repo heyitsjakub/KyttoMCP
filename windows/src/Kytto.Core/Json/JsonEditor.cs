@@ -7,6 +7,12 @@ public enum JsonEditErrorKind
     PathNotFound,
     NotAnObject,
     NotAnArray,
+
+    /// <summary>
+    /// The value is not what the caller last read there, so the edit it was
+    /// planned against no longer applies.
+    /// </summary>
+    ValueMismatch,
 }
 
 public sealed class JsonEditException(JsonEditErrorKind kind, IReadOnlyList<string> path)
@@ -22,6 +28,8 @@ public sealed class JsonEditException(JsonEditErrorKind kind, IReadOnlyList<stri
         {
             JsonEditErrorKind.PathNotFound => $"No value at {where}.",
             JsonEditErrorKind.NotAnObject => $"{where} is not an object.",
+            JsonEditErrorKind.ValueMismatch =>
+                $"{where} no longer says what Kytto read there, so nothing was changed.",
             _ => $"{where} is not an array.",
         };
     }
@@ -194,6 +202,39 @@ public static class JsonEditor
             text = document.Replacing(span, "");
         }
         return text;
+    }
+
+    /// <summary>
+    /// Replaces one string in the array at <paramref name="path"/> and nothing
+    /// else — not the array, not its separators, not the elements either side (§6.3).
+    /// </summary>
+    /// <param name="position">
+    /// Counts string elements only, the way <c>ServerFields</c> reads <c>args</c>,
+    /// so an index taken from the model lands on the same element.
+    /// </param>
+    /// <param name="expecting">
+    /// What that element must still say. A file that moved since the edit was
+    /// planned is refused rather than patched somewhere else.
+    /// </param>
+    public static string ReplacingString(
+        this JsonDocument self,
+        IReadOnlyList<string> path,
+        int position,
+        string expecting,
+        string value)
+    {
+        var container = self.Root.ValueAt([.. path])
+            ?? throw new JsonEditException(JsonEditErrorKind.PathNotFound, path);
+        var elements = container.Elements
+            ?? throw new JsonEditException(JsonEditErrorKind.NotAnArray, path);
+
+        var strings = elements.Where(element => element.StringValue is not null).ToArray();
+        if (position < 0 || position >= strings.Length ||
+            !string.Equals(strings[position].StringValue, expecting, StringComparison.Ordinal))
+        {
+            throw new JsonEditException(JsonEditErrorKind.ValueMismatch, path);
+        }
+        return self.Replacing(strings[position].Span, JsonText.String(value));
     }
 
     // MARK: - Shared removal geometry

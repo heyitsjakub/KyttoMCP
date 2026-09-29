@@ -390,6 +390,18 @@ internal sealed class AppModel : IDisposable
 
     internal IReadOnlyList<GatewayRoute> GatewayRoutes() => _gatewayRoutes.All();
 
+    /// <summary>One client's tool count against its cap.</summary>
+    /// <remarks>
+    /// The caller reads the route store once and passes it in, rather than once
+    /// per client. Masking is subtracted here because a hidden tool never reaches
+    /// the client's model (§7.11).
+    /// </remarks>
+    internal static ClientToolBudget ToolBudgetFor(
+        DiscoveredClient client,
+        DiscoveryResult result,
+        IReadOnlyList<GatewayRoute> routes) =>
+        ToolBudget.Evaluate(client.Id, client.ToolLimit, result.Servers, routes);
+
     internal GatewayActivitySummary Activity(int limit = 500) =>
         _gatewayActivity.Summary(limit);
 
@@ -427,10 +439,13 @@ internal sealed class AppModel : IDisposable
         Reload();
     }
 
-    internal DoctorFixPreview DoctorFixPreview(string serverId)
+    internal DoctorFixPreview DoctorFixPreview(
+        string serverId,
+        DoctorAction action = DoctorAction.PinResolvedCommand)
     {
         RequireDirect(serverId);
         var server = ServerById(serverId);
+        if (action == DoctorAction.PinPackageVersion) return PackagePinPreview(server);
         var health = server.Health;
         var currentCommand = server.Command;
         var replacement = health?.ResolvedCommand;
@@ -461,12 +476,95 @@ internal sealed class AppModel : IDisposable
             clients);
     }
 
-    internal AuthoringResult ApplyDoctorFix(string serverId)
+    internal AuthoringResult ApplyDoctorFix(
+        string serverId,
+        DoctorAction action = DoctorAction.PinResolvedCommand,
+        string? confirmedVersion = null)
     {
+        if (action == DoctorAction.PinPackageVersion) return ApplyPackagePin(serverId, confirmedVersion);
         var preview = DoctorFixPreview(serverId);
         var server = ServerById(serverId);
         var draft = ServerDraft.Editing(server) with { Command = preview.ReplacementCommand };
         return UpdateServer(draft, serverId);
+    }
+
+    /// <summary>The package pin, before it is written (§7.10).</summary>
+    /// <remarks>
+    /// The version comes from one place only: the registry lookup the user asked
+    /// for with "Check latest release" (<see cref="CheckLatestProvenanceAsync"/>),
+    /// for this very package and within <see cref="PackagePin.LookupFreshness"/>.
+    /// Nothing here makes a request, so a preview never reaches the network on its
+    /// own. <c>serverInfo.version</c> from a health check is not a source: it is
+    /// whatever the server says about itself, frequently not its package's release
+    /// number, and pinning a version the registry does not have would break the
+    /// server on its next start.
+    /// </remarks>
+    private DoctorFixPreview PackagePinPreview(Server server)
+    {
+        if (PackagePin.UnpinnedLaunch(server) is not { } launch || !PackagePin.CanPin(server))
+        {
+            throw new PackagePinStateException(
+                $"“{server.Name}” has no unpinned package that Kytto can pin in place.");
+        }
+
+        var provenance = server.Provenance;
+        var kind = launch.Ecosystem == PackageEcosystem.Npm
+            ? ProvenanceSourceKinds.Npm
+            : ProvenanceSourceKinds.Python;
+        if (provenance.SourceKind != kind ||
+            !string.Equals(provenance.PackageName, launch.Name, StringComparison.Ordinal) ||
+            provenance.LatestVersion is not { } version ||
+            provenance.LatestCheckedAt is not { } checkedAt ||
+            Timestamp.Now - checkedAt >= PackagePin.LookupFreshness)
+        {
+            throw new PackagePinStateException(
+                $"Check the latest release of {launch.Name} first. Kytto pins only a version you looked up.");
+        }
+
+        var changes = PackagePin.Edits(server, version)
+            .OrderBy(pair => pair.Key.Raw(), StringComparer.Ordinal)
+            .Select(pair => new DoctorArgumentChange(pair.Key, pair.Value.Expected, pair.Value.Replacement))
+            .ToArray();
+        if (changes.Length == 0)
+        {
+            throw new PackagePinStateException(
+                $"{version} is not a single exact release of {launch.Name}, so Kytto did not write it.");
+        }
+
+        var command = server.Command ?? "";
+        return new DoctorFixPreview(
+            server.Id,
+            server.Name,
+            command,
+            command,
+            changes.Select(change => change.ClientID).ToArray())
+        {
+            Action = DoctorAction.PinPackageVersion,
+            PackageName = launch.Name,
+            Version = version,
+            ArgumentChanges = changes,
+        };
+    }
+
+    /// <summary>Writes the pin the user saw.</summary>
+    /// <remarks>
+    /// A lookup that has moved on since the preview is a different decision, so a
+    /// version that does not match what the preview showed writes nothing.
+    /// </remarks>
+    private AuthoringResult ApplyPackagePin(string serverId, string? confirmedVersion)
+    {
+        RequireDirect(serverId);
+        var preview = DoctorFixPreview(serverId, DoctorAction.PinPackageVersion);
+        if (preview.Version is not { } version ||
+            !string.Equals(confirmedVersion, version, StringComparison.Ordinal))
+        {
+            throw new PackagePinStateException(
+                $"The checked version of {preview.PackageName ?? preview.ServerName} changed after the " +
+                "preview. Kytto did not write anything; preview the pin again.");
+        }
+
+        var server = ServerById(serverId);
+        return Record(Authoring().ReplaceArgument(server, PackagePin.Edits(server, version)));
     }
 
     internal GatewayMigrationPreview GatewayPreview(string serverId, ClientId clientId) =>
@@ -1142,4 +1240,29 @@ internal sealed record DoctorFixPreview(
     string ServerName,
     string CurrentCommand,
     string ReplacementCommand,
-    IReadOnlyList<ClientId> ClientIDs);
+    IReadOnlyList<ClientId> ClientIDs)
+{
+    public DoctorAction Action { get; init; } = DoctorAction.PinResolvedCommand;
+
+    /// <summary>Package pins only: what is pinned.</summary>
+    public string? PackageName { get; init; }
+
+    /// <summary>Package pins only: the release it is pinned to.</summary>
+    public string? Version { get; init; }
+
+    /// <summary>
+    /// Package pins only: the one argument each client copy has now and will have
+    /// after. Copies can differ, and the preview is exactly what will be written.
+    /// </summary>
+    public IReadOnlyList<DoctorArgumentChange> ArgumentChanges { get; init; } = [];
+}
+
+internal sealed record DoctorArgumentChange(ClientId ClientID, string Current, string Replacement);
+
+/// <summary>A package pin that cannot be previewed or applied as things stand (§7.10).</summary>
+/// <remarks>
+/// Reported as <c>appState</c>: nothing is wrong with the request, the machine is
+/// just not in a state where it can be honoured — most often because nobody has
+/// looked the version up yet.
+/// </remarks>
+internal sealed class PackagePinStateException(string message) : InvalidOperationException(message);

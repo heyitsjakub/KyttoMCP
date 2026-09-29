@@ -29,7 +29,9 @@ public sealed record DiscoveredClient(
     bool IsReadOnly,
     ConfigurationScope ConfigurationScope,
     string ScopeLabel,
-    string? ShortName = null);
+    string? ShortName = null,
+    /// <summary>The client's tool cap, carried from its descriptor. Null when it has none.</summary>
+    ClientToolLimit? ToolLimit = null);
 
 public sealed record DiscoveryResult(
     IReadOnlyList<DiscoveredClient> Clients,
@@ -291,7 +293,8 @@ public sealed class Discovery
                 SchemaQuirks: descriptor.SchemaQuirks,
                 IsReadOnly: false,
                 ConfigurationScope: ConfigurationScope.Global,
-                ScopeLabel: ""));
+                ScopeLabel: "",
+                ToolLimit: descriptor.ToolLimit));
             clients.AddRange(projectClients);
         }
 

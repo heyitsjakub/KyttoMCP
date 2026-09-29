@@ -189,6 +189,21 @@ followed by the user's dynamic read-only custom sources. A custom source id is
 | `isReadOnly` | `true` for custom sources; mutation destinations filter on this capability rather than platform |
 | `configurationScope` | `global` \| `profile` \| `workspace` |
 | `scopeLabel` | Optional display label for a profile or workspace; otherwise null |
+| `toolBudget` | `{ toolCount, maskedToolCount, unmeasuredServerIDs, limit, state, pastLimitSummary }` — see below |
+
+`toolBudget` counts the tools this client hands its model: every server
+`enabled` in it with a passing health check contributes its measured
+`toolCount`, less whatever its Gateway route's allow list hides
+(`maskedToolCount`, already subtracted). Servers switched on with nothing to
+count — never checked, failed, remote, waiting for sign-in — are named in
+`unmeasuredServerIDs`, and while that list is non-empty `toolCount` is a floor
+the UI prefixes with `≥`. `limit` is the client's documented tool cap from the
+registry, or null when it has none; `state` is `ok` \| `near` (≥ 80 % of the
+cap) \| `over`, or null with no cap. `pastLimitSummary` is the registry's
+sentence for what the client does past the cap. Computed natively
+(`ToolBudget.Evaluate`); the UI does not decide what counts. Custom sources and
+Claude Code project scopes carry a count with no cap. The same object is on
+every client in `state.get`.
 
 Claude Code project entries from the same `.claude.json` are represented as
 opaque `custom.<uuid>` read-only workspace clients. Their `scopeLabel` is the
@@ -281,10 +296,20 @@ notice visible again, and an exact inverse removes the pending count.
 definitions and environment values do not cross IPC.
 
 `doctorReports` contains actionable configuration/health findings and opaque
-action names. `contractAlerts` contains tool names and model-facing contract
+action names (`runHealthCheck`, `pinResolvedCommand`, `pinPackageVersion`).
+`contractAlerts` contains tool names and model-facing contract
 change summaries. Neither contains environment values or tool-call payloads.
 An authorization wait adds the info finding `needs-authorization` with action
 `runHealthCheck`; it is not classified as a health failure.
+
+An `unpinned-package` warning — a runner such as `npx`, `uvx` or `pipx run`
+fetching a package with no exact version, however the command is spelled
+(`npx.cmd`, a full path, `cmd /c npx …`) — carries no version. Its action is
+`pinPackageVersion` only when some editable copy can take a version in the
+argument it already has; otherwise the finding is advice. The UI offers "Check
+latest release" (`provenance.checkLatest`) until the server's
+`provenance.latestVersion` is set by a lookup at most 24 hours old
+(`provenance.latestCheckedAt`), then "Pin to …" through `doctor.previewFix`.
 
 `drift` is present for a server only when its clients disagree about what it
 runs. One row in the matrix can be several definitions on disk, and merging them
@@ -306,21 +331,64 @@ the confusion worth surfacing, and they are never something to copy out of (§4)
 ### `doctor.previewFix` → `DoctorFixPreviewDTO`
 
 ```json
-{ "serverID": "github" }
+{ "serverID": "github", "action": "pinPackageVersion" }
 ```
 
-Returns the configured command, the absolute path verified by the last passing
-health check and affected client ids. It does not write.
-
-### `doctor.applyFix` → `AuthoringResultDTO`
+`action` names the finding's repair: `pinResolvedCommand` (the default when it
+is absent) or `pinPackageVersion`; anything else is `badArgument`. It does not
+write, and it makes no request.
 
 ```json
-{ "serverID": "github" }
+{
+  "serverID": "github",
+  "serverName": "github",
+  "currentCommand": "npx",
+  "replacementCommand": "npx",
+  "clientIDs": ["codex", "cursor"],
+  "action": "pinPackageVersion",
+  "packageName": "@modelcontextprotocol/server-github",
+  "version": "2025.4.8",
+  "argumentChanges": [
+    { "clientID": "codex", "current": "@modelcontextprotocol/server-github@latest",
+      "replacement": "@modelcontextprotocol/server-github@2025.4.8" },
+    { "clientID": "cursor", "current": "@modelcontextprotocol/server-github",
+      "replacement": "@modelcontextprotocol/server-github@2025.4.8" }
+  ]
+}
 ```
 
-Applies only the validatable executable-path repair through the ordinary
-multi-client authoring transaction. Every affected configuration is backed up
-and written atomically; a stale or missing passing check rejects it.
+For `pinResolvedCommand`: the configured command, the absolute path verified by
+the last passing health check and affected client ids; `packageName` and
+`version` are null and `argumentChanges` is empty.
+
+For `pinPackageVersion`: `packageName`, the `version` it would pin, and one
+`argumentChanges` entry per client copy whose argument changes — copies can
+differ, and the preview is exactly what will be written. `currentCommand` and
+`replacementCommand` are both the unchanged executable. The version is the one
+`provenance.checkLatest` returned for this package within the last 24 hours;
+without that lookup the preview is refused (`appState`), so the network is only
+ever reached by the user's own "Check latest release" (§7.10). A server's
+self-reported `serverInfo.version` is never used.
+
+### `doctor.applyFix` → `UnifyResultDTO`
+
+```json
+{ "serverID": "github", "action": "pinPackageVersion", "version": "2025.4.8" }
+```
+
+Applies only a validatable repair through the ordinary multi-client authoring
+transaction. Every affected configuration is backed up and written atomically,
+and every target is prepared before any is written.
+`pinResolvedCommand` (the default) is rejected by a stale or missing passing
+check. `pinPackageVersion` requires `version`, and writes only if it still equals
+the version the preview showed (`appState` otherwise); it splices that one
+`args` string in each JSON or TOML copy — an inline Codex definition included —
+and nothing else in the file. A switched-off copy Kytto is holding is patched
+where it is held, so it stays off (`parkedUpdated`); one that could not be is
+reported in `parkedFailures` rather than failing a write that already landed.
+
+The response is the `servers.unify` shape: `AuthoringResultDTO` plus
+`parkedUpdated` and `parkedFailures`, both empty for `pinResolvedCommand`.
 
 ### `contract.acknowledge` → `StateDTO`
 
