@@ -89,9 +89,9 @@ Download Beta 1.0.7 from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or 
 
 Universal build — runs on both Apple Silicon and Intel Macs. Open the DMG and drag KyttoMCP into Applications.
 
-The beta is **not yet signed with a paid Apple Developer certificate**, so Gatekeeper will show an "unidentified developer" warning. Control-click the app and choose **Open**, then **Open** again. If macOS still blocks it, go to System Settings → Privacy & Security → **Open Anyway**.
+The beta is **not signed with a paid Apple Developer certificate**, so Gatekeeper will show an "unidentified developer" warning. Control-click the app and choose **Open**, then **Open** again. If macOS still blocks it, go to System Settings → Privacy & Security → **Open Anyway**.
 
-> Signing and notarization are planned. Until then, only open a build you downloaded from the official site or this repository's Releases page and verify the checksum below — or [build it yourself from source](#source-code), which needs no warning bypass at all.
+> Kytto is distributed unsigned: there is no paid Apple Developer or Windows signing certificate, and none is planned for now ([#4](https://github.com/heyitsjakub/KyttoMCP/issues/4)). The code is open instead. Only open a build you downloaded from the official site or this repository's Releases page and verify the checksum below — or [build it yourself from source](#build-the-macos-app-without-a-developer-account), which needs no warning bypass at all.
 
 ### Windows
 
@@ -149,6 +149,26 @@ cd KyttoMCP/windows && dotnet test
 
 The two web layers share their origin but have diverged; bringing them back to
 one shared `web/` is welcome work.
+
+### Build the macOS app without a developer account
+
+The Xcode project names the maintainer's signing team, so a plain `xcodebuild`
+asks for a certificate you do not have. The release script builds the same
+universal app ad-hoc signed, with no account and no team, and refuses to produce
+a DMG unless the result passes its own checks (universal binary, valid ad-hoc
+signature, no `get-task-allow` entitlement, no provisioning profile, the app
+launches and keeps running):
+
+```sh
+cd KyttoMCP/macos
+scripts/make-dmg.sh        # Xcode 16+; writes dist/KyttoMCP-<version>.dmg
+```
+
+A build made on your own machine carries no quarantine flag, so Gatekeeper shows
+no warning. Its SHA-256 will not match the published one (builds are not
+bit-for-bit reproducible), so the checksums in
+[Verify your download](#verify-your-download) are for the files on the Releases
+page, not for your own build.
 
 ### Contributing
 

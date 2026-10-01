@@ -47,7 +47,10 @@ xcodebuild -project KyttoMCP.xcodeproj -scheme KyttoMCP -configuration Debug \
 
 The project carries the maintainer's signing team. To build under your own
 Apple ID, pick your team under *Signing & Capabilities* for the app target, or
-pass `DEVELOPMENT_TEAM=<your team id>` to `xcodebuild`.
+pass `DEVELOPMENT_TEAM=<your team id>` to `xcodebuild`. With no developer
+account at all, `scripts/make-dmg.sh` builds the Release app ad-hoc signed
+(universal, no team) and checks the result before writing
+`dist/KyttoMCP-<version>.dmg`.
 
 The web UI can also run in a browser against fixtures, with no native code at all:
 
@@ -683,7 +686,7 @@ Deferred candidates G3 and beyond are described in
 **Not the Mac App Store.** The sandbox forbids reading and writing other applications' config files, which is the entire app. Instead:
 
 - Build from source (see *Build and run* above), or download a release build
-- Release builds are ad-hoc signed and not yet notarized (there is no Developer ID certificate), so Gatekeeper warns on first launch; verify the SHA-256 published on the website and in the release notes, or build from source
+- Release builds are ad-hoc signed and not notarized (there is no Developer ID certificate), so Gatekeeper warns on first launch; verify the SHA-256 published on the website and in the release notes, or build from source
 - The in-app updater checks a first-party manifest and verifies the download's SHA-256 before installing it
 - No account, no license key, no network call required to launch
 
