@@ -54,6 +54,14 @@ A tool's name, description and input schema go straight into the model's context
 
 Both are advice. Nothing is switched off and no config is edited, the scan is deliberately narrow so a finding is worth reading, and a clean scan does not mean a server is trustworthy. Two known gaps are open issues: Contract Guard compares schemas as raw JSON, so reordered keys count as a change ([#12](https://github.com/heyitsjakub/KyttoMCP/issues/12)), and the scanner does not yet catch bidi isolate characters ([#13](https://github.com/heyitsjakub/KyttoMCP/issues/13)). Source: [macOS](macos/KyttoCore/Sources/KyttoCore/Health) · [Windows](windows/src/Kytto.Core/Health).
 
+![Kytto's matrix with a server named drift-fixture carrying a red "contract changed" badge](docs/contract-changed-row.png)
+
+![MCP Doctor listing three findings for a test server: the description instructs the model, imitates a system message, and a read-only tool names credential material](docs/tool-safety-findings.png)
+
+![Server detail with a Contract Guard notice: get_weather, model-facing description changed](docs/contract-guard-detail.png)
+
+*Kytto 1.0.7 on Windows after two health checks of a test server whose description changed between them. `drift-fixture` is a harmless server written for this demonstration; the instruction in its description is a sample and does nothing.*
+
 **Compare tool-schema footprint**
 Clients differ in how and when they load MCP tool definitions. Kytto estimates the full-schema footprint of each server and profile as a consistent comparison, not exact per-conversation usage, and flags heavy definitions, unmeasured entries and duplicate tool names for review. For clients with a known tool limit — VS Code refuses a chat request with more than 128 tools — Kytto shows how many tools the servers switched on there offer against that limit and warns when you are near or over it.
 
