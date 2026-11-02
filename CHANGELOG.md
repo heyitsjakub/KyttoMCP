@@ -11,19 +11,21 @@ without a backup.
 
 ## [1.0.9.1] — 2026-10-30
 
-macOS only. Three new clients, switches for single tools, a package safety
-check in MCP Doctor, and a faster, steadier window. The Windows build of
-1.0.9.1 is coming soon; until then Windows stays on 1.0.9.
+Three new clients, switches for single tools, a package safety check in MCP
+Doctor, and a faster, steadier window. Released for macOS on 2026-10-30. The
+Windows build follows with the same features, listed under the Windows
+headings below.
 
 **Download**
 
 | Platform | File | Size | SHA-256 |
 |---|---|---:|---|
 | macOS (universal) | `KyttoMCP-1.0.9.1.dmg` | 6.0 MB | `cb69196b4c16a76265c9a4bbabfa1e8b3ab57e3ae7fba2805c02b8d0dd1c98fa` |
-| Windows x64 | Coming soon | | |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.9.1.exe` | | Added when the installer is built |
 
 The macOS build is ad-hoc signed rather than notarized. Verify the SHA-256
-checksum before bypassing Gatekeeper.
+checksum before bypassing Gatekeeper. The Windows installer is unsigned;
+verify its checksum before running it.
 
 ### Added (macOS)
 
@@ -42,6 +44,24 @@ checksum before bypassing Gatekeeper.
 
 - While you used Claude Code, Kytto redrew its window after almost every message even though no server had changed. It now updates only when something it shows has changed, and still notices every real edit before it writes.
 - Opening Secrets could start a Git process for every secret when your home folder is a Git repository. Each config file is now checked once.
+
+### Added (Windows) — 2026-11-02
+
+- Three new clients: Google Antigravity, Devin Desktop (Windsurf until June 2026) and OpenCode. Their servers appear in the matrix, and you can switch them on and off, add, edit, copy and remove them, use them in profiles and import them from a portable setup, with the usual preview, backup and Undo. Switching a server off keeps its definition in the file (`"disabled": true` in Antigravity and Devin Desktop, `"enabled": false` in OpenCode), so nothing has to be stored aside. The config paths are `%USERPROFILE%\.gemini\config\mcp_config.json`, `%APPDATA%\devin\mcp_config.json` and `%USERPROFILE%\.config\opencode\opencode.json`; none of the three apps was installed on the test machine, so the paths and the "installed" detection follow the clients' documentation and are not verified against a real install.
+- Copying a server between clients writes it the way the target client expects: a remote endpoint becomes `serverUrl` in Antigravity, OpenCode gets its own `type`/`command`/`environment` entry, and the source client's on/off and tool settings stay behind. A copy that would lose headers, a working directory or sign-in settings is refused with the settings named, and a legacy SSE server is not written into Antigravity, which accepts only Streamable HTTP.
+- Remote checks resolve OpenCode's `{env:VAR}` placeholders in headers.
+- Switch single tools of a server off. The tool list in a server's details now has a button per client that can do it in its own configuration — Claude Code, Codex, Antigravity and OpenCode — which opens a picker with each tool's context cost and what your choice saves. Saving is one guarded write with a backup and Undo: an `mcp__<server>__<tool>` deny rule in Claude Code (which takes the tool out of its context), `disabled_tools` in Codex, `disabledTools` in Antigravity, `<server>_<tool>: false` in OpenCode. Tools switched off are marked in the list, and the tool counter and VS Code's 128-tool limit count only the tools that stay on. For Cursor, VS Code, Claude Desktop and Devin Desktop the details point to Gateway mode, which can already hide tools. Renaming a server keeps its tools switched off: OpenCode `tools` keys and Claude Code `mcp__<server>__…` rules are renamed with it.
+- Package safety in MCP Doctor. A server that fetches a package whose name imitates an official one — `mcp-server-github` instead of `@modelcontextprotocol/server-github`, or a scope one letter off — is flagged, offline. "Check package safety" (in Doctor and in a server's details) asks osv.dev whether the package is known malware or the pinned version has known vulnerabilities, and for npm packages whether that version runs a script on install. It sends only the package name, its registry and a pinned version, and only when you click. Nothing is switched off automatically.
+
+### Changed (Windows)
+
+- Kytto re-reads your client configs on a background thread when a config changes on disk or when you press Refresh, and redraws the window only when something it shows is different. Claude Code rewrites `~/.claude.json` after almost every message without touching a server, which no longer redraws anything.
+- Gateway mode does not support OpenCode yet and says so instead of writing a helper entry OpenCode would not read.
+
+### Fixed (Windows)
+
+- Opening Secrets could start a Git process for every secret when your home folder is a Git repository. Each config file is now checked once.
+- The Gateway route store was read once for every client on each refresh and twice for each state reply; it is read once.
 
 ## [1.0.9] — 2026-10-24
 

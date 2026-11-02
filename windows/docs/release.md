@@ -80,7 +80,7 @@ real client paths:
 
 1. Verify the checksum with `Get-FileHash -Algorithm SHA256`.
 2. Extract the ZIP, start `Kytto.exe`, and complete first-run onboarding.
-3. Confirm onboarding names five built-in writable clients plus read-only custom
+3. Confirm onboarding names the eight built-in writable clients plus read-only custom
    sources, and that no client configuration is created before an explicit
    change.
 4. Create a harmless JSON fixture with a top-level `servers` map. Record its

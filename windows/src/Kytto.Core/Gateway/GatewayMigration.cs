@@ -257,7 +257,7 @@ public sealed class GatewayMigrationService
         // its argv-array entry is not modelled here yet.
         if (descriptor!.ServerSchema.Shape != ServerSchema.EntryShape.McpServers)
         {
-            throw GatewayMigrationException.InvalidDefinition($"Gateway mode does not support {descriptor.DisplayName} yet");
+            throw GatewayMigrationException.InvalidDefinition($"{descriptor.DisplayName} is not supported by Gateway mode yet");
         }
         var path = _resolver.ResolveServerMap(source.File, clientId);
         var display = _resolver.DisplayServerMap(source.File, clientId);

@@ -526,6 +526,31 @@ public class OpenCodeTests
     }
 }
 
+public class OpenCodeGatewayTests
+{
+    [Fact]
+    public void GatewayModeRefusesOpenCodeInsteadOfWritingAnEntryItWouldNotRead()
+    {
+        using var harness = new ToggleHarness();
+        harness.Write(NewClientFixtures.OpenCodeConfig, NewClientFixtures.OpenCodePath);
+        var helper = Path.Combine(harness.Home, "Kytto", "kytto-mcp-proxy.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(helper)!);
+        File.WriteAllBytes(helper, []);
+        var service = new Kytto.Core.Gateway.GatewayMigrationService(
+            harness.Home,
+            helper,
+            new ConfigWriter(harness.Backups),
+            harness.Ledger,
+            new Kytto.Core.Gateway.GatewayRouteStore(harness.Paths),
+            new InMemorySecretStore());
+
+        var refused = Assert.Throws<Kytto.Core.Gateway.GatewayMigrationException>(() =>
+            service.Preview(harness.Server("github"), ClientId.OpenCode));
+        Assert.Contains("OpenCode is not supported by Gateway mode yet", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(NewClientFixtures.OpenCodeConfig, harness.Text(NewClientFixtures.OpenCodePath));
+    }
+}
+
 public class ClientIdentityTests
 {
     [Fact]

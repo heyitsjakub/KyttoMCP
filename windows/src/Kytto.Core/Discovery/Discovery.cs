@@ -378,7 +378,7 @@ public sealed class Discovery
         }
 
         // Custom sources are discovery-only columns and deliberately come after
-        // the closed five-client registry. Nothing in this loop can resolve them
+        // the closed built-in client registry. Nothing in this loop can resolve them
         // to a writable ClientId.
         foreach (var source in _customSources)
         {
@@ -890,7 +890,7 @@ public sealed class Discovery
     /// <summary>
     /// Codex. One table per server, its environment in a sub-table, and an
     /// <c>enabled</c> boolean on the server's own table rather than in a file
-    /// somewhere else — the only client of the five whose off switch is local.
+    /// somewhere else — the only TOML client, and one of the clients whose off switch is local.
     /// </summary>
     private SourceOutcome ReadTomlServerMap(ConfigSource.ServerMap map, ClientDescriptor descriptor)
     {

@@ -181,7 +181,7 @@ does not download or install anything automatically.
 
 ### `clients.list` → `ClientDTO[]`
 
-No payload. The five fixed built-in clients come first, installed or not,
+No payload. The fixed built-in clients come first, installed or not,
 followed by the user's dynamic read-only custom sources. A custom source id is
 `custom.<lowercase-uuid>` and never enters the built-in mutation registry.
 

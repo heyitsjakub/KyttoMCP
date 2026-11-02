@@ -150,9 +150,10 @@ fallback.
 
 ### v1 clients (CONFIRMED)
 
-Kytto has exactly five built-in clients. They are the only writable client
+Kytto has a fixed set of built-in clients. They are the only writable client
 destinations and remain a fixed native collection: Claude Desktop, Claude Code,
-Cursor, VS Code and Codex. User-attached configuration files never join this
+Cursor, VS Code and Codex, and since 1.0.9.1 Antigravity, Devin Desktop and
+OpenCode (below). User-attached configuration files never join this
 collection or any mutation loop.
 
 | Client | Config location (VERIFY — these move) |
@@ -163,13 +164,41 @@ collection or any mutation loop.
 | VS Code | user-level MCP config: macOS `~/Library/Application Support/Code/User/mcp.json`<br>Windows `%APPDATA%\Code\User\mcp.json` |
 | Codex | `~/.codex/config.toml` (`[mcp_servers.<name>]`)<br>Windows `%USERPROFILE%\.codex\config.toml` |
 
-Deferred to v1.1: Windsurf.
+### Added in 1.0.9.1
+
+| Client | Config location | Off switch |
+|---|---|---|
+| Antigravity | `~/.gemini/config/mcp_config.json` (`mcpServers`)<br>Windows `%USERPROFILE%\.gemini\config\mcp_config.json` | `"disabled": true` on the entry |
+| Devin Desktop (Windsurf until June 2026) | `~/.config/devin/mcp_config.json` (`mcpServers`)<br>Windows `%APPDATA%\devin\mcp_config.json` | `"disabled": true` on the entry |
+| OpenCode | `~/.config/opencode/opencode.json` (`mcp`)<br>Windows `%USERPROFILE%\.config\opencode\opencode.json` | `"enabled": false` on the entry |
+
+These three are JSON, but they do not all spell an entry the way the first
+five do, so the per-server shape is data on the descriptor (`ServerSchema`)
+next to the path and the off switch. Antigravity writes a remote endpoint as
+`serverUrl`, rejects a `type` and accepts only Streamable HTTP; Devin Desktop
+states only the legacy transport, as `transport: "sse"`; OpenCode has its own
+entry — `type: local|remote`, one argv array in `command`, `environment`. A copy
+between two `mcpServers`-shaped clients respells just the keys they disagree on
+and keeps `headers`, `cwd` and unknown keys; a copy into or out of OpenCode is
+rendered from the model and refused when it would drop headers, a working
+directory or OAuth settings. A copy never carries the source client's own
+`disabled`/`enabled`/`enabledTools`/`disabledTools` state. Workspace and project
+configs of these clients are not read, and Gateway mode does not support
+OpenCode yet. The Windows install locations and executable names used to detect
+the three apps follow their documentation and were not checked against a real
+install.
+
+Single tools can be switched off in a client's own file (§7.11): Claude Code
+`permissions.deny` rules (`mcp__<server>__<tool>`), Codex `disabled_tools` /
+`enabled_tools`, Antigravity `disabledTools` / `enabledTools` and OpenCode's
+top-level `tools` map. The other clients have no such setting, and the
+inspector points to Gateway mode for them.
 
 **Codex is the client that proves §4's point.** It is the only one in TOML, so
 `format` on the source descriptor is real rather than aspirational, and the
 per-server shape does not travel: copying a definition into or out of Codex has
 to be *rendered* from the model rather than moved as text. It also has the best
-off switch of the five — `enabled = false` on the server's own table, so a
+off switch of the original five — `enabled = false` on the server's own table, so a
 disabled server keeps its definition and nothing has to be parked.
 
 Two front ends share one config: the ChatGPT app (bundle id `com.openai.codex` —
@@ -199,7 +228,7 @@ Config schemas differ between clients. Normalize into an internal model on read,
 
 Users may explicitly attach multiple named JSON, JSONC or TOML files as
 **read-only custom sources**. Kytto reads only the selected file, auto-detects a
-supported top-level server map, and appends the source after the five built-in
+supported top-level server map, and appends the source after the built-in
 clients in discovery and the matrix. It does not crawl home directories,
 repositories or workspaces.
 
@@ -418,7 +447,7 @@ Health checks spawn arbitrary commands. That is inherent to MCP, but:
 
 Row = server. Column = client. Cell = toggle.
 
-Columns: server name + command, token weight, then the five built-in clients and
+Columns: server name + command, token weight, then the built-in clients and
 any attached custom sources. Custom-source columns show their scope and have
 disabled switches explaining that Kytto never changes the file. Normal client
 icons and fallback initial tiles occupy the same 22px × 22px footprint in the
@@ -623,7 +652,7 @@ and raw stderr from the copied text because both may contain credentials.
 
 Client paths (with override), backup retention, token warning threshold, theme, launch at login and menu bar item on/off. Kytto sends no telemetry. A **Support** section holds the two report links (§7.14).
 
-Under Clients, Settings also explains the five built-in writable clients and
+Under Clients, Settings also explains the built-in writable clients and
 manages read-only custom sources. A native picker accepts `.json`, `.jsonc` and
 `.toml`; the editable name, scope and optional Profile/Workspace label are
 validated before the normal atomic settings save. Opening the window refreshes
@@ -1094,7 +1123,7 @@ Resolved: v1 client list (§4), platform sequencing (§3.2), web stack (§3.1).
 2. ~~Whether VS Code user-level MCP config is stable enough to support in v1 or
    should move to v1.1~~ — resolved: VS Code shipped as a v1 client (§4)
 3. ~~Windows paths for all four clients~~ — resolved: the registry carries
-   Windows paths for all five built-in clients, and the Windows port reads them
+   Windows paths for all built-in clients, and the Windows port reads them
 4. ~~Whether to bundle a real tokenizer in v1.1 or keep the character
    estimate~~ — resolved: bundled, see §7.4 for what changed the answer
 

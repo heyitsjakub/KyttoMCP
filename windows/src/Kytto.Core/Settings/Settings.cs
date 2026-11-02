@@ -128,7 +128,7 @@ public sealed record KyttoSettings
 
     /// <summary>
     /// Files the user explicitly attached for discovery. They are deliberately
-    /// separate from the five-entry writable client registry.
+    /// separate from the writable client registry.
     /// </summary>
     public IReadOnlyList<CustomConfigSource> CustomConfigSources { get; init; } = [];
 

@@ -904,7 +904,7 @@ function emptyState(clients) {
   return box;
 }
 
-/// Reading five clients off disk takes a moment. Showing the shape of the
+/// Reading the clients off disk takes a moment. Showing the shape of the
 /// table for that moment is more honest than a sentence in the middle of an
 /// empty window: it says what is about to be here.
 function loadingState() {

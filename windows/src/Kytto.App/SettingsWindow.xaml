@@ -140,7 +140,7 @@
     <StackPanel Style="{StaticResource Row}">
       <TextBlock Style="{StaticResource Label}" Text="Custom configuration sources" />
       <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,10"
-                 Text="Kytto fully manages five built-in clients. Attach additional JSON, JSONC or TOML files here for read-only discovery. Detaching a source never deletes or changes its file." />
+                 Text="Kytto fully manages the built-in clients. Attach additional JSON, JSONC or TOML files here for read-only discovery. Detaching a source never deletes or changes its file." />
       <ItemsControl x:Name="CustomSourceList">
         <ItemsControl.ItemTemplate>
           <DataTemplate>

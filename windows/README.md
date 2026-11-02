@@ -62,7 +62,7 @@ Status: beta. The current source release and latest published build are 1.0.8
 
 ## Supported clients
 
-Five built-in clients are writable. Each disables a server differently, and that
+Eight built-in clients are writable. Each disables a server differently, and that
 difference is the substance of the matrix.
 
 | Client | Config file on Windows | Format | How a server is switched off |
@@ -72,6 +72,18 @@ difference is the substance of the matrix.
 | Cursor | `%USERPROFILE%\.cursor\mcp.json` | JSON | Removed from the file (presence) |
 | VS Code | `%APPDATA%\Code\User\mcp.json` | JSON | Removed from the file (presence) |
 | Codex | `%USERPROFILE%\.codex\config.toml` | TOML | `enabled = false` on the server's own table |
+| Antigravity | `%USERPROFILE%\.gemini\config\mcp_config.json` | JSON | `"disabled": true` on the server's own entry |
+| Devin Desktop (formerly Windsurf) | `%APPDATA%\devin\mcp_config.json` | JSON | `"disabled": true` on the server's own entry |
+| OpenCode | `%USERPROFILE%\.config\opencode\opencode.json` (`mcp`) | JSONC | `"enabled": false` on the server's own entry |
+
+Antigravity, Devin Desktop and OpenCode were added in 1.0.9.1, and none of the three
+was installed on the machine the Windows port was written on: their paths and the way
+Kytto detects them follow the clients' documentation and are not verified against a
+real install. Antigravity and Devin Desktop spell a remote endpoint differently from the
+older clients (`serverUrl`; `transport: "sse"` only for the legacy transport) and
+OpenCode has an entry shape of its own (`type: local|remote`, one `command` array,
+`environment`) — see `ServerSchema` in `src/Kytto.Core/Clients`. Gateway mode does not
+support OpenCode yet.
 
 "Removed from the file" is only acceptable because Kytto first keeps the exact
 bytes of the definition and puts them back byte for byte when the server is

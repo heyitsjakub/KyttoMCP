@@ -89,15 +89,15 @@ For supported stdio servers, preview a local Gateway route, move the direct defi
 | Cursor | Supported |
 | VS Code | Supported |
 | Codex | Supported |
-| Antigravity | Supported on macOS; Windows coming |
-| Devin Desktop (formerly Windsurf) | Supported on macOS; Windows coming |
-| OpenCode | Supported on macOS; Windows coming |
+| Antigravity | Supported |
+| Devin Desktop (formerly Windsurf) | Supported |
+| OpenCode | Supported |
 
 Custom sources are read-only and are not an additional writable client. Want another built-in client supported? [Open an issue](https://github.com/heyitsjakub/KyttoMCP/issues) — the roadmap is driven by what people actually ask for.
 
 ## Install
 
-Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.1 for macOS ([v1.0.9.1](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.1)) and Beta 1.0.9 for Windows ([v1.0.9-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9-windows)). Windows 1.0.9.1, with the new clients, tool switches and package safety check, is coming soon.
+Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.1 for macOS ([v1.0.9.1](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.1)) and Beta 1.0.9.1 for Windows ([v1.0.9.1-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.1-windows)).
 
 ### macOS
 
