@@ -18,6 +18,7 @@ import {
 import { render as renderMatrix } from './screens/matrix.js';
 import { diagnosticReport } from './screens/serverDetail.js';
 import { activityReport } from './screens/activity.js';
+import { formatTokens } from './dom.js';
 import { settlePostMutationRefresh } from './postMutation.js';
 import { createInterfaceFailureGuard, loadFailureError } from './support.js';
 
@@ -824,6 +825,86 @@ async function saveToolMask(routeId) {
   }
 }
 
+// MARK: - Tool switches in a client's own file (§7.11)
+
+/// Opens the picker with what the client keeps today, so saving without
+/// touching anything writes nothing.
+function openToolSwitch(serverId, clientId) {
+  const server = getState().servers.find((entry) => entry.id === serverId);
+  if (!server) return;
+  const off = new Set(server.toolsOff?.[clientId] ?? []);
+  const names = (server.health?.tools ?? []).map((tool) => tool.name);
+  setState({
+    sheet: {
+      kind: 'toolSwitch',
+      serverId,
+      clientId,
+      selected: names.filter((name) => !off.has(name)),
+      busy: false,
+      error: null,
+    },
+  });
+}
+
+async function saveToolSwitch(serverId, clientId) {
+  const sheet = getState().sheet;
+  if (sheet.busy) return;
+  const server = getState().servers.find((entry) => entry.id === serverId);
+  const tools = server?.health?.tools ?? [];
+  const previous = server?.toolsOff?.[clientId] ?? [];
+  const disabledTools = tools.map((tool) => tool.name).filter((name) => !sheet.selected.includes(name));
+  const request = beginSheetRequest();
+  try {
+    const result = await invoke('servers.setDisabledTools', { serverID: serverId, clientID: clientId, disabledTools });
+    applyState(result.state);
+    const notice = toolSwitchNotice(serverId, result, tools, previous);
+    setState({ sheet: null, notice });
+    await refreshAfterMutation(['Backups'], notice);
+  } catch (error) {
+    failSheetRequest(request, error);
+  }
+}
+
+function toolSwitchNotice(serverId, result, tools, previous, { undoing = false } = {}) {
+  const clientName = getState().clients.find((entry) => entry.id === result.clientID)?.displayName ?? result.clientID;
+  if (!result.requiresRestart) {
+    return { kind: 'info', message: `Nothing changed for “${result.serverName}” in ${clientName}.` };
+  }
+  const off = new Set(result.disabledTools);
+  const saved = tools
+    .filter((tool) => off.has(tool.name) && tool.tokenCount != null)
+    .reduce((total, tool) => total + tool.tokenCount, 0);
+  const what = off.size === 0
+    ? `All tools of “${result.serverName}” are on in ${clientName} again.`
+    : `${off.size} of ${tools.length} tools of “${result.serverName}” are off in ${clientName}${saved > 0 ? `, about ${formatTokens(saved)} tokens less context` : ''}.`;
+  return {
+    kind: 'info',
+    message: `${undoing ? 'Undid the change. ' : ''}${what}${result.backupID ? ' A backup was created first.' : ''} Restart ${clientName} to apply it.`,
+    action: undoing
+      ? undefined
+      : {
+          label: 'Undo',
+          action: 'undo-tool-switch',
+          serverId,
+          clientId: result.clientID,
+          disabledTools: JSON.stringify(previous),
+        },
+  };
+}
+
+async function undoToolSwitch(serverId, clientId, disabledTools) {
+  const server = getState().servers.find((entry) => entry.id === serverId);
+  try {
+    const result = await invoke('servers.setDisabledTools', { serverID: serverId, clientID: clientId, disabledTools });
+    applyState(result.state);
+    const notice = toolSwitchNotice(serverId, result, server?.health?.tools ?? [], [], { undoing: true });
+    setState({ notice });
+    await refreshAfterMutation(['Backups'], notice);
+  } catch (error) {
+    if (reportFailure(error)) await refresh();
+  }
+}
+
 // MARK: - Drift
 
 async function openUnifyPreview(serverId, sourceClientId) {
@@ -1497,6 +1578,34 @@ async function checkVisible() {
   }
 }
 
+/// Asks osv.dev (and, for npm, the registry) about one server's package —
+/// only on this click (§7.10). The findings land in Doctor; the notice says
+/// the verdict in one line.
+async function checkPackageSafety(serverId) {
+  if (getState().packageSafetyBusyServerID) return;
+  setState({ packageSafetyBusyServerID: serverId, notice: null });
+  try {
+    applyState(await invoke('doctor.checkPackageSafety', { serverID: serverId }));
+    const server = getState().servers.find((entry) => entry.id === serverId);
+    const safety = server?.packageSafety;
+    let message = `Checked ${safety?.packageName ?? server?.name ?? 'the package'}: no known malware`;
+    if (safety?.malware) {
+      message = `${safety.packageName} is listed as malware (${safety.advisoryIDs.filter((id) => id.startsWith('MAL-')).join(', ')}). Switch it off and see MCP Doctor.`;
+    } else {
+      if (safety?.advisoryIDs.length) message += `, ${safety.advisoryIDs.length} known vulnerabilit${safety.advisoryIDs.length === 1 ? 'y' : 'ies'}`;
+      if (safety?.installScripts.length) message += `, runs ${safety.installScripts.join(' and ')} on install`;
+      message += '. Details are in MCP Doctor.';
+    }
+    // A finding about the package, not a failure of Kytto: warning, never the
+    // error banner that offers to report a bug.
+    setState({ notice: { kind: safety?.malware || safety?.advisoryIDs.length || safety?.installScripts.length ? 'warning' : 'info', message } });
+  } catch (error) {
+    reportFailure(error);
+  } finally {
+    setState({ packageSafetyBusyServerID: null });
+  }
+}
+
 const firstLine = (text) => String(text).split('\n')[0];
 
 async function restoreBackup(backupId, clientId) {
@@ -1601,6 +1710,9 @@ root.addEventListener('click', async (event) => {
       break;
     case 'check-provenance':
       await checkLatestProvenance(target.dataset.serverId);
+      break;
+    case 'check-package-safety':
+      await checkPackageSafety(target.dataset.serverId);
       break;
     case 'toggle': {
       const client = state.clients.find((entry) => entry.id === target.dataset.clientId);
@@ -1872,6 +1984,15 @@ root.addEventListener('click', async (event) => {
       break;
     case 'confirm-tool-mask':
       await saveToolMask(target.dataset.routeId);
+      break;
+    case 'choose-client-tools':
+      openToolSwitch(target.dataset.serverId, target.dataset.clientId);
+      break;
+    case 'confirm-tool-switch':
+      await saveToolSwitch(target.dataset.serverId, target.dataset.clientId);
+      break;
+    case 'undo-tool-switch':
+      await undoToolSwitch(target.dataset.serverId, target.dataset.clientId, JSON.parse(target.dataset.disabledTools ?? '[]'));
       break;
 
     case 'add-server':

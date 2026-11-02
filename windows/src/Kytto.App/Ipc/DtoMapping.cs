@@ -42,7 +42,10 @@ internal static class DtoMapping
         IsReadOnly: client.IsReadOnly,
         ConfigurationScope: client.ConfigurationScope.Raw(),
         ScopeLabel: string.IsNullOrWhiteSpace(client.ScopeLabel) ? null : client.ScopeLabel,
-        ToolBudget: toolBudget.ToDto());
+        ToolBudget: toolBudget.ToDto(),
+        ToolSwitchSummary: client.IsReadOnly || client.Id.BuiltIn is not { } builtIn
+            ? null
+            : ClientRegistry.Descriptor(builtIn).ToolSwitch?.Summary);
 
     internal static ClientToolBudgetDto ToDto(this ClientToolBudget budget) => new(
         ToolCount: budget.ToolCount,
@@ -86,7 +89,17 @@ internal static class DtoMapping
         HasRelativePath: server.HasRelativePath,
         Health: server.Health?.ToDto(),
         TokenWeight: server.TokenWeight?.ToDto(),
-        Provenance: server.Provenance.ToDto());
+        Provenance: server.Provenance.ToDto(),
+        ToolsOff: server.ToolFilters.ToDictionary(
+            pair => pair.Key.Raw(),
+            pair => pair.Value.OffTools(KnownToolNames(server))),
+        LockedTools: server.ToolFilters.ToDictionary(
+            pair => pair.Key.Raw(),
+            pair => pair.Value.LockedTools(KnownToolNames(server))));
+
+    /// <summary>The tools a server is known to offer, each name once.</summary>
+    private static IReadOnlyList<string> KnownToolNames(Server server) =>
+        server.KnownTools.Select(tool => tool.Name).Distinct(StringComparer.Ordinal).ToArray();
 
     internal static ServerSourceDto ToDto(this ServerSource source) => new(
         Kind: source.Kind,

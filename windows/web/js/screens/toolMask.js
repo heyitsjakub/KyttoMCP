@@ -68,6 +68,50 @@ export function renderToolMask(state) {
   return sheet(`Tools exposed to ${client?.displayName ?? route.clientID}`, body, footer);
 }
 
+/// The same choice made in a client's own configuration rather than through
+/// Gateway (§7.11): Codex, Antigravity, OpenCode and Claude Code can each say in
+/// their own files which tools of a server stay off.
+export function renderToolSwitch(state) {
+  const { serverId, clientId, selected, busy, error } = state.sheet;
+  const server = state.servers.find((entry) => entry.id === serverId);
+  const client = state.clients.find((entry) => entry.id === clientId);
+  if (!server || !client) return null;
+  const clientName = client.displayName;
+  const tools = server.health?.tools ?? [];
+  const title = `${server.name} tools in ${clientName}`;
+
+  const body = [el('p', 'muted', `Only the tools you keep are offered to ${clientName}. ${client.toolSwitchSummary ?? ''}`)];
+  if (tools.length === 0) {
+    body.push(
+      el(
+        'div',
+        'profile-empty',
+        'Kytto has not seen this server’s tools yet. Run a health check on it first, then come back and choose.',
+      ),
+    );
+    return sheet(title, body, [button('Close', 'close-sheet', { className: 'button subtle' })]);
+  }
+
+  const chosen = new Set(selected);
+  const locked = server.lockedTools?.[clientId] ?? {};
+  const list = el('div', 'mask-list');
+  for (const tool of byWeight(tools)) {
+    list.append(toolRow(tool, chosen.has(tool.name), locked[tool.name]));
+  }
+  body.push(list);
+
+  const footer = [summary(tools, chosen), el('span', 'spacer')];
+  if (error) footer.push(el('span', 'sheet-error', error));
+  footer.push(button('Cancel', 'close-sheet', { className: 'button subtle' }));
+  const save = button(busy ? 'Saving…' : 'Save', 'confirm-tool-switch', {
+    className: 'button primary',
+    dataset: { serverId, clientId },
+  });
+  save.disabled = Boolean(busy);
+  footer.push(save);
+  return sheet(title, body, footer);
+}
+
 /// Heaviest first — the same order as the breakdown in server detail, and the
 /// order that puts the tools worth un-checking at the top.
 function byWeight(tools) {
@@ -79,12 +123,15 @@ function byWeight(tools) {
   ];
 }
 
-function toolRow(tool, isChosen) {
+/// - Parameter lockedBy: a broader rule in the client's file that keeps this
+///   tool off; the box cannot undo it without changing other tools too.
+function toolRow(tool, isChosen, lockedBy = null) {
   const row = el('label', `mask-row${isChosen ? '' : ' hidden-tool'}`);
 
   const box = el('input');
   box.type = 'checkbox';
   box.checked = isChosen;
+  box.disabled = Boolean(lockedBy);
   box.dataset.action = 'toggle-mask-tool';
   box.dataset.toolName = tool.name;
   row.append(box);
@@ -97,6 +144,7 @@ function toolRow(tool, isChosen) {
   }
   copy.append(title);
   if (tool.description) copy.append(el('p', 'muted', firstLine(tool.description)));
+  if (lockedBy) copy.append(el('p', 'field-hint', `Kept off by the rule ${lockedBy} in the file.`));
   row.append(copy);
 
   row.append(el('span', 'mask-tokens mono', tool.tokenCount == null ? '—' : formatTokens(tool.tokenCount)));

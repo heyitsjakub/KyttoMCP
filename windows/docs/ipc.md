@@ -85,6 +85,9 @@ authoring surfaces. `portable-setup` is advertised because the native file choos
 and masked-input window exist, and enables the Export and Import actions on the
 Profiles screen (§7.13).
 
+`package-safety` is advertised where `doctor.checkPackageSafety` can reach osv.dev
+and the npm registry; the UI shows the "Check package safety" button only with it.
+
 `health.http` and `health.oauth` are advertised only where the native path exists:
 the first means `health.check` and `health.checkAll` inspect Streamable HTTP
 servers, the second that `health.signInRemote` and `health.forgetRemoteAuthorization`
@@ -198,11 +201,13 @@ followed by the user's dynamic read-only custom sources. A custom source id is
 | `configurationScope` | `global` \| `profile` \| `workspace` |
 | `scopeLabel` | Optional display label for a profile or workspace; otherwise null |
 | `toolBudget` | `{ toolCount, maskedToolCount, unmeasuredServerIDs, limit, state, pastLimitSummary }` — see below |
+| `toolSwitchSummary` | One sentence on what switching a single tool off writes in this client, or null when only Gateway mode can hide its tools (§7.11) |
 
 `toolBudget` counts the tools this client hands its model: every server
 `enabled` in it with a passing health check contributes its measured
-`toolCount`, less whatever its Gateway route's allow list hides
-(`maskedToolCount`, already subtracted). Servers switched on with nothing to
+`toolCount`, less whatever its Gateway route's allow list hides and whatever
+the client's own tool switches keep off (`maskedToolCount`, already
+subtracted). Servers switched on with nothing to
 count — never checked, failed, remote, waiting for sign-in — are named in
 `unmeasuredServerIDs`, and while that list is non-empty `toolCount` is a floor
 the UI prefixes with `≥`. `limit` is the client's documented tool cap from the
@@ -257,6 +262,9 @@ No payload. Servers merged across clients: one entry per normalized name.
 | `hasRelativePath` | The command or an argument is resolved against a working directory, so copying this definition into another client may write cleanly and still not start. The fact only — no path crosses |
 | `tokenWeight` | `{ estimate, method, isMeasured, measuredAt, percentOfContext, referenceContextWindow }`, or null before a health check |
 | `provenance` | `{ sourceKind, packageName, sourceURL, installedVersion, latestVersion, latestCheckedAt, confidence, maintenanceState }`, or null |
+| `toolsOff` | Client id → names of the server's known tools that client's own file keeps off (§7.11). Clients with no rules are absent |
+| `lockedTools` | Client id → `{ tool: rule }` for tools kept off by a broader rule (a glob, a whole-server deny) that switching one tool cannot undo |
+| `packageSafety` | The last `doctor.checkPackageSafety` result while it still describes what the server launches, or null |
 
 `provenance` is inferred from the existing definition without contacting a
 registry. `latestVersion` and `latestCheckedAt` are filled only by the explicit
@@ -522,7 +530,8 @@ environment values are intentionally absent.
 
 ### `discovery.refresh` → `StateDTO`
 
-No payload. Re-reads every config from disk.
+No payload. Re-reads every config from disk, off the main thread, and replies
+once a pass that started after the request has finished.
 
 ### `servers.setEnabled` → `ToggleResultDTO`
 
@@ -561,6 +570,34 @@ Errors worth handling by code:
 | `cannot be copied` | A Claude Desktop extension is an installed bundle, not a portable definition. |
 | `installed plugin` | A Claude Code or Codex plugin provides this server. Its definition is in a cache the client rewrites, so there is nothing here to toggle — turn the plugin off in the client that installed it. |
 | `install the plugin there` | The same server asked for in a client that did not install the plugin (the message also says `installed plugin`; test for this one first). Plugins are never copied across clients. |
+
+### `servers.setDisabledTools` → `ToolSwitchResultDTO`
+
+```json
+{ "serverID": "github", "clientID": "codex", "disabledTools": ["delete_branch", "create_issue"] }
+```
+
+States which of the server's known tools (from its last passing check) are off
+in one client's own configuration (§7.11); every other known tool ends up on,
+and tools Kytto does not know are left alone. One guarded write with one
+backup: Codex `disabled_tools` (or `enabled_tools` when the table has an allow
+list), Antigravity `disabledTools`/`enabledTools`, OpenCode's top-level `tools`
+map (`<server>_<tool>: false`), Claude Code `permissions.deny` rules
+(`mcp__<server>__<tool>`) in its `settings.json`. A save that changes
+nothing writes nothing (`requiresRestart: false`, `backupID: null`). Undo is the
+same command with the previous `toolsOff` list.
+
+```json
+{ "serverName": "github", "clientID": "codex", "disabledTools": ["create_issue", "delete_branch"],
+  "requiresRestart": true, "backupID": "config.toml.2026-10-30-101500-120.bak",
+  "pathDisplay": "~/.codex/config.toml", "state": { ... } }
+```
+
+| Message contains | Meaning |
+|---|---|
+| `no setting for single tools` | The client cannot say this in its files; offer Gateway mode instead. |
+| `is kept off by the rule` | A glob or whole-server rule covers this tool; nothing was written. |
+| `changed on disk` | As for every write. |
 
 ### `servers.unifyPreview` → `UnifyPreviewDTO`
 
@@ -645,6 +682,29 @@ The response includes `state` and provenance fields such as `sourceKind`,
 `staleButResponsive`, or `unchecked`).
 `needsAuthorization` maps to `unchecked`: the handshake did not finish, so the
 result says nothing about maintenance health.
+
+### `doctor.checkPackageSafety` → `StateDTO`
+
+```json
+{ "serverID": "github" }
+```
+
+Capability `package-safety`. An explicit, read-only check of the package a stdio
+server fetches by name (§7.10). Native code sends osv.dev
+(`POST https://api.osv.dev/v1/query`) the package name, its ecosystem (`npm` or
+`PyPI`) and the version only when the launch pins one; for npm it also reads
+`https://registry.npmjs.org/<name>/<version|latest>` to see whether that version
+declares `preinstall`/`install`/`postinstall` scripts. Nothing else leaves the
+machine, and nothing is requested on launch, during discovery or during a health
+check. The result is kept in memory for the session and applies only while the
+server still launches the same package and version; it shows up as Doctor
+findings (`known-malware`, `known-vulnerabilities`, `install-script`) and as
+`ServerDTO.packageSafety`
+`{ packageName, version, advisoryIDs, malware, installScripts, checkedAt }`.
+Without a pinned version only `MAL-` (malware) records are kept, since OSV then
+answers for every release ever published. The offline `look-alike-package`
+finding needs no request and carries the `checkPackageSafety` action. Nothing
+is switched off automatically.
 
 ### `imports.prompt` → `ImportPromptDTO`
 

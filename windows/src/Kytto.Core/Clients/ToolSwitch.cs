@@ -42,9 +42,9 @@ public abstract record ToolSwitch
         EntryLists lists => $"Switching a tool off adds it to {lists.Deny} on the server's own entry.",
         PrefixedToolMap map =>
             $"Switching a tool off writes <server>_<tool>: false into the top-level {map.Key} map.",
-        PermissionRules =>
+        PermissionRules rules =>
             "Switching a tool off adds an mcp__<server>__<tool> deny rule to permissions in " +
-            "%USERPROFILE%\\.claude\\settings.json, which removes the tool from Claude Code's context.",
+            $"{rules.File.DisplayString()}, which removes the tool from Claude Code's context.",
         _ => "",
     };
 }

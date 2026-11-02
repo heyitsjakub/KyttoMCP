@@ -331,6 +331,24 @@ internal static partial class CommandRegistry
                 State: model.ToStateDto());
         });
 
+        // States which of a server's known tools are off in one client's own
+        // configuration (§7.11): one guarded write, one backup.
+        router.Register<SetDisabledToolsPayload, ToolSwitchResultDto>("servers.setDisabledTools", payload =>
+        {
+            var clientId = ClientIds.FromRaw(payload.ClientID)
+                ?? throw new BadArgumentException($"Unknown client {payload.ClientID}.");
+
+            var result = model.SetDisabledTools(payload.DisabledTools, payload.ServerID, clientId);
+            return new ToolSwitchResultDto(
+                ServerName: result.ServerName,
+                ClientID: result.ClientID.Raw(),
+                DisabledTools: result.DisabledTools,
+                RequiresRestart: result.RequiresRestart,
+                BackupID: result.BackupID,
+                PathDisplay: result.PathDisplay,
+                State: model.ToStateDto());
+        });
+
         router.Register<AcknowledgePayload, StateDto>("restarts.acknowledge", payload =>
         {
             ClientId? clientId = null;
@@ -671,6 +689,12 @@ internal static partial class CommandRegistry
 // MARK: - Payloads
 
 internal sealed record SetEnabledPayload(string ServerID, string ClientID, bool Enabled);
+
+/// <param name="DisabledTools">
+/// The server's known tools that should be off in this client; every other known tool
+/// ends up on.
+/// </param>
+internal sealed record SetDisabledToolsPayload(string ServerID, string ClientID, IReadOnlyList<string> DisabledTools);
 
 internal sealed record ShowsCustomSourcesPayload(bool Shown);
 

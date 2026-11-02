@@ -59,6 +59,9 @@ export function renderDoctor(state) {
       } else if (finding.action === 'pinPackageVersion') {
         const action = packagePinAction(state, report.serverID);
         if (action) item.append(action);
+      } else if (finding.action === 'checkPackageSafety') {
+        const action = packageSafetyAction(state, report.serverID);
+        if (action) item.append(action);
       }
       card.append(item);
     }
@@ -93,6 +96,18 @@ function packagePinAction(state, serverId) {
     className: busy ? 'button busy' : 'button',
     dataset: { serverId },
   });
+}
+
+/// The safety check reaches osv.dev, so it only ever runs from this click.
+export function packageSafetyAction(state, serverId, className = 'button') {
+  if (!state.app?.capabilities?.includes('package-safety')) return null;
+  const busy = state.packageSafetyBusyServerID === serverId;
+  const check = button(busy ? 'Checking…' : 'Check package safety', busy ? 'noop' : 'check-package-safety', {
+    className: busy ? `${className} busy` : className,
+    dataset: { serverId },
+  });
+  check.disabled = busy;
+  return check;
 }
 
 export function renderDoctorFix(state) {

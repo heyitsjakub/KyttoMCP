@@ -1432,6 +1432,24 @@ th.col-client.idle .app-icon {
   border-color: color-mix(in srgb, var(--warn) 35%, transparent);
 }
 
+/* A tool a client's own file keeps off (§7.11). Grey: it costs nothing there. */
+.badge.tool-off {
+  color: var(--text-muted);
+  border-style: dashed;
+}
+
+.tool-switches {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+
+.tool-switch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .inspector-tool > p,
 .inspector-tool > h4,
 .schema-json {

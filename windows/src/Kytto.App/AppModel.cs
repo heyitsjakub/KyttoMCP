@@ -755,6 +755,25 @@ internal sealed partial class AppModel : IDisposable
         return result;
     }
 
+    /// <summary>States which of a server's known tools are off in one client (§7.11).</summary>
+    internal ToolSwitchResult SetDisabledTools(IReadOnlyList<string> names, string serverId, ClientId clientId)
+    {
+        var server = ServerById(serverId);
+        var service = new ToolSwitchService(
+            home: _home,
+            writer: new ConfigWriter(Backups),
+            ledger: _ledger,
+            pathOverrides: Settings.ClientPathOverrides);
+
+        var result = service.SetDisabledTools(
+            names.ToHashSet(StringComparer.Ordinal),
+            server.KnownTools.Select(tool => tool.Name).ToArray(),
+            server,
+            clientId);
+        Reload();
+        return result;
+    }
+
     // MARK: - Authoring (§7.2, §7.5)
 
     internal AuthoringResult CreateServer(ServerDraft draft, IReadOnlyList<ClientId> clients) =>
@@ -1241,6 +1260,17 @@ internal sealed partial class AppModel : IDisposable
                         entry.Key + '\u0003' + (entry.Value is null ? "<null>" : entry.Value)));
             }
             snapshot[server.Id] = value;
+        }
+
+        // Tools the client's own file switches off count as a change too: the client
+        // reads them at launch like everything else (§7.11).
+        foreach (var server in _current.Servers)
+        {
+            if (!server.ToolFilters.TryGetValue(client, out var filter) || filter.IsEmpty) continue;
+            snapshot[$"@tools:{server.Id}"] = string.Join('\u0002', filter.Rules.Select(rule =>
+                    (rule.KeepsOn ? "+" : "-") + rule.Pattern)
+                .Concat(filter.WholeServerPatterns.Select(pattern => "=" + pattern))
+                .Concat(filter.AllowList is null ? [] : ["*" + string.Join('\u0003', filter.AllowList)]));
         }
 
         foreach (var route in _gatewayRoutes.All()

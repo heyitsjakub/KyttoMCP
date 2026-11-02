@@ -67,7 +67,10 @@ internal sealed record ClientDto(
     string ConfigurationScope,
     string? ScopeLabel,
     /// How many tools this client hands its model, against its cap if it has one.
-    ClientToolBudgetDto ToolBudget);
+    ClientToolBudgetDto ToolBudget,
+    /// What switching a single tool off writes in this client, or null when only
+    /// Gateway mode can hide its tools (§7.11).
+    string? ToolSwitchSummary = null);
 
 /// <summary>
 /// A count and a verdict. Server ids name what was not counted; no tool list
@@ -156,7 +159,12 @@ internal sealed record ServerDto(
     bool HasRelativePath,
     HealthDto? Health,
     TokenWeightDto? TokenWeight,
-    ProvenanceDto? Provenance = null);
+    ProvenanceDto? Provenance = null,
+    /// Client id → the known tools that client's own files switch off (§7.11).
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? ToolsOff = null,
+    /// Client id → tool → the broader rule keeping it off, which a switch for that one
+    /// tool cannot undo.
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? LockedTools = null);
 
 /// <summary>
 /// <c>kind</c> is <c>config</c> | <c>custom</c> | <c>extension</c> | <c>plugin</c>.
@@ -322,6 +330,15 @@ internal sealed record GatewayMigrationPreviewDto(
 
 internal sealed record GatewayMigrationResultDto(
     GatewayRouteDto Route,
+    string? BackupID,
+    string PathDisplay,
+    StateDto State);
+
+internal sealed record ToolSwitchResultDto(
+    string ServerName,
+    string ClientID,
+    IReadOnlyList<string> DisabledTools,
+    bool RequiresRestart,
     string? BackupID,
     string PathDisplay,
     StateDto State);

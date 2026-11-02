@@ -2,6 +2,7 @@
 // masked, transport, per-client enablement, and the way to edit or delete.
 
 import { el, button, busyButton, sheet, definitionList, formatTokens, clientIcon } from '../dom.js';
+import { packageSafetyAction } from './doctor.js';
 import { serverIsReadOnly, toolKey } from '../state.js';
 // Remote Doctor (§7.3, §7.10): field-level contract changes and the remote sign-in.
 import { contractFieldDetails } from './contractDetails.js';
@@ -440,6 +441,9 @@ function healthSection(state, server) {
     // and a reader looking for one tool needs to know why it moved.
     if (heaviest > 0) heading.append(el('span', 'muted', 'heaviest first'));
     section.append(heading);
+    const switches = toolSwitchControls(state, server);
+    if (switches) section.append(switches);
+    const offIn = clientsKeepingToolsOff(state, server);
 
     const list = el('div', 'inspector-tools');
     for (const tool of tools) {
@@ -451,6 +455,9 @@ function healthSection(state, server) {
       summary.append(el('span', 'mono inspector-tool-name', tool.name));
       for (const annotation of annotationLabels(tool.annotations)) {
         summary.append(el('span', `badge tool-annotation ${annotation.kind}`, annotation.label));
+      }
+      for (const clientName of offIn.get(tool.name) ?? []) {
+        summary.append(el('span', 'badge tool-off', `off in ${clientName}`));
       }
       if (tool.description) summary.append(el('span', 'muted inspector-tool-description', firstLine(tool.description)));
       if (tool.tokenCount != null) summary.append(toolWeight(tool.tokenCount, heaviest));
@@ -476,6 +483,60 @@ function healthSection(state, server) {
   }
 
   return section;
+}
+
+function packageSafetySummary(safety) {
+  const parts = [];
+  if (safety.malware) parts.push('listed as malware');
+  const others = safety.advisoryIDs.filter((id) => !id.startsWith('MAL-'));
+  if (others.length) parts.push(`${others.length} known vulnerabilit${others.length === 1 ? 'y' : 'ies'}`);
+  if (safety.installScripts.length) parts.push(`runs ${safety.installScripts.join(' and ')} on install`);
+  const when = new Date(safety.checkedAt * 1000).toLocaleString();
+  return `Package safety (${safety.packageName}${safety.version ? ` ${safety.version}` : ''}, checked ${when}): ${parts.length ? parts.join(', ') : 'no known malware or install scripts'}.`;
+}
+
+/// One button per client that can switch this server's tools in its own file
+/// (§7.11), and a pointer to Gateway mode for the clients that cannot.
+function toolSwitchControls(state, server) {
+  if (server.isBundled) return null;
+  const present = state.clients.filter(
+    (client) => !client.isReadOnly && (server.enabledIn[client.id] ?? 'absent') !== 'absent',
+  );
+  if (present.length === 0) return null;
+
+  const wrapper = el('div', 'tool-switches');
+  const actions = el('div', 'tool-switch-actions');
+  for (const client of present.filter((entry) => entry.toolSwitchSummary)) {
+    const off = server.toolsOff?.[client.id]?.length ?? 0;
+    actions.append(
+      button(off > 0 ? `${client.displayName}: ${off} off…` : `Choose tools in ${client.displayName}…`, 'choose-client-tools', {
+        className: 'button subtle',
+        dataset: { serverId: server.id, clientId: client.id },
+      }),
+    );
+  }
+  if (actions.childElementCount > 0) wrapper.append(actions);
+  const others = present.filter((client) => !client.toolSwitchSummary).map((client) => client.displayName);
+  if (others.length > 0) {
+    wrapper.append(
+      el(
+        'p',
+        'field-hint',
+        `${listPhrase(others)} ${others.length === 1 ? 'has' : 'have'} no setting for single tools. Gateway mode can hide tools there.`,
+      ),
+    );
+  }
+  return wrapper;
+}
+
+/// Tool name → the clients whose own files keep it off.
+function clientsKeepingToolsOff(state, server) {
+  const result = new Map();
+  for (const [clientId, tools] of Object.entries(server.toolsOff ?? {})) {
+    const name = state.clients.find((client) => client.id === clientId)?.displayName ?? clientId;
+    for (const tool of tools) result.set(tool, [...(result.get(tool) ?? []), name]);
+  }
+  return result;
 }
 
 /// Heaviest first, so the question the breakdown exists to answer — what is
@@ -652,6 +713,8 @@ function provenanceSection(state, server) {
       dataset: { serverId: server.id },
     }));
   }
+  const safety = canCheck ? packageSafetyAction(state, server.id, 'button subtle') : null;
+  if (safety) heading.append(safety);
   section.append(heading);
 
   const pairs = [
@@ -665,6 +728,8 @@ function provenanceSection(state, server) {
   if (provenance.latestVersion) pairs.push(['Latest known', provenance.latestVersion]);
   if (provenance.latestCheckedAt) pairs.push(['Checked', new Date(provenance.latestCheckedAt * 1000).toLocaleString()]);
   section.append(definitionList(pairs));
+
+  if (server.packageSafety) section.append(el('p', 'field-hint', packageSafetySummary(server.packageSafety)));
 
   if (!provenance.packageName) {
     section.append(el('p', 'field-hint', provenance.sourceKind === 'remote'

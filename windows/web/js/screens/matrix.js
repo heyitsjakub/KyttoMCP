@@ -49,7 +49,7 @@ import {
   renderUnifyPreview,
 } from './serverDetail.js';
 import { renderServerForm } from './serverForm.js';
-import { renderToolMask } from './toolMask.js';
+import { renderToolMask, renderToolSwitch } from './toolMask.js';
 import { renderSidebar, sidebarResizeHandle } from './sidebar.js';
 import { renderDoctor, renderDoctorFix } from './doctor.js';
 import { renderActivity } from './activity.js';
@@ -282,6 +282,8 @@ function sheetBody(state) {
       return renderGatewayRestore(state);
     case 'toolMask':
       return renderToolMask(state);
+    case 'toolSwitch':
+      return renderToolSwitch(state);
     case 'unifyPreview':
       return renderUnifyPreview(state);
     case 'form':
@@ -799,6 +801,12 @@ function notice(current, leaving = false) {
         className: current.undoBusy ? 'button subtle busy' : 'button subtle',
       }),
     );
+  }
+  if (current.action && !leaving) {
+    // A follow-up the notice offers, carrying what it needs as data attributes —
+    // the tool switch's Undo names the server, the client and the previous set.
+    const { label, action, ...data } = current.action;
+    bar.append(button(label, action, { className: 'button subtle', dataset: data }));
   }
   // An error is the one notice worth reporting; the private form is offered here
   // and never carries the message (§7.14).

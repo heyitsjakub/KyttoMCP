@@ -49,6 +49,24 @@ public class WireFormatTests
     }
 
     [Fact]
+    public void AToolSwitchReplyKeepsItsAcronymCase()
+    {
+        var encoded = Encode(new ToolSwitchResultDto(
+            ServerName: "github",
+            ClientID: "codex",
+            DisabledTools: ["delete_branch"],
+            RequiresRestart: true,
+            BackupID: "config.toml.bak",
+            PathDisplay: @"%USERPROFILE%\.codex\config.toml",
+            State: EmptyState));
+
+        Assert.Equal(
+            ["serverName", "clientID", "disabledTools", "requiresRestart",
+             "backupID", "pathDisplay", "state"],
+            KeysOf(encoded));
+    }
+
+    [Fact]
     public void ServerCarriesEveryFieldTheMatrixReads()
     {
         var encoded = Encode(new ServerDto(
@@ -71,7 +89,7 @@ public class WireFormatTests
         Assert.Equal(
             ["id", "name", "transport", "commandSummary", "command", "args", "env",
              "url", "enabledIn", "originKind", "isBundled", "source", "hasRelativePath",
-             "health", "tokenWeight", "provenance"],
+             "health", "tokenWeight", "provenance", "toolsOff", "lockedTools"],
             KeysOf(encoded));
         Assert.Equal(
             ["kind", "displayName", "version", "readOnly"],
@@ -392,7 +410,7 @@ public class WireFormatTests
         Assert.Equal(
             ["id", "displayName", "shortName", "iconAsset", "state", "configPathDisplay",
              "configFormatDisplay", "offSwitchSummary", "serverCount", "schemaQuirks",
-             "isReadOnly", "configurationScope", "scopeLabel", "toolBudget"],
+             "isReadOnly", "configurationScope", "scopeLabel", "toolBudget", "toolSwitchSummary"],
             KeysOf(encoded));
         var budget = encoded.GetProperty("toolBudget");
         Assert.Equal(
