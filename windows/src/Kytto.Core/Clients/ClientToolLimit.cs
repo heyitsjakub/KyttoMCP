@@ -52,7 +52,7 @@ public static class ToolLimitStates
 /// not been measured.
 /// </param>
 /// <param name="MaskedToolCount">
-/// Tools the measured servers have that Gateway masking keeps from this client.
+/// Tools the measured servers have that Gateway masking or the client's own tool switches keep from this client.
 /// Already subtracted from <paramref name="ToolCount"/>.
 /// </param>
 /// <param name="UnmeasuredServerIDs">
@@ -125,6 +125,16 @@ public static class ToolBudget
             var visible = route?.ExposedTools is { } exposed
                 ? ExposedCount(exposed, server, offered)
                 : offered;
+            // Tools the client's own files switch off (§7.11). Only countable by name,
+            // so only with a complete tool list.
+            if (server.ToolFilters.TryGetValue(clientID, out var filter)
+                && server.Health?.Tools.Select(tool => tool.Name).ToArray() is { } names
+                && names.Length >= offered)
+            {
+                var exposedNames = route?.ExposedTools?.ToHashSet(StringComparer.Ordinal);
+                var survivors = names.Where(name => exposedNames?.Contains(name) ?? true);
+                visible -= filter.OffTools(survivors).Count;
+            }
             count += visible;
             masked += offered - visible;
         }

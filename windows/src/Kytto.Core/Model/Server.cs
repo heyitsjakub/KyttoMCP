@@ -324,6 +324,12 @@ public sealed class Server
             ? copy.IsPlugin
             : Origin is Origin.Plugin plugin && client == plugin.Client;
 
+    /// <summary>
+    /// Each client's own rules for this server's single tools, where its files have any
+    /// to say (§7.11). Absent means every tool stays on.
+    /// </summary>
+    public Dictionary<ClientKey, ToolFilter> ToolFilters { get; init; } = [];
+
     /// <summary>The last health check, if one has ever been run (§7.3).</summary>
     /// <remarks>
     /// Never populated automatically: §6 forbids spawning on launch, so a server

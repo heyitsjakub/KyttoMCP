@@ -314,6 +314,12 @@ public sealed record ClientDescriptor(
     public ServerSchema ServerSchema { get; init; } = ServerSchema.Standard;
 
     /// <summary>
+    /// Where single tools can be switched off in this client's own files, or null when
+    /// only Gateway can hide them (§7.11).
+    /// </summary>
+    public ToolSwitch? ToolSwitch { get; init; }
+
+    /// <summary>
     /// The file and key holding servers the user can add, edit and remove.
     /// </summary>
     /// <remarks>

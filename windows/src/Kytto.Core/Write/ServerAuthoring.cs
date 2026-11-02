@@ -497,7 +497,7 @@ public sealed class ServerAuthoring(
 
             var prepared = source.Format == ConfigFormat.Json
                 ? writer.Prepare<JsonDocument>(path, clientId, pathDisplay, expecting,
-                    document => WriteJson(document, draft, source.ServersKey, oldName, descriptor.ServerSchema))
+                    document => WriteJson(document, draft, source.ServersKey, oldName, descriptor.ServerSchema, descriptor.ToolSwitch))
                 : writer.Prepare<TomlDocument>(path, clientId, pathDisplay, expecting,
                     document => WriteToml(document, draft, source, oldName));
             serverWrites.Add(new ClientWrite(clientId, prepared));
@@ -527,7 +527,8 @@ public sealed class ServerAuthoring(
         ServerDraft draft,
         string serversKey,
         string? oldName,
-        ServerSchema schema)
+        ServerSchema schema,
+        ToolSwitch? toolSwitch)
     {
         // Already here: splice the draft into the definition the file has, under the
         // spelling it has (§6.3).
@@ -547,6 +548,11 @@ public sealed class ServerAuthoring(
                     ?? throw new JsonEditException(JsonEditErrorKind.PathNotFound, [serversKey, key]);
                 text = document.Replacing(member.KeySpan, JsonText.String(draft.TrimmedName));
                 name = draft.TrimmedName;
+                // Tool switches that name the server move with it.
+                if (toolSwitch is ToolSwitch.PrefixedToolMap toolMap)
+                {
+                    text = ToolSwitches.RenamingMapRules(text, toolMap.Key, serversKey, key, draft.TrimmedName);
+                }
             }
             return draft.SplicingJson(text, [serversKey, name], schema);
         }
@@ -648,12 +654,25 @@ public sealed class ServerAuthoring(
 
             var prepared = writer.Prepare<JsonDocument>(
                 path, clientId, deny.File.DisplayString(), ledger.DigestFor(path),
-                document => renamingTo is null
-                    ? document.RemovingElements([deny.Key], Names)
-                    : document.Replacing((document.ValueAt(deny.Key)?.Elements ?? [])
+                document =>
+                {
+                    if (renamingTo is null) return document.RemovingElements([deny.Key], Names);
+                    var renamed = document.Replacing((document.ValueAt(deny.Key)?.Elements ?? [])
                         .Where(Names)
                         .Select(element => ((element[deny.NameField] ?? element).Span, JsonText.String(renamingTo)))
-                        .ToArray()));
+                        .ToArray());
+                    // Single-tool deny rules in the same file name the server too; left
+                    // behind, the tools they switched off would come back on.
+                    var descriptor = _descriptors.First(candidate => candidate.Id == clientId);
+                    if (descriptor.ToolSwitch is not ToolSwitch.PermissionRules rules
+                        || !string.Equals(
+                            Path.GetFullPath(_resolver.Resolve(rules.File)), Path.GetFullPath(path),
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return renamed;
+                    }
+                    return ToolSwitches.RenamingPermissionRules(renamed, rules.Path, name, renamingTo);
+                });
             writes.Add(new ClientWrite(clientId, prepared));
         }
         return writes;

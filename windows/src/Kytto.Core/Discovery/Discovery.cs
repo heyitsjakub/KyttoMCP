@@ -254,6 +254,10 @@ public sealed class Discovery
                         existing.EnabledIn[descriptor.Id] = found.Enablement;
                         existing.DefinitionsByClient[descriptor.Id] =
                             ClientDefinition.From(found.Server);
+                        if (found.Server.ToolFilters.TryGetValue(descriptor.Id, out var toolFilter))
+                        {
+                            existing.ToolFilters[descriptor.Id] = toolFilter;
+                        }
                     }
                     else
                     {
@@ -671,6 +675,7 @@ public sealed class Discovery
             ReadClaudeCodeProjects(document, map, descriptor, outcome);
         }
         if (serverMaps.FirstOrDefault()?.Value.Members is not { } members) return outcome;
+        var permissionDeny = PermissionDenyRules(descriptor.ToolSwitch);
 
         var ambiguousNames = members
             .GroupBy(member => Server.Identity(member.Key), StringComparer.Ordinal)
@@ -707,6 +712,15 @@ public sealed class Discovery
                 origin: new Origin.ConfigFile(descriptor.Id),
                 isBundled: false,
                 sourceText: document.Slice(member.Value.Span));
+
+            var toolFilter = descriptor.ToolSwitch switch
+            {
+                ToolSwitch.EntryLists lists => ToolSwitches.EntryFilter(lists.Deny, lists.Allow, member.Value),
+                ToolSwitch.PrefixedToolMap toolMap => ToolSwitches.MapFilter(document.Root[toolMap.Key], member.Key),
+                ToolSwitch.PermissionRules => ToolSwitches.PermissionFilter(permissionDeny, member.Key),
+                _ => null,
+            };
+            if (toolFilter is { IsEmpty: false }) server.ToolFilters[descriptor.Id] = toolFilter;
 
             // A flag on the entry itself (Antigravity's `disabled`, OpenCode's
             // `enabled`); absent means on, as it does for Codex.
@@ -969,6 +983,12 @@ public sealed class Discovery
                 isBundled: false,
                 sourceText: document.ServerDefinitionText(name, map.ServersKey) ?? "");
 
+            if (descriptor.ToolSwitch is ToolSwitch.EntryLists tomlLists)
+            {
+                var filter = ToolSwitches.EntryFilter(tomlLists.Deny, tomlLists.Allow, table);
+                if (!filter.IsEmpty) server.ToolFilters[descriptor.Id] = filter;
+            }
+
             // Absent means on. That is Codex's rule, not a guess: `codex mcp list`
             // reports a server with no `enabled` key as enabled.
             var isEnabled = flagKey is null || table.Value(flagKey)?.BoolValue != false;
@@ -1189,6 +1209,27 @@ public sealed class Discovery
             // Nothing readable, nothing extra to watch; the registration file itself is.
         }
         return files;
+    }
+
+    /// <summary>
+    /// Claude Code's permission deny rules, read (and so tracked) from the settings
+    /// file a tool switch writes to.
+    /// </summary>
+    private IReadOnlyList<string> PermissionDenyRules(ToolSwitch? toolSwitch)
+    {
+        if (toolSwitch is not ToolSwitch.PermissionRules rules) return [];
+        if (ReadTracked(_resolver.Resolve(rules.File)) is not { } source) return [];
+        try
+        {
+            return JsonDocument.Parse(source).Root.ValueAt([.. rules.Path])?.Elements?
+                .Select(element => element.StringValue)
+                .OfType<string>()
+                .ToArray() ?? [];
+        }
+        catch (JsonParseException)
+        {
+            return [];
+        }
     }
 
     /// <summary>Names switched off in a separate settings file, normalized for comparison.</summary>

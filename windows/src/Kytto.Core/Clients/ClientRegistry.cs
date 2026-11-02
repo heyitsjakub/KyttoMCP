@@ -141,7 +141,14 @@ public static class ClientRegistry
         // No tool limit: MCP tools are deferred behind tool search by default, with
         // a catalog of up to 10,000
         // (https://code.claude.com/docs/en/agent-sdk/tool-search).
-        ToolLimit: null);
+        ToolLimit: null)
+    {
+        ToolSwitch = new ToolSwitch.PermissionRules(
+            File: new PlatformPath(
+                Darwin: "~/.claude/settings.json",
+                Windows: @"%USERPROFILE%\.claude\settings.json"),
+            Path: ["permissions", "deny"]),
+    };
 
     // MARK: - Cursor
 
@@ -273,7 +280,10 @@ public static class ClientRegistry
         // No tool limit: none is documented, and MCP tools are deferred behind tool
         // search where the model supports it
         // (https://github.com/openai/codex/pull/29486).
-        ToolLimit: null);
+        ToolLimit: null)
+    {
+        ToolSwitch = new ToolSwitch.EntryLists(Deny: "disabled_tools", Allow: "enabled_tools"),
+    };
 
     // MARK: - Google Antigravity
 
@@ -309,6 +319,7 @@ public static class ClientRegistry
             "Workspace configs (`.agents/mcp_config.json`) are not read.")
     {
         ServerSchema = ServerSchema.Antigravity,
+        ToolSwitch = new ToolSwitch.EntryLists(Deny: "disabledTools", Allow: "enabledTools"),
     };
 
     // MARK: - Devin Desktop (formerly Windsurf)
@@ -380,5 +391,6 @@ public static class ClientRegistry
             "read; use a path override for the first two.")
     {
         ServerSchema = ServerSchema.OpenCode,
+        ToolSwitch = new ToolSwitch.PrefixedToolMap("tools"),
     };
 }
