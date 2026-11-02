@@ -164,7 +164,19 @@ internal sealed record ServerDto(
     IReadOnlyDictionary<string, IReadOnlyList<string>>? ToolsOff = null,
     /// Client id → tool → the broader rule keeping it off, which a switch for that one
     /// tool cannot undo.
-    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? LockedTools = null);
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? LockedTools = null,
+    /// The last package safety check the user asked for, while it still describes what
+    /// this server launches; null otherwise (§7.10).
+    PackageSafetyDto? PackageSafety = null);
+
+/// <summary>What <c>doctor.checkPackageSafety</c> found; the advisory text stays native.</summary>
+internal sealed record PackageSafetyDto(
+    string PackageName,
+    string? Version,
+    IReadOnlyList<string> AdvisoryIDs,
+    bool Malware,
+    IReadOnlyList<string> InstallScripts,
+    double CheckedAt);
 
 /// <summary>
 /// <c>kind</c> is <c>config</c> | <c>custom</c> | <c>extension</c> | <c>plugin</c>.

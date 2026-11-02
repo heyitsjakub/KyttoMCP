@@ -77,6 +77,13 @@ internal static partial class CommandRegistry
                 return new ProvenanceCheckResultDto(provenance.ToDto(), model.ToStateDto());
             });
 
+        // Only ever from the user's click: it reaches osv.dev and, for npm, the registry.
+        router.Register<HealthCheckPayload, StateDto>("doctor.checkPackageSafety", async payload =>
+        {
+            await model.CheckPackageSafetyAsync(payload.ServerID);
+            return model.ToStateDto();
+        });
+
         router.Register("imports.prompt", () => new ImportPromptDto(model.AgentImportPrompt()));
 
         router.Register<AgentImportPayload, AgentImportPreviewDto>("imports.preview", payload =>
@@ -632,7 +639,7 @@ internal static partial class CommandRegistry
                 "authoring", "catalog", "secrets", "health",
                 "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking",
                 "doctor", "activity", "contract-guard", "context-optimizer", "drift",
-                "updates", "provenance", "agent-import", "library", "skills",
+                "updates", "provenance", "package-safety", "agent-import", "library", "skills",
                 // Only what the shell can actually do: see CommandRegistry.Remote.cs.
                 .. RemoteCapabilities,
                 "portable-setup",

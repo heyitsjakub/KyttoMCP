@@ -89,7 +89,7 @@ public class WireFormatTests
         Assert.Equal(
             ["id", "name", "transport", "commandSummary", "command", "args", "env",
              "url", "enabledIn", "originKind", "isBundled", "source", "hasRelativePath",
-             "health", "tokenWeight", "provenance", "toolsOff", "lockedTools"],
+             "health", "tokenWeight", "provenance", "toolsOff", "lockedTools", "packageSafety"],
             KeysOf(encoded));
         Assert.Equal(
             ["kind", "displayName", "version", "readOnly"],

@@ -51,6 +51,8 @@ internal sealed partial class AppModel : IDisposable
     private readonly UpdateChecker _updates;
     private readonly UpdatePackageManager _updatePackages;
     private readonly ProvenanceChecker _provenanceChecker;
+    private readonly PackageSafetyLookup _packageSafetyLookup = new();
+    private readonly Dictionary<string, PackageSafetyReport> _packageSafety = [];
     private readonly McpLibraryScanner _libraryScanner = new();
     private readonly Dictionary<string, LibrarySession> _librarySessions = [];
     private readonly SkillsInventory _skillsInventory = new();
@@ -427,7 +429,29 @@ internal sealed partial class AppModel : IDisposable
         _current.Clients
             .Select(client => client.Id.BuiltIn)
             .OfType<ClientId>()
-            .ToArray());
+            .ToArray(),
+        _packageSafety);
+
+    /// <summary>
+    /// Asks osv.dev (and, for npm, the registry) about one server's package. Only on the
+    /// user's click (§7.10); the answer is kept in memory for the session.
+    /// </summary>
+    internal async Task<PackageSafetyReport> CheckPackageSafetyAsync(string serverId)
+    {
+        var server = ServerById(serverId);
+        var launch = PackageSafety.Launch(server) ?? throw PackageSafetyException.NotAPackage();
+        var report = await _packageSafetyLookup.CheckAsync(launch).ConfigureAwait(false);
+        _packageSafety[server.Id] = report;
+        return report;
+    }
+
+    /// <summary>The check the user asked for, while it still describes what the server launches.</summary>
+    internal PackageSafetyReport? PackageSafetyFor(Server server) =>
+        _packageSafety.GetValueOrDefault(server.Id) is { } report
+        && PackageSafety.Launch(server) is { } launch
+        && report.Describes(launch)
+            ? report
+            : null;
 
     internal IReadOnlyList<ContractAlert> ContractAlerts()
     {
@@ -1332,6 +1356,7 @@ internal sealed partial class AppModel : IDisposable
         _updates.Dispose();
         _updatePackages.Dispose();
         _provenanceChecker.Dispose();
+        _packageSafetyLookup.Dispose();
     }
 }
 

@@ -13,6 +13,9 @@ public enum DoctorAction
 
     /// <summary>Pin a runner-launched package to an exact release the user looked up.</summary>
     PinPackageVersion,
+
+    /// <summary>Ask osv.dev and the package registry about the package (§7.10).</summary>
+    CheckPackageSafety,
 }
 
 public sealed record DoctorFinding(
@@ -44,16 +47,23 @@ public static class McpDoctor
     /// switched on. So they are worked out here, across the whole matrix, and then
     /// attached to each server involved.
     /// </remarks>
+    /// <param name="packageSafety">Package checks the user asked for, by server id.</param>
     public static IReadOnlyList<DoctorServerReport> Reports(
         IReadOnlyList<Server> servers,
-        IReadOnlyList<ClientId> clients)
+        IReadOnlyList<ClientId> clients,
+        IReadOnlyDictionary<string, PackageSafetyReport>? packageSafety = null)
     {
         var collisions = CollisionFindings(servers, clients);
         return servers
             .Select(server =>
             {
                 var report = Analyze(server);
-                if (collisions.GetValueOrDefault(server.Id) is not { Count: > 0 } extra) return report;
+                IReadOnlyList<DoctorFinding> extra =
+                [
+                    .. PackageSafety.Findings(server, packageSafety?.GetValueOrDefault(server.Id)),
+                    .. collisions.GetValueOrDefault(server.Id) ?? [],
+                ];
+                if (extra.Count == 0) return report;
                 return report with { Findings = [.. report.Findings, .. extra] };
             })
             .Where(report => report.Findings.Count > 0)

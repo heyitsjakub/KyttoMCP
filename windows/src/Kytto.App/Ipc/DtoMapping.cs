@@ -67,7 +67,17 @@ internal static class DtoMapping
             .ToArray();
     }
 
-    internal static ServerDto ToDto(this Server server) => new(
+    internal static PackageSafetyDto ToDto(this PackageSafetyReport report) => new(
+        PackageName: report.PackageName,
+        Version: report.Version,
+        AdvisoryIDs: report.Advisories.Select(advisory => advisory.Id).ToArray(),
+        Malware: report.Advisories.Any(advisory => advisory.IsMalware),
+        InstallScripts: report.InstallScripts.Keys.Order(StringComparer.Ordinal).ToArray(),
+        CheckedAt: report.CheckedAt.ToUnixTimeMilliseconds() / 1000.0);
+
+    internal static ServerDto ToDto(this Server server) => server.ToDto(null);
+
+    internal static ServerDto ToDto(this Server server, PackageSafetyReport? packageSafety) => new(
         Id: server.Id,
         Name: server.Name,
         Transport: server.Transport.Raw(),
@@ -95,7 +105,8 @@ internal static class DtoMapping
             pair => pair.Value.OffTools(KnownToolNames(server))),
         LockedTools: server.ToolFilters.ToDictionary(
             pair => pair.Key.Raw(),
-            pair => pair.Value.LockedTools(KnownToolNames(server))));
+            pair => pair.Value.LockedTools(KnownToolNames(server))),
+        PackageSafety: packageSafety?.ToDto());
 
     /// <summary>The tools a server is known to offer, each name once.</summary>
     private static IReadOnlyList<string> KnownToolNames(Server server) =>
@@ -300,7 +311,9 @@ internal static class DtoMapping
         var current = model.Current();
         return new StateDto(
             Clients: model.ClientDtos(current),
-            Servers: current.Servers.Select(ToDto).ToArray(),
+            Servers: current.Servers
+                .Select(server => server.ToDto(model.PackageSafetyFor(server)))
+                .ToArray(),
             Diagnostics: current.Diagnostics.Select(ToDto).ToArray(),
             PendingRestarts: model.PendingRestarts.ToDictionary(
                 pair => pair.Key.Raw(),
