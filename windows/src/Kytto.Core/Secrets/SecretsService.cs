@@ -83,8 +83,10 @@ public sealed class SecretsService(
     ISecretStore store,
     IReadOnlyList<ClientDescriptor>? descriptors = null,
     IReadOnlyDictionary<string, string>? pathOverrides = null,
-    ParkStore? parkStore = null)
+    ParkStore? parkStore = null,
+    Func<string, string, bool>? isIgnoredByGit = null)
 {
+    private readonly Func<string, string, bool> _isIgnoredByGit = isIgnoredByGit ?? IsIgnoredByGit;
     private readonly ClientPathResolver _resolver = new(home, pathOverrides);
     private readonly IReadOnlyList<ClientDescriptor> _descriptors = descriptors ?? ClientRegistry.All;
 
@@ -134,6 +136,9 @@ public sealed class SecretsService(
         }
 
         var known = store.StoredIdentifiers();
+        // Every secret in one config sits in the same file, and the Git answer costs a
+        // process (up to three seconds). Asked once per file per scan, not once per secret.
+        var repositories = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         return groups
             .Select(pair => new SecretRecord(
                 Id: pair.Key,
@@ -143,7 +148,7 @@ public sealed class SecretsService(
                     .OrderBy(usage => usage.ClientID.Raw(), StringComparer.Ordinal)
                     .ToArray(),
                 IsInSecretStore: known.Contains(pair.Key),
-                Exposure: ExposureFor(pair.Value.Usages)))
+                Exposure: ExposureFor(pair.Value.Usages, repositories)))
             .OrderBy(record => record.Key, StringComparer.Ordinal)
             .ThenBy(record => record.Id, StringComparer.Ordinal)
             .ToArray();
@@ -448,7 +453,9 @@ public sealed class SecretsService(
         return true;
     }
 
-    private IReadOnlyList<SecretExposure> ExposureFor(IReadOnlyList<SecretUsage> usages)
+    private IReadOnlyList<SecretExposure> ExposureFor(
+        IReadOnlyList<SecretUsage> usages,
+        Dictionary<string, string?> repositories)
     {
         var found = new List<SecretExposure>();
         var seen = new HashSet<ClientId>();
@@ -469,7 +476,12 @@ public sealed class SecretsService(
                 found.Add(new SecretExposure.ReadableByOthers(display, who));
             }
 
-            if (GitRepositoryContaining(path) is { } repository)
+            if (!repositories.TryGetValue(path, out var repository))
+            {
+                repository = GitRepositoryContaining(path, _isIgnoredByGit);
+                repositories[path] = repository;
+            }
+            if (repository is not null)
             {
                 found.Add(new SecretExposure.InsideGitRepository(display, Abbreviate(repository)));
             }
@@ -541,7 +553,7 @@ public sealed class SecretsService(
     /// directory in a dotfiles repository, and a token committed there is the exact
     /// accident §6 opens with.
     /// </remarks>
-    private static string? GitRepositoryContaining(string path)
+    private static string? GitRepositoryContaining(string path, Func<string, string, bool> isIgnoredByGit)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(path));
         while (!string.IsNullOrEmpty(directory))
@@ -549,7 +561,7 @@ public sealed class SecretsService(
             if (Directory.Exists(Path.Combine(directory, ".git")) ||
                 File.Exists(Path.Combine(directory, ".git")))
             {
-                return IsIgnoredByGit(path, directory) ? null : directory;
+                return isIgnoredByGit(path, directory) ? null : directory;
             }
             var parent = Path.GetDirectoryName(directory);
             if (parent == directory) break;

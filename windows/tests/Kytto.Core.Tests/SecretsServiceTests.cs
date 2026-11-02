@@ -462,4 +462,36 @@ public class SecretsExposureTests
 
         Assert.Contains(record.Exposure, exposure => exposure is SecretExposure.InsideGitRepository);
     }
+
+    /// <summary>
+    /// Every secret in one file is called out, but Git is asked about the file once per
+    /// scan — each question is a process with a three-second timeout.
+    /// </summary>
+    [Fact]
+    public void GitIsAskedOncePerFileHoweverManySecretsItHolds()
+    {
+        using var harness = new ToggleHarness();
+        harness.Write(
+            """{"mcpServers": {"github": {"command": "npx", "env": {"API_KEY": "value-aaaaaaaaaaaa", "SECRET_TOKEN": "value-bbbbbbbbbbbb"}}}}""",
+            @".cursor\mcp.json");
+        Directory.CreateDirectory(Path.Combine(harness.Home, ".git"));
+
+        var questions = 0;
+        var service = new SecretsService(
+            harness.Home,
+            new ConfigWriter(harness.Backups),
+            harness.Ledger,
+            new InMemorySecretStore(),
+            isIgnoredByGit: (_, _) =>
+            {
+                questions++;
+                return false;
+            });
+        var records = service.Scan(harness.Discover().Servers);
+
+        Assert.Equal(2, records.Count);
+        Assert.All(records, record =>
+            Assert.Contains(record.Exposure, exposure => exposure is SecretExposure.InsideGitRepository));
+        Assert.Equal(1, questions);
+    }
 }

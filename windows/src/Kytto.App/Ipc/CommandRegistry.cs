@@ -195,9 +195,11 @@ internal static partial class CommandRegistry
 
         router.Register("state.get", model.ToStateDto);
 
-        router.Register("discovery.refresh", () =>
+        // Re-read off the UI thread; the reply waits for a pass that started after the
+        // request, so the state it carries is not older than the click.
+        router.Register("discovery.refresh", async () =>
         {
-            model.Reload();
+            await model.ReloadInBackgroundAsync();
             return model.ToStateDto();
         });
 

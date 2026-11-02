@@ -59,9 +59,12 @@ internal static class DtoMapping
     /// Every client with its tool count against its cap. The route store is read
     /// once here rather than once per client.
     /// </summary>
-    internal static ClientDto[] ClientDtos(this AppModel model, DiscoveryResult current)
+    internal static ClientDto[] ClientDtos(
+        this AppModel model,
+        DiscoveryResult current,
+        IReadOnlyList<GatewayRoute>? routes = null)
     {
-        var routes = model.GatewayRoutes();
+        routes ??= model.GatewayRoutes();
         return current.Clients
             .Select(client => client.ToDto(AppModel.ToolBudgetFor(client, current, routes)))
             .ToArray();
@@ -309,8 +312,11 @@ internal static class DtoMapping
     internal static StateDto ToStateDto(this AppModel model)
     {
         var current = model.Current();
+        // Read once: the route store is a file, and the clients' tool budgets and the
+        // routes the page shows have to agree about what was in it.
+        var routes = model.GatewayRoutes();
         return new StateDto(
-            Clients: model.ClientDtos(current),
+            Clients: model.ClientDtos(current, routes),
             Servers: current.Servers
                 .Select(server => server.ToDto(model.PackageSafetyFor(server)))
                 .ToArray(),
@@ -318,7 +324,7 @@ internal static class DtoMapping
             PendingRestarts: model.PendingRestarts.ToDictionary(
                 pair => pair.Key.Raw(),
                 pair => pair.Value),
-            GatewayRoutes: model.GatewayRoutes().Select(ToDto).ToArray(),
+            GatewayRoutes: routes.Select(ToDto).ToArray(),
             DoctorReports: model.DoctorReports().Select(ToDto).ToArray(),
             ContractAlerts: model.ContractAlerts().Select(ToDto).ToArray(),
             Drift: ServerDrift.Detect(current.Servers).Select(ToDto).ToArray(),

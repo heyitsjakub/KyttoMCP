@@ -131,9 +131,10 @@ internal sealed partial class AppModel : IDisposable
         _authorizationPageLauncher = authorizationPageLauncher ?? new WindowsAuthorizationPageLauncher();
         Backups = new BackupStore(_paths, Settings.BackupRetention);
         _current = Discover();
+        var startupRoutes = _gatewayRoutes.All();
         foreach (var client in ClientIds.All)
         {
-            var snapshot = RestartSnapshot(client);
+            var snapshot = RestartSnapshot(client, startupRoutes);
             _restartBaselines[client] = snapshot;
             _restartObserved[client] = new Dictionary<string, string>(snapshot, StringComparer.Ordinal);
         }
@@ -695,22 +696,28 @@ internal sealed partial class AppModel : IDisposable
 
     internal DiscoveryResult Reload()
     {
-        // Watch targets can appear after launch (a client creates its config
-        // directory), disappear, or move through Settings. Rebuild them whenever
-        // discovery is explicitly refreshed instead of pinning the launch-time
-        // directory set for the lifetime of the app.
-        // A change the old watcher was still waiting to report is handed to the new
-        // one, rather than dropped with its timer.
-        var pending = false;
-        if (_watchConfigs)
+        lock (_reloadGate)
         {
-            pending = _watcher?.HasPendingChange ?? false;
-            _watcher?.Dispose();
-            _watcher = null;
+            // Anything a background pass read before this point may be older than what
+            // this call is about to read (see AppModel.Reload.cs).
+            Interlocked.Increment(ref _reloadGeneration);
+            // Watch targets can appear after launch (a client creates its config
+            // directory), disappear, or move through Settings. Rebuild them whenever
+            // discovery is explicitly refreshed instead of pinning the launch-time
+            // directory set for the lifetime of the app.
+            // A change the old watcher was still waiting to report is handed to the new
+            // one, rather than dropped with its timer.
+            var pending = false;
+            if (_watchConfigs)
+            {
+                pending = _watcher?.HasPendingChange ?? false;
+                _watcher?.Dispose();
+                _watcher = null;
+            }
+            _current = Discover(pending);
+            RefreshRestartState();
+            return _current;
         }
-        _current = Discover(pending);
-        RefreshRestartState();
-        return _current;
     }
 
     internal KyttoSettings UpdateSettings(Func<KyttoSettings, KyttoSettings> change)
@@ -741,9 +748,10 @@ internal sealed partial class AppModel : IDisposable
     internal void AcknowledgeRestart(ClientId? client)
     {
         var clients = client is { } selected ? [selected] : ClientIds.All;
+        var routes = _gatewayRoutes.All();
         foreach (var target in clients)
         {
-            _restartBaselines[target] = RestartSnapshot(target);
+            _restartBaselines[target] = RestartSnapshot(target, routes);
             _dismissedRestarts.Remove(target);
         }
         RefreshRestartState();
@@ -1234,9 +1242,11 @@ internal sealed partial class AppModel : IDisposable
     /// </summary>
     private void RefreshRestartState()
     {
+        // The route store is a file; read once for every client, not once per client.
+        var routes = _gatewayRoutes.All();
         foreach (var client in ClientIds.All)
         {
-            var current = RestartSnapshot(client);
+            var current = RestartSnapshot(client, routes);
             if (_restartObserved.TryGetValue(client, out var observed) &&
                 !SameSnapshot(observed, current) &&
                 _restartBaselines.TryGetValue(client, out var baseline) &&
@@ -1261,7 +1271,7 @@ internal sealed partial class AppModel : IDisposable
         }
     }
 
-    private Dictionary<string, string> RestartSnapshot(ClientId client)
+    private Dictionary<string, string> RestartSnapshot(ClientId client, IReadOnlyList<GatewayRoute> routes)
     {
         var snapshot = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var server in _current.Servers)
@@ -1297,7 +1307,7 @@ internal sealed partial class AppModel : IDisposable
                 .Concat(filter.AllowList is null ? [] : ["*" + string.Join('\u0003', filter.AllowList)]));
         }
 
-        foreach (var route in _gatewayRoutes.All()
+        foreach (var route in routes
                      .Where(route => route.ClientID == client)
                      .OrderBy(route => route.Id, StringComparer.Ordinal))
         {
@@ -1321,32 +1331,41 @@ internal sealed partial class AppModel : IDisposable
         left.Count == right.Count && left.All(pair =>
             right.TryGetValue(pair.Key, out var value) && value == pair.Value);
 
+    private Discovery BuildDiscovery(Action<string, string?> recordDigest) => new(
+        home: _home,
+        locator: _locator,
+        recordDigest: recordDigest,
+        parked: _parkStore.All()
+            .Select(entry => new ParkedEntry(entry.ClientID, entry.ServerName, entry.SourceText))
+            .ToArray(),
+        metadata: _metadata.All(),
+        pathOverrides: Settings.ClientPathOverrides,
+        customSources: Settings.CustomConfigSources);
+
     private DiscoveryResult Discover(bool pendingChange = false)
     {
-        var discovery = new Discovery(
-            home: _home,
-            locator: _locator,
-            recordDigest: (path, digest) => _ledger.Record(path, digest),
-            parked: _parkStore.All()
-                .Select(entry => new ParkedEntry(entry.ClientID, entry.ServerName, entry.SourceText))
-                .ToArray(),
-            metadata: _metadata.All(),
-            pathOverrides: Settings.ClientPathOverrides,
-            customSources: Settings.CustomConfigSources);
-
+        var discovery = BuildDiscovery((path, digest) => _ledger.Record(path, digest));
         var result = discovery.Run();
 
         // Started after the first read, so the ledger is primed before anything can
         // report a change against it.
-        if (_watchConfigs)
-        {
-            _watcher ??= new ConfigWatcher(
-                discovery.WatchTargets(),
-                () => ConfigsChanged?.Invoke(),
-                startPending: pendingChange);
-        }
+        if (_watchConfigs && _watcher is null) ArmWatcher(discovery, pendingChange);
 
         return result;
+    }
+
+    /// <summary>
+    /// Replaces the watcher with one over the targets this pass found. A change the old
+    /// one was still waiting to report is handed over rather than dropped with its timer.
+    /// </summary>
+    private void ArmWatcher(Discovery discovery, bool pendingChange)
+    {
+        if (!_watchConfigs) return;
+        _watcher?.Dispose();
+        _watcher = new ConfigWatcher(
+            discovery.WatchTargets(),
+            () => ConfigsChanged?.Invoke(),
+            startPending: pendingChange);
     }
 
     public void Dispose()

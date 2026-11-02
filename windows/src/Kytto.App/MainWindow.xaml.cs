@@ -164,10 +164,14 @@ public partial class MainWindow : Window
         // A watched file changed, whoever changed it — including Kytto (§6.4). The
         // watcher fires off the UI thread, so the hop back is what makes it safe to
         // touch the web view.
+        // The re-read runs off the UI thread, and the page is told only when something
+        // it shows is different: Claude Code rewrites ~/.claude.json after nearly every
+        // message without touching a server.
         _model.ConfigsChanged += () => Dispatcher.InvokeAsync(async () =>
         {
-            _model.Reload();
+            if (!await _model.ReloadInBackgroundAsync()) return;
             await _router.EmitAsync("configs.changed", _model.ToStateDto());
+            _tray?.Refresh();
         });
 
         _tray = new TrayController(_model, this, RequestQuit, SupportLinkLauncher);
@@ -178,7 +182,6 @@ public partial class MainWindow : Window
             _ = Dispatcher.InvokeAsync(async () =>
                 await _router.EmitAsync("settings.changed", settings.ToDto()));
         };
-        _model.ConfigsChanged += () => Dispatcher.InvokeAsync(() => _tray.Refresh());
 
         InstallShortcuts();
 

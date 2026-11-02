@@ -1439,9 +1439,12 @@ third alone; nothing else in the UI changes.
 | `health.progress` | `{ serverName, index, total }` | `health.checkAll` moved on to the next server |
 | `updates.progress` | `{ phase, progress, bytesReceived, totalBytes }` | A download or explicit install moved to its next verified phase |
 
-`configs.changed` fires for Kytto's own writes too. Re-reading is cheap and the
-render is idempotent, so the UI settles on the truth rather than trying to work
-out which events were its own.
+`configs.changed` fires for Kytto's own writes too. The re-read it triggers runs
+off the UI thread, and the push is skipped when the pass found the same servers,
+clients, diagnostics and restart state the page already has — Claude Code
+rewrites `~/.claude.json` after nearly every message without touching any
+server. The render is idempotent, so the UI still settles on the truth of every
+push it does receive rather than trying to work out which events were its own.
 
 ## Not implemented
 
