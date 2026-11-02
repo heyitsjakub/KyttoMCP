@@ -119,8 +119,8 @@ shasum -a 256 KyttoMCP-1.0.9.dmg
 # 2cb955c50c2df94af27fe4445fc6929f17cb4664089f383b9c0d49cdd8837846
 
 # Windows (PowerShell)
-Get-FileHash Kytto-Setup-win-x64-1.0.9.exe -Algorithm SHA256
-# 085d0f843e334ead78d37bda6d6074f11e14dfd9568bdca84a5cfef8d0f336ac
+Get-FileHash Kytto-Setup-win-x64-1.0.9.1.exe -Algorithm SHA256
+# 965c6babf1a5241031db527e80927c55faad98bd85b4ab2bf3d39a56e23703f2
 ```
 
 ## Local by design

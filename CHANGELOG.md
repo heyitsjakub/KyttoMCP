@@ -21,7 +21,7 @@ headings below.
 | Platform | File | Size | SHA-256 |
 |---|---|---:|---|
 | macOS (universal) | `KyttoMCP-1.0.9.1.dmg` | 6.0 MB | `cb69196b4c16a76265c9a4bbabfa1e8b3ab57e3ae7fba2805c02b8d0dd1c98fa` |
-| Windows x64 | `Kytto-Setup-win-x64-1.0.9.1.exe` | | Added when the installer is built |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.9.1.exe` | 78.6 MB | `965c6babf1a5241031db527e80927c55faad98bd85b4ab2bf3d39a56e23703f2` |
 
 The macOS build is ad-hoc signed rather than notarized. Verify the SHA-256
 checksum before bypassing Gatekeeper. The Windows installer is unsigned;
