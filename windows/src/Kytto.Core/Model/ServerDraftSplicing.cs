@@ -1,3 +1,4 @@
+using Kytto.Core.Clients;
 using Kytto.Core.Json;
 using Kytto.Core.Toml;
 
@@ -30,8 +31,18 @@ public static class ServerDraftSplicing
     /// Where the definition object sits — <c>[serversKey, name]</c> in a config file,
     /// <c>[]</c> for a parked copy, which is the object alone.
     /// </param>
-    public static string SplicingJson(this ServerDraft draft, string source, IReadOnlyList<string> path)
+    /// <param name="schema">How the target client spells an entry; standard when omitted.</param>
+    public static string SplicingJson(
+        this ServerDraft draft,
+        string source,
+        IReadOnlyList<string> path,
+        ServerSchema? schema = null)
     {
+        schema ??= ServerSchema.Standard;
+        if (schema.Shape == ServerSchema.EntryShape.OpenCode)
+        {
+            return SplicingOpenCode(draft, source, path);
+        }
         var text = source;
         var unit = IndentStyle.Detect(source).Text;
         var newline = source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
@@ -50,9 +61,20 @@ public static class ServerDraftSplicing
         var initial = Definition();
         // A field the draft describes, spelled twice, would make every comparison
         // below a guess about which copy the client reads.
-        foreach (var key in DescribedFields) JsonEditor.SoleMember(key, initial.Members, path);
-        var existing = ServerFields.FromJson(initial.Node);
+        var described = DescribedFields
+            .Concat(schema.RemoteUrlKeys)
+            .Concat(schema.TransportKey is { } own ? [own] : [])
+            .Distinct();
+        foreach (var key in described) JsonEditor.SoleMember(key, initial.Members, path);
+        var existing = schema.FieldsOf(initial.Node);
         var existingTransport = existing.ResolveTransport();
+        // The endpoint stays under the key this entry already uses: Antigravity
+        // reads `url` as well as its own `serverUrl`.
+        var urlKey = schema.RemoteUrlKeys.FirstOrDefault(key => initial.Node[key] is not null)
+            ?? schema.RemoteUrlKey;
+        string[] typeKeys = schema.TransportKey is { } transportKey && transportKey != "type"
+            ? ["type", transportKey]
+            : ["type"];
 
         // Rendered to sit among the definition's own members: on one line if the
         // definition is written on one line, indented like its members otherwise.
@@ -81,8 +103,7 @@ public static class ServerDraftSplicing
         // actually changes; a definition that already carries both keeps both.
         if (draft.Transport == Transport.Stdio && existingTransport != Transport.Stdio)
         {
-            Remove("url");
-            Remove("type");
+            foreach (var key in schema.RemoteUrlKeys.Concat(typeKeys)) Remove(key);
         }
         else if (draft.Transport != Transport.Stdio && existingTransport == Transport.Stdio)
         {
@@ -107,54 +128,184 @@ public static class ServerDraftSplicing
         }
         else
         {
-            if (existingTransport != draft.Transport) Set("type", JsonText.String(draft.Transport.Raw()));
+            if (existingTransport != draft.Transport)
+            {
+                // A `type` already in the file is kept truthful; a schema that leaves
+                // Streamable HTTP unstated only ever writes the exception.
+                var present = typeKeys.Where(key => initial.Node[key] is not null).ToArray();
+                foreach (var key in present) Set(key, JsonText.String(draft.Transport.Raw()));
+                if (present.Length == 0 && schema.TransportKey is { } stated &&
+                    (schema.StatesDefaultTransport || draft.Transport != Transport.Http))
+                {
+                    Set(stated, JsonText.String(draft.Transport.Raw()));
+                }
+            }
+            var url = draft.Url.Trim();
+            if (existing.Url != url) Set(urlKey, JsonText.String(url));
+        }
+
+        return SplicingJsonEnvironment(draft, text, path, "env");
+    }
+
+    /// <summary>OpenCode's entry: <c>type</c>, one argv array in <c>command</c>, <c>environment</c>.</summary>
+    /// <remarks>
+    /// Same rules as <see cref="SplicingJson"/> — only what the draft describes is
+    /// touched, and <c>enabled</c>, <c>timeout</c>, <c>headers</c>, <c>oauth</c> and
+    /// comments stay put.
+    /// </remarks>
+    private static string SplicingOpenCode(ServerDraft draft, string source, IReadOnlyList<string> path)
+    {
+        var text = source;
+        string[] at = [.. path];
+        var document = JsonDocument.Parse(text);
+        var node = document.Root.ValueAt(at)
+            ?? throw new JsonEditException(JsonEditErrorKind.PathNotFound, path);
+        var members = node.Members
+            ?? throw new JsonEditException(JsonEditErrorKind.NotAnObject, path);
+        foreach (var key in new[] { "type", "command", "url", "environment" })
+        {
+            JsonEditor.SoleMember(key, members, path);
+        }
+        var existing = ServerSchema.OpenCode.FieldsOf(node);
+        var existingTransport = existing.ResolveTransport();
+        var unit = IndentStyle.Detect(source).Text;
+        var newline = source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+
+        void Set(string key, string raw) =>
+            text = JsonDocument.Parse(text).SettingMember(key, at, raw);
+        void Remove(string key) =>
+            text = JsonDocument.Parse(text).RemovingMember(key, at);
+
+        // OpenCode's local and remote entries accept different keys and refuse the
+        // other's, so a change of transport takes the old one's with it. That
+        // includes `headers` going local: the backup holds them.
+        if ((draft.Transport == Transport.Stdio) != (existingTransport == Transport.Stdio))
+        {
+            foreach (var key in draft.Transport == Transport.Stdio
+                         ? new[] { "url", "headers", "oauth" }
+                         : new[] { "command", "cwd", "environment" })
+            {
+                Remove(key);
+            }
+        }
+        var type = draft.Transport == Transport.Stdio ? "local" : "remote";
+        if (node["type"]?.StringValue != type) Set("type", JsonText.String(type));
+
+        if (draft.Transport == Transport.Stdio)
+        {
+            string[] argv = [draft.Command.Trim(), .. draft.Args];
+            var current = node["command"]?.Elements;
+            if (current is null || current.Count != argv.Length ||
+                !current.Select(element => element.StringValue).SequenceEqual(argv, StringComparer.Ordinal))
+            {
+                var now = JsonDocument.Parse(text);
+                var entry = now.Root.ValueAt(at)
+                    ?? throw new JsonEditException(JsonEditErrorKind.PathNotFound, path);
+                var first = entry.Members?.FirstOrDefault()
+                    ?? throw new JsonEditException(JsonEditErrorKind.PathNotFound, path);
+                var oneLine = !now.ContainsNewline(entry.Span.Start, entry.Span.End);
+                var indent = now.LineIndent(first.Span.Start);
+                var value = JsonBuildValue.Strings(argv);
+                Set("command", oneLine
+                    ? JsonBuilder.Render(value)
+                    : JsonBuilder.Render(value, indent, unit, newline));
+            }
+        }
+        else
+        {
             var url = draft.Url.Trim();
             if (existing.Url != url) Set("url", JsonText.String(url));
+            return text;
         }
+
+        return SplicingJsonEnvironment(draft, text, path, "environment");
+    }
+
+    /// <summary>Environment, key by key, for the object at <paramref name="path"/>.</summary>
+    private static string SplicingJsonEnvironment(
+        ServerDraft draft,
+        string source,
+        IReadOnlyList<string> path,
+        string envKey)
+    {
+        var text = source;
+        var unit = IndentStyle.Detect(source).Text;
+        var newline = source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        string[] at = [.. path];
+
+        (JsonDocument Document, JsonNode Node, IReadOnlyList<JsonMember> Members) Definition()
+        {
+            var document = JsonDocument.Parse(text);
+            var node = document.Root.ValueAt(at)
+                ?? throw new JsonEditException(JsonEditErrorKind.PathNotFound, path);
+            var members = node.Members
+                ?? throw new JsonEditException(JsonEditErrorKind.NotAnObject, path);
+            return (document, node, members);
+        }
+        string Render(JsonBuildValue value)
+        {
+            var current = Definition();
+            var oneLine = current.Members.Count > 0 &&
+                !current.Document.ContainsNewline(current.Node.Span.Start, current.Node.Span.End);
+            if (oneLine && value is JsonBuildValue.ObjectValue inline)
+            {
+                return JsonText.InlineObject(inline.Fields
+                    .Select(field => (field.Key, JsonBuilder.Render(field.Value)))
+                    .ToArray());
+            }
+            var indent = current.Members.Count > 0
+                ? current.Document.LineIndent(current.Members[0].Span.Start)
+                : current.Document.LineIndent(current.Node.Span.Start) + unit;
+            return JsonBuilder.Render(value, oneLine ? "" : indent, unit, newline);
+        }
+        void Set(string key, string raw, params string[] under) =>
+            text = JsonDocument.Parse(text).SettingMember(key, [.. at, .. under], raw);
+        void Remove(string key, params string[] under) =>
+            text = JsonDocument.Parse(text).RemovingMember(key, [.. at, .. under]);
 
         // Environment, key by key. A value of null is the UI saying "keep what is
         // there" (§6), which for a key already in this file means not touching it at
         // all — including values that are not strings.
         var wanted = draft.RealEnvironment;
-        var fileValues = StringValues((Definition().Node["env"]?.Members ?? [])
+        var fileValues = StringValues((Definition().Node[envKey]?.Members ?? [])
             .Select(member => (member.Key, member.Value.StringValue)));
-        if (Definition().Node["env"]?.Members is { } envMembers)
+        if (Definition().Node[envKey]?.Members is { } envMembers)
         {
             if (wanted.Count == 0)
             {
-                if (envMembers.Count > 0) Remove("env");
+                if (envMembers.Count > 0) Remove(envKey);
             }
             else
             {
                 var keys = wanted.Select(entry => entry.Key).ToHashSet(StringComparer.Ordinal);
                 foreach (var member in envMembers.Where(member => !keys.Contains(member.Key)))
                 {
-                    Remove(member.Key, "env");
+                    Remove(member.Key, envKey);
                 }
                 foreach (var entry in wanted)
                 {
-                    var present = (Definition().Node["env"]?.Members ?? [])
+                    var present = (Definition().Node[envKey]?.Members ?? [])
                         .Where(member => member.Key == entry.Key)
                         .ToArray();
                     if (present.Length > 1)
                     {
-                        throw new JsonEditException(JsonEditErrorKind.DuplicateKey, [.. at, "env", entry.Key]);
+                        throw new JsonEditException(JsonEditErrorKind.DuplicateKey, [.. at, envKey, entry.Key]);
                     }
                     if (present.Length == 1)
                     {
                         if (entry.Value is null || present[0].Value.StringValue == entry.Value) continue;
-                        Set(entry.Key, JsonText.String(entry.Value), "env");
+                        Set(entry.Key, JsonText.String(entry.Value), envKey);
                     }
                     else
                     {
-                        Set(entry.Key, JsonText.String(draft.ValueForNewKey(entry, fileValues)), "env");
+                        Set(entry.Key, JsonText.String(draft.ValueForNewKey(entry, fileValues)), envKey);
                     }
                 }
             }
         }
         else if (wanted.Count > 0)
         {
-            Set("env", Render(JsonBuildValue.Object(wanted
+            Set(envKey, Render(JsonBuildValue.Object(wanted
                 .Select(entry => new JsonBuildValue.Field(entry.Key, JsonBuildValue.Text(draft.ValueForNewKey(entry))))
                 .ToArray())));
         }

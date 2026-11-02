@@ -126,8 +126,11 @@ public sealed class ToggleService(
                 SetViaDenyList(enabled, server, clientId, source, deny),
             EnablementStrategy.Presence =>
                 SetViaPresence(enabled, server, clientId, source),
-            EnablementStrategy.InlineFlag flag =>
+            EnablementStrategy.InlineFlag flag when source.Format == ConfigFormat.Toml =>
                 SetViaInlineFlag(enabled, server, clientId, source, flag.Key),
+            EnablementStrategy.InlineFlag or EnablementStrategy.InlineDisabledFlag
+                when source.Format == ConfigFormat.Json && source.Enablement.Flag is { } jsonFlag =>
+                SetViaJsonFlag(enabled, server, clientId, source, jsonFlag),
             _ => throw ToggleException.NoSourceForClient(clientId),
         };
     }
@@ -172,11 +175,14 @@ public sealed class ToggleService(
         }
         EnsurePortable(server, clientId);
         if (server.DefinitionSource.Length > 0 && FormatOf(server.Origin) == ConfigFormat.Json &&
-            TargetFormat(clientId) == ConfigFormat.Json)
+            TargetFormat(clientId) == ConfigFormat.Json &&
+            PortableJson(server.DefinitionSource, SchemaOf(server.Origin), SchemaOfClient(clientId)) is { } copied)
         {
-            // A copy from another JSON client. Those agree on the per-server shape,
-            // so the source text carries over as it stands.
-            return new ArrivingDefinition.Verbatim(server.DefinitionSource);
+            // A copy from another JSON client. Where the two agree on the per-server
+            // shape the text carries over as it stands, keeping `headers`, `cwd` and
+            // keys Kytto does not model; where they spell the endpoint differently
+            // only those keys are respelt.
+            return new ArrivingDefinition.Verbatim(copied);
         }
         if (server.Command is not null || server.Url is not null)
         {
@@ -199,11 +205,61 @@ public sealed class ToggleService(
         {
             throw ToggleException.GatewayDefinitionNotPortable(server.Name);
         }
-        if (FormatOf(server.Origin) is { } sourceFormat && sourceFormat != TargetFormat(clientId))
+        var targetSchema = SchemaOfClient(clientId);
+        var sourceSchema = SchemaOf(server.Origin);
+        if (TargetFormat(clientId) == ConfigFormat.Json && server.Transport == Transport.Sse && !targetSchema.AcceptsSse)
         {
-            var lost = UnportableFields(server.DefinitionSource, sourceFormat);
+            throw ToggleException.DefinitionNotPortable(server.Name, ["the legacy HTTP+SSE transport"]);
+        }
+        if (FormatOf(server.Origin) is { } sourceFormat &&
+            (sourceFormat != TargetFormat(clientId) || sourceSchema.Shape != targetSchema.Shape))
+        {
+            // Text that translates between two mcpServers-shaped clients never gets
+            // here; what does is rendered from the model.
+            var lost = UnportableFields(server.DefinitionSource, sourceFormat, sourceSchema);
             if (lost.Count > 0) throw ToggleException.DefinitionNotPortable(server.Name, lost);
         }
+    }
+
+    private ServerSchema SchemaOfClient(ClientId clientId) =>
+        _descriptors.FirstOrDefault(descriptor => descriptor.Id == clientId)?.ServerSchema ?? ServerSchema.Standard;
+
+    private ServerSchema SchemaOf(Origin origin) =>
+        origin is Origin.ConfigFile file && file.Client.BuiltIn is { } clientId
+            ? SchemaOfClient(clientId)
+            : ServerSchema.Standard;
+
+    /// <summary>
+    /// A JSON definition from a client with schema <paramref name="from"/>, ready for
+    /// one with schema <paramref name="to"/>, without the source client's own on/off
+    /// and tool state. Null when the shapes differ and the definition has to be rendered.
+    /// </summary>
+    internal static string? PortableJson(string source, ServerSchema from, ServerSchema to)
+    {
+        if (from != to) return to.Translating(source, from);
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(source);
+        }
+        catch (JsonParseException)
+        {
+            return source;
+        }
+        if (!document.Root.Keys.Any(ServerSchema.ClientStateKeys.Contains)) return source;
+        var text = source;
+        try
+        {
+            foreach (var key in ServerSchema.ClientStateKeys)
+            {
+                text = JsonDocument.Parse(text).RemovingMember(key, []);
+            }
+        }
+        catch (Exception error) when (error is JsonEditException or JsonParseException)
+        {
+            return null;
+        }
+        return text;
     }
 
     private ConfigFormat? TargetFormat(ClientId clientId) =>
@@ -213,15 +269,17 @@ public sealed class ToggleService(
     /// Launch and authentication settings a definition has that rendering it from the
     /// model (command, args, env, url) would drop.
     /// </summary>
-    internal static IReadOnlyList<string> UnportableFields(string source, ConfigFormat format)
+    internal static IReadOnlyList<string> UnportableFields(
+        string source,
+        ConfigFormat format,
+        ServerSchema? schema = null)
     {
         if (source.Length == 0) return [];
         if (format == ConfigFormat.Json)
         {
             try
             {
-                var keys = JsonDocument.Parse(source).Root.Keys;
-                return new[] { "headers", "cwd", "envFile" }.Where(keys.Contains).ToArray();
+                return (schema ?? ServerSchema.Standard).UnportableFields(JsonDocument.Parse(source).Root);
             }
             catch (JsonParseException)
             {
@@ -264,10 +322,11 @@ public sealed class ToggleService(
         ArrivingDefinition arriving,
         Server server,
         string serversKey,
-        JsonDocument document) => arriving switch
+        JsonDocument document,
+        ClientId clientId) => arriving switch
         {
             ArrivingDefinition.Verbatim verbatim => verbatim.Text,
-            _ => JsonLiteral(server, serversKey, document),
+            _ => JsonLiteral(server, serversKey, document, SchemaOfClient(clientId)),
         };
 
     /// <summary>The format a server's definition source is written in.</summary>
@@ -290,7 +349,7 @@ public sealed class ToggleService(
     /// A JSON object literal for a server that came from somewhere else, indented
     /// to sit among whatever is already in the document.
     /// </summary>
-    private static string JsonLiteral(Server server, string serversKey, JsonDocument document)
+    private static string JsonLiteral(Server server, string serversKey, JsonDocument document, ServerSchema schema)
     {
         var unit = IndentStyle.Detect(document.SourceText).Text;
         var map = document.ValueAt(serversKey);
@@ -308,7 +367,7 @@ public sealed class ToggleService(
             baseIndent = unit;
         }
         var newline = document.SourceText.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        return ServerDraft.Editing(server).Definition(baseIndent, unit, newline);
+        return ServerDraft.Editing(server).Definition(baseIndent, unit, newline, schema);
     }
 
     private static string TomlBlockFor(Server server, string name, string serversKey, bool enabled) =>
@@ -387,6 +446,76 @@ public sealed class ToggleService(
                 if (current == enabled) return document.SourceText;
 
                 return document.SettingServerFlag(enabled, flagKey, name, serversKey);
+            });
+        ledger.Record(path, receipt.Digest);
+
+        return new ToggleResult(
+            ClientID: clientId,
+            ServerName: server.Name,
+            Enabled: enabled,
+            RequiresRestart: receipt.DidWrite,
+            BackupID: receipt.BackupID,
+            PathDisplay: receipt.PathDisplay,
+            // Nothing is ever removed here, so nothing is ever parked.
+            WasParked: false);
+    }
+
+    // MARK: - Antigravity, Devin Desktop, OpenCode: a boolean on the JSON entry
+
+    /// <summary>
+    /// The JSON sibling of <see cref="SetViaInlineFlag"/>. The definition never leaves
+    /// the file, so nothing is parked; only a first arrival writes a definition.
+    /// </summary>
+    private ToggleResult SetViaJsonFlag(
+        bool enabled,
+        Server server,
+        ClientId clientId,
+        ConfigSource.ServerMap source,
+        (string Key, bool OnValue) flag)
+    {
+        var path = _resolver.ResolveServerMap(source.File, clientId);
+        var display = _resolver.DisplayServerMap(source.File, clientId);
+        var serversKey = source.ServersKey;
+
+        var receipt = writer.Edit<JsonDocument>(
+            path, clientId, display, ledger.DigestFor(path),
+            document =>
+            {
+                if (document.ServerKey(server.Id, serversKey) is not { } key)
+                {
+                    if (server.EnabledIn.GetValueOrDefault(clientId, Enablement.Absent) != Enablement.Absent)
+                    {
+                        throw ToggleException.BundledServerNotToggleable(server.Name);
+                    }
+                    // Switching off something that is not there is already true.
+                    if (!enabled) return document.SourceText;
+                    var arriving = ArrivingFor(server, clientId);
+                    return document.SettingMember(
+                        server.Name,
+                        [serversKey],
+                        Literal(arriving, server, serversKey, document, clientId));
+                }
+
+                // Absent means on. A server already in the state asked for is not
+                // written at all, so a no-op click costs no backup slot.
+                string[] entryPath = [serversKey, key];
+                var entry = document.ValueAt(entryPath);
+                if (entry?.Members is not { } members)
+                {
+                    throw new JsonEditException(JsonEditErrorKind.NotAnObject, entryPath);
+                }
+                var current = JsonEditor.SoleMember(flag.Key, members, entryPath)?.Value.BoolValue;
+                var isOn = current is { } value ? value == flag.OnValue : true;
+                if (isOn == enabled) return document.SourceText;
+
+                // `"disabled": true` goes away when the server comes back on, which is
+                // how the entry looked before Kytto touched it; an `enabled` key states
+                // its value either way, as Codex's does.
+                if (enabled && !flag.OnValue)
+                {
+                    return document.RemovingMember(flag.Key, entryPath);
+                }
+                return document.SettingMember(flag.Key, entryPath, JsonText.Bool(enabled == flag.OnValue));
             });
         ledger.Record(path, receipt.Digest);
 
@@ -548,7 +677,7 @@ public sealed class ToggleService(
                 return document.SettingMember(
                     server.Name,
                     [serversKey],
-                    Literal(arriving, server, serversKey, document));
+                    Literal(arriving, server, serversKey, document, clientId));
             });
     }
 
@@ -627,7 +756,7 @@ public sealed class ToggleService(
                         return document.SettingMember(
                             previousParked?.ServerName ?? server.Name,
                             [serversKey],
-                            Literal(arriving, server, serversKey, document));
+                            Literal(arriving, server, serversKey, document, clientId));
                     }
 
                     if (key is null || document.ValueAt(serversKey)?.Member(key) is not { } member)

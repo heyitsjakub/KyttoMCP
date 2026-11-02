@@ -306,6 +306,13 @@ public sealed partial class PortableSetupService
                     }
 
                     var enabled = enableImportedServers && copy.WasEnabled;
+                    var owner = _descriptors.First(descriptor => descriptor.Id == clientId);
+                    var schema = owner.ServerSchema;
+                    if (map.Format == ConfigFormat.Json && copy.Transport == Transport.Sse && !schema.AcceptsSse)
+                    {
+                        throw PortableSetupException.Invalid(
+                            $"{copy.Name} uses the legacy HTTP+SSE transport, which {owner.DisplayName} does not accept");
+                    }
                     try
                     {
                         switch (map.Enablement)
@@ -316,13 +323,14 @@ public sealed partial class PortableSetupService
                                 parks.Add(new ParkEdit(
                                     clientId,
                                     copy.Name,
-                                    RenderJson(copy, draft, Resolve, JsonDocument.Parse(text), map.ServersKey)));
+                                    RenderJson(copy, draft, Resolve, JsonDocument.Parse(text), map.ServersKey, schema: schema)));
                                 break;
                             case EnablementStrategy.Presence:
                             case EnablementStrategy.InlineFlag:
+                            case EnablementStrategy.InlineDisabledFlag:
                             case EnablementStrategy.DenyList:
                                 text = map.Format == ConfigFormat.Json
-                                    ? InsertJson(text, copy, draft, Resolve, map.ServersKey)
+                                    ? InsertJson(text, copy, draft, Resolve, map.ServersKey, schema, enabled, map.Enablement.Flag)
                                     : InsertToml(text, copy, draft, Resolve, map.ServersKey, enabled);
                                 if (map.Enablement is EnablementStrategy.DenyList && !enabled)
                                 {

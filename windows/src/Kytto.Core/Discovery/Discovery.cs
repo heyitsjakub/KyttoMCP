@@ -516,15 +516,15 @@ public sealed class Discovery
     /// </remarks>
     private ServerFields? ParkedFields(ParkedEntry entry)
     {
-        var format = _descriptors
-            .FirstOrDefault(descriptor => descriptor.Id == entry.ClientID)?
-            .EditableServerMap?.Format ?? ConfigFormat.Json;
+        var owner = _descriptors.FirstOrDefault(descriptor => descriptor.Id == entry.ClientID);
+        var format = owner?.EditableServerMap?.Format ?? ConfigFormat.Json;
 
         try
         {
             if (format == ConfigFormat.Json)
             {
-                return ServerFields.FromJson(JsonDocument.Parse(entry.SourceText).Root);
+                return (owner?.ServerSchema ?? ServerSchema.Standard)
+                    .FieldsOf(JsonDocument.Parse(entry.SourceText).Root);
             }
 
             var document = TomlDocument.Parse(entry.SourceText);
@@ -702,16 +702,22 @@ public sealed class Discovery
                 continue;
             }
 
-            var server = ServerFields.FromJson(member.Value).MakeServer(
+            var server = descriptor.ServerSchema.FieldsOf(member.Value).MakeServer(
                 name: member.Key,
                 origin: new Origin.ConfigFile(descriptor.Id),
                 isBundled: false,
                 sourceText: document.Slice(member.Value.Span));
 
+            // A flag on the entry itself (Antigravity's `disabled`, OpenCode's
+            // `enabled`); absent means on, as it does for Codex.
+            var flagSaysOff = map.Enablement.Flag is { } flag
+                && member.Value[flag.Key]?.BoolValue is { } flagValue
+                && flagValue != flag.OnValue;
+
             outcome.Servers.Add(new FoundServer(
                 member.Key,
                 server,
-                denied.Contains(Server.Identity(member.Key)) ? Enablement.Disabled : Enablement.Enabled));
+                flagSaysOff || denied.Contains(Server.Identity(member.Key)) ? Enablement.Disabled : Enablement.Enabled));
         }
 
         return outcome;

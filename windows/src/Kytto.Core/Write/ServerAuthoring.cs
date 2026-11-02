@@ -66,6 +66,11 @@ public sealed class AuthoringException(string message) : Exception(message)
 
     public static AuthoringException NoClients() =>
         new("Choose at least one client to add this server to.");
+
+    /// <summary>The client only accepts Streamable HTTP for remote servers.</summary>
+    public static AuthoringException SseNotAccepted(string client) =>
+        new($"{client} only connects to remote servers over Streamable HTTP, not the legacy " +
+            $"HTTP+SSE transport. Use the server's Streamable HTTP endpoint, or leave {client} out.");
 }
 
 /// <summary>Adding, editing and removing servers (§7.2, §7.5).</summary>
@@ -163,7 +168,7 @@ public sealed class ServerAuthoring(
                 parkStore.Park(
                     clientId,
                     renamedFrom is null ? entry.ServerName : draft.TrimmedName,
-                    draft.SplicingJson(entry.SourceText, []));
+                    draft.SplicingJson(entry.SourceText, [], SchemaOf(clientId)));
                 // The park store is keyed by identity, so a rename is a new entry and
                 // the old one has to go or the row would come back twice.
                 if (renamedFrom is not null && identityChanged) parkStore.Unpark(clientId, entry.ServerName);
@@ -250,7 +255,7 @@ public sealed class ServerAuthoring(
             // file is (§6.3): what the draft does not describe is kept.
             try
             {
-                parkStore.Park(clientId, entry.ServerName, draft.SplicingJson(entry.SourceText, []));
+                parkStore.Park(clientId, entry.ServerName, draft.SplicingJson(entry.SourceText, [], SchemaOf(clientId)));
                 parkedUpdated.Add(clientId);
             }
             catch (Exception error) when (
@@ -316,11 +321,14 @@ public sealed class ServerAuthoring(
             var pathDisplay = _resolver.DisplayServerMap(source.File, clientId);
             var expecting = ledger.DigestFor(path);
 
+            // OpenCode keeps the arguments after the command in one array, so the
+            // model's argument N is element N + 1.
+            var isArgv = SchemaOf(clientId).Shape == ServerSchema.EntryShape.OpenCode;
             var prepared = source.Format == ConfigFormat.Json
                 ? writer.Prepare<JsonDocument>(path, clientId, pathDisplay, expecting,
                     document => document.ReplacingString(
-                        [source.ServersKey, NameOf(server, document, source.ServersKey), "args"],
-                        edit.Index,
+                        [source.ServersKey, NameOf(server, document, source.ServersKey), isArgv ? "command" : "args"],
+                        isArgv ? edit.Index + 1 : edit.Index,
                         edit.Expected,
                         edit.Replacement))
                 : writer.Prepare<TomlDocument>(path, clientId, pathDisplay, expecting,
@@ -467,6 +475,13 @@ public sealed class ServerAuthoring(
         IReadOnlyList<ClientId> clients,
         string? oldName)
     {
+        if (draft.Transport == Transport.Sse &&
+            _descriptors.FirstOrDefault(candidate => clients.Contains(candidate.Id) && !candidate.ServerSchema.AcceptsSse)
+                is { } refusing)
+        {
+            throw AuthoringException.SseNotAccepted(refusing.DisplayName);
+        }
+
         var serverWrites = new List<ClientWrite>();
 
         foreach (var clientId in clients)
@@ -482,7 +497,7 @@ public sealed class ServerAuthoring(
 
             var prepared = source.Format == ConfigFormat.Json
                 ? writer.Prepare<JsonDocument>(path, clientId, pathDisplay, expecting,
-                    document => WriteJson(document, draft, source.ServersKey, oldName))
+                    document => WriteJson(document, draft, source.ServersKey, oldName, descriptor.ServerSchema))
                 : writer.Prepare<TomlDocument>(path, clientId, pathDisplay, expecting,
                     document => WriteToml(document, draft, source, oldName));
             serverWrites.Add(new ClientWrite(clientId, prepared));
@@ -511,7 +526,8 @@ public sealed class ServerAuthoring(
         JsonDocument document,
         ServerDraft draft,
         string serversKey,
-        string? oldName)
+        string? oldName,
+        ServerSchema schema)
     {
         // Already here: splice the draft into the definition the file has, under the
         // spelling it has (§6.3).
@@ -532,7 +548,7 @@ public sealed class ServerAuthoring(
                 text = document.Replacing(member.KeySpan, JsonText.String(draft.TrimmedName));
                 name = draft.TrimmedName;
             }
-            return draft.SplicingJson(text, [serversKey, name]);
+            return draft.SplicingJson(text, [serversKey, name], schema);
         }
 
         // New to this file: the definition has to be rendered.
@@ -562,7 +578,8 @@ public sealed class ServerAuthoring(
             draft.Definition(
                 baseIndent,
                 unit,
-                current.SourceText.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n"));
+                current.SourceText.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
+                schema));
     }
 
     private static string WriteToml(
@@ -702,6 +719,9 @@ public sealed class ServerAuthoring(
 
     private ConfigFormat? FormatOf(ClientId clientId) =>
         _descriptors.FirstOrDefault(descriptor => descriptor.Id == clientId)?.EditableServerMap?.Format;
+
+    private ServerSchema SchemaOf(ClientId clientId) =>
+        _descriptors.FirstOrDefault(descriptor => descriptor.Id == clientId)?.ServerSchema ?? ServerSchema.Standard;
 
     /// <remarks>
     /// Without the clients whose copy is a plugin's: those are installed software, and

@@ -19,7 +19,7 @@ public sealed class CustomConfigSourceTests : IDisposable
     }
 
     [Fact]
-    public void JsonServersMapIsDiscoveredAfterTheFiveBuiltIns()
+    public void JsonServersMapIsDiscoveredAfterTheBuiltIns()
     {
         var path = Write("custom.json", """
             {
@@ -32,10 +32,10 @@ public sealed class CustomConfigSourceTests : IDisposable
 
         var result = Discover(source);
 
-        Assert.Equal(6, result.Clients.Count);
+        Assert.Equal(ClientIds.All.Count + 1, result.Clients.Count);
         Assert.Equal(
             ClientIds.All,
-            result.Clients.Take(5).Select(client => client.Id.BuiltIn!.Value).ToArray());
+            result.Clients.Take(ClientIds.All.Count).Select(client => client.Id.BuiltIn!.Value).ToArray());
         var client = result.Clients[^1];
         Assert.Equal(source.ClientID, client.Id);
         Assert.Equal("client-custom", client.IconAsset);

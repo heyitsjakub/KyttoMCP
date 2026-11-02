@@ -253,6 +253,12 @@ public sealed class GatewayMigrationService
         var descriptor = _descriptors.FirstOrDefault(candidate => candidate.Id == clientId);
         var source = descriptor?.EditableServerMap
             ?? throw AuthoringException.NoSourceForClient(clientId);
+        // The helper is written as `command` + `args`, which OpenCode does not read;
+        // its argv-array entry is not modelled here yet.
+        if (descriptor!.ServerSchema.Shape != ServerSchema.EntryShape.McpServers)
+        {
+            throw GatewayMigrationException.InvalidDefinition($"Gateway mode does not support {descriptor.DisplayName} yet");
+        }
         var path = _resolver.ResolveServerMap(source.File, clientId);
         var display = _resolver.DisplayServerMap(source.File, clientId);
         if (Digest.OfFile(path) != _ledger.DigestFor(path))

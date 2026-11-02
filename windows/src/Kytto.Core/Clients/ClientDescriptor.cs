@@ -7,6 +7,9 @@ public enum ClientId
     Cursor,
     VsCode,
     Codex,
+    Antigravity,
+    DevinDesktop,
+    OpenCode,
 }
 
 /// <summary>
@@ -76,6 +79,9 @@ public static class ClientIds
         ClientId.Cursor => "cursor",
         ClientId.VsCode => "vsCode",
         ClientId.Codex => "codex",
+        ClientId.Antigravity => "antigravity",
+        ClientId.DevinDesktop => "devinDesktop",
+        ClientId.OpenCode => "openCode",
         _ => throw new ArgumentOutOfRangeException(nameof(id)),
     };
 
@@ -86,6 +92,9 @@ public static class ClientIds
         "cursor" => ClientId.Cursor,
         "vsCode" => ClientId.VsCode,
         "codex" => ClientId.Codex,
+        "antigravity" => ClientId.Antigravity,
+        "devinDesktop" => ClientId.DevinDesktop,
+        "openCode" => ClientId.OpenCode,
         _ => null,
     };
 
@@ -154,6 +163,24 @@ public abstract record EnablementStrategy
     public sealed record InlineFlag(string Key) : EnablementStrategy;
 
     /// <summary>
+    /// The same boolean with the opposite meaning: <c>true</c> switches the server
+    /// off. Antigravity and Devin Desktop: <c>"disabled": true</c> on the entry.
+    /// Absent means on, exactly as with <see cref="InlineFlag"/>.
+    /// </summary>
+    public sealed record InlineDisabledFlag(string Key) : EnablementStrategy;
+
+    /// <summary>
+    /// The key and the value it holds when a server is switched on, for the two
+    /// flags that live on the server's own entry.
+    /// </summary>
+    public (string Key, bool OnValue)? Flag => this switch
+    {
+        InlineFlag flag => (flag.Key, true),
+        InlineDisabledFlag flag => (flag.Key, false),
+        _ => null,
+    };
+
+    /// <summary>
     /// What switching a server off in this client actually does to the file, in
     /// one sentence (§7.8).
     /// </summary>
@@ -176,6 +203,9 @@ public abstract record EnablementStrategy
             "the bundle, so nothing is removed to switch one off.",
         InlineFlag flag =>
             $"Switching a server off writes {flag.Key} = false on the server's own " +
+            "entry, so its definition never leaves the file.",
+        InlineDisabledFlag flag =>
+            $"Switching a server off writes {flag.Key} = true on the server's own " +
             "entry, so its definition never leaves the file.",
         _ => "",
     };
@@ -277,6 +307,12 @@ public sealed record ClientDescriptor(
     /// </summary>
     ClientToolLimit? ToolLimit = null)
 {
+    /// <summary>
+    /// How one entry in the editable server map is spelled. JSON clients mostly
+    /// agree, and the ones that do not are why this exists (§4).
+    /// </summary>
+    public ServerSchema ServerSchema { get; init; } = ServerSchema.Standard;
+
     /// <summary>
     /// The file and key holding servers the user can add, edit and remove.
     /// </summary>

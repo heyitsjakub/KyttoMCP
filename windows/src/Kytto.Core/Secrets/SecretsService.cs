@@ -230,7 +230,8 @@ public sealed class SecretsService(
                                 continue;
                             }
                             text = ReplacingEnvironmentValue(
-                                current, [source.ServersKey, name], record.Key, newValue);
+                                current, [source.ServersKey, name], record.Key, newValue,
+                                _descriptors.First(descriptor => descriptor.Id == group.Key).ServerSchema.EnvironmentKey);
                             actuallyUpdated.Add(usage);
                         }
                         return text;
@@ -267,7 +268,9 @@ public sealed class SecretsService(
             {
                 var entry = parkStore?.Parked(usage.ClientID, usage.ServerName)
                     ?? throw SecretsException.NotFound();
-                var text = ReplacingEnvironmentValue(JsonDocument.Parse(entry.SourceText), [], record.Key, newValue);
+                var text = ReplacingEnvironmentValue(
+                    JsonDocument.Parse(entry.SourceText), [], record.Key, newValue,
+                    _descriptors.FirstOrDefault(descriptor => descriptor.Id == entry.ClientID)?.ServerSchema.EnvironmentKey ?? "env");
                 parksWritten.Add(entry);
                 parkStore.Park(entry.ClientID, entry.ServerName, text);
                 updated.Add(usage);
@@ -349,9 +352,10 @@ public sealed class SecretsService(
         JsonDocument document,
         IReadOnlyList<string> path,
         string key,
-        string value)
+        string value,
+        string environmentKey = "env")
     {
-        string[] envPath = [.. path, "env"];
+        string[] envPath = [.. path, environmentKey];
         var members = document.ValueAt(envPath)?.Members
             ?? throw new JsonEditException(JsonEditErrorKind.PathNotFound, [.. envPath, key]);
         var member = JsonEditor.SoleMember(key, members, envPath)

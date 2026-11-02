@@ -1,3 +1,4 @@
+using Kytto.Core.Clients;
 using Kytto.Core.Json;
 using Kytto.Core.Toml;
 
@@ -193,28 +194,56 @@ public sealed record ServerDraft
     /// <c>command</c> as stdio, but not all of them have always understood
     /// <c>"type": "stdio"</c>, so the quieter form is the portable one.
     /// </remarks>
-    public string Definition(string baseIndent, string unit, string newline = "\n")
+    /// <param name="schema">
+    /// How the target client spells an entry. Antigravity and Devin Desktop leave
+    /// Streamable HTTP unstated; OpenCode writes the command and its arguments as
+    /// one array.
+    /// </param>
+    public string Definition(string baseIndent, string unit, string newline = "\n", ServerSchema? schema = null)
     {
+        schema ??= ServerSchema.Standard;
         var fields = new List<JsonBuildValue.Field>();
+        var command = Command.Trim();
+        var url = Url.Trim();
 
-        if (Transport == Transport.Stdio)
+        if (schema.Shape == ServerSchema.EntryShape.McpServers)
         {
-            fields.Add(new JsonBuildValue.Field("command", JsonBuildValue.Text(Command.Trim())));
-            if (Args.Count > 0)
+            if (Transport == Transport.Stdio)
             {
-                fields.Add(new JsonBuildValue.Field("args", JsonBuildValue.Strings(Args)));
+                fields.Add(new JsonBuildValue.Field("command", JsonBuildValue.Text(command)));
+                if (Args.Count > 0)
+                {
+                    fields.Add(new JsonBuildValue.Field("args", JsonBuildValue.Strings(Args)));
+                }
             }
+            else
+            {
+                if (schema.TransportKey is { } key && (schema.StatesDefaultTransport || Transport != Transport.Http))
+                {
+                    fields.Add(new JsonBuildValue.Field(key, JsonBuildValue.Text(Transport.Raw())));
+                }
+                fields.Add(new JsonBuildValue.Field(schema.RemoteUrlKey, JsonBuildValue.Text(url)));
+            }
+        }
+        else if (Transport == Transport.Stdio)
+        {
+            fields.Add(new JsonBuildValue.Field("type", JsonBuildValue.Text("local")));
+            fields.Add(new JsonBuildValue.Field("command", JsonBuildValue.Strings([command, .. Args])));
         }
         else
         {
-            fields.Add(new JsonBuildValue.Field("type", JsonBuildValue.Text(Transport.Raw())));
-            fields.Add(new JsonBuildValue.Field("url", JsonBuildValue.Text(Url.Trim())));
+            fields.Add(new JsonBuildValue.Field("type", JsonBuildValue.Text("remote")));
+            fields.Add(new JsonBuildValue.Field("url", JsonBuildValue.Text(url)));
         }
 
-        var realEnv = RealEnvironment;
+        // OpenCode's remote entry has no environment, and refuses keys it does not
+        // define.
+        var realEnv = schema.Shape == ServerSchema.EntryShape.OpenCode && Transport != Transport.Stdio
+            ? Array.Empty<EnvEntry>()
+            : RealEnvironment;
         if (realEnv.Count > 0)
         {
-            fields.Add(new JsonBuildValue.Field("env", JsonBuildValue.Object(
+            fields.Add(new JsonBuildValue.Field(schema.EnvironmentKey, JsonBuildValue.Object(
                 realEnv.Select(entry =>
                     new JsonBuildValue.Field(entry.Key, JsonBuildValue.Text(ValueForNewKey(entry))))
                     .ToArray())));

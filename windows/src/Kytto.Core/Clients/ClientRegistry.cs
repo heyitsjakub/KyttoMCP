@@ -16,6 +16,9 @@ public static class ClientRegistry
         Cursor,
         VsCode,
         Codex,
+        Antigravity,
+        DevinDesktop,
+        OpenCode,
     ];
 
     public static ClientDescriptor Descriptor(ClientId id) =>
@@ -271,4 +274,111 @@ public static class ClientRegistry
         // search where the model supports it
         // (https://github.com/openai/codex/pull/29486).
         ToolLimit: null);
+
+    // MARK: - Google Antigravity
+
+    private static ClientDescriptor Antigravity => new(
+        Id: ClientId.Antigravity,
+        DisplayName: "Antigravity",
+        IconAsset: "client-antigravity",
+        // Per-user install under Local\Programs, the way Electron-style editors
+        // arrive. Not verified against a real install (none is on the test machine);
+        // a missing app only changes the "installed" label.
+        InstallKeys: [@"%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe"],
+        PackageFamilyNames: [],
+        ExecutableNames: ["agy.cmd", "agy.exe", "agy", "antigravity.cmd", "antigravity.exe", "antigravity"],
+        Sources:
+        [
+            new ConfigSource.ServerMap(
+                File: new PlatformPath(
+                    Darwin: "~/.gemini/config/mcp_config.json",
+                    Windows: @"%USERPROFILE%\.gemini\config\mcp_config.json"),
+                Format: ConfigFormat.Json,
+                ServersKey: "mcpServers",
+                Enablement: new EnablementStrategy.InlineDisabledFlag("disabled")),
+        ],
+        SchemaQuirks:
+            "The `mcpServers` shape with three differences that matter: a remote " +
+            "endpoint is `serverUrl` (`url` is read too), a `type` field is rejected, " +
+            "and remote servers must speak Streamable HTTP — the legacy HTTP+SSE " +
+            "transport is not accepted. `\"disabled\": true` switches a server off " +
+            "without removing it, and `enabledTools`/`disabledTools` filter its " +
+            "tools; Kytto keeps both. The file is shared by the Antigravity app, IDE " +
+            "and CLI. Older releases kept it at `~/.gemini/antigravity/mcp_config.json`; " +
+            "point Kytto there with a path override if that is the file you use. " +
+            "Workspace configs (`.agents/mcp_config.json`) are not read.")
+    {
+        ServerSchema = ServerSchema.Antigravity,
+    };
+
+    // MARK: - Devin Desktop (formerly Windsurf)
+
+    private static ClientDescriptor DevinDesktop => new(
+        Id: ClientId.DevinDesktop,
+        DisplayName: "Devin Desktop",
+        IconAsset: "client-devin",
+        // Windsurf became Devin Desktop on 2 June 2026 and kept its app, so the
+        // install is looked for under both names. Unverified for the same reason.
+        InstallKeys:
+        [
+            @"%LOCALAPPDATA%\Programs\Windsurf\Windsurf.exe",
+            @"%LOCALAPPDATA%\Programs\Devin\Devin.exe",
+        ],
+        PackageFamilyNames: [],
+        ExecutableNames: ["devin.cmd", "devin.exe", "devin", "windsurf.cmd", "windsurf.exe", "windsurf"],
+        Sources:
+        [
+            new ConfigSource.ServerMap(
+                File: new PlatformPath(
+                    Darwin: "~/.config/devin/mcp_config.json",
+                    Windows: @"%APPDATA%\devin\mcp_config.json"),
+                Format: ConfigFormat.Json,
+                ServersKey: "mcpServers",
+                Enablement: new EnablementStrategy.InlineDisabledFlag("disabled")),
+        ],
+        SchemaQuirks:
+            "Windsurf, renamed Devin Desktop in June 2026. The user-level " +
+            "`mcp_config.json` uses the `mcpServers` shape; a remote server is a " +
+            "`url`, and only the legacy SSE transport is stated, as `transport: " +
+            "\"sse\"`. `\"disabled\": true` switches a server off without removing it. " +
+            "Windsurf kept the same shape at `~/.codeium/windsurf/mcp_config.json`, " +
+            "which Devin Desktop migrates on first launch; a Windsurf install that " +
+            "has not been migrated can be pointed at with a path override. Project " +
+            "configs (`.devin/mcp_config.json`) are not read.")
+    {
+        ServerSchema = ServerSchema.Devin,
+    };
+
+    // MARK: - OpenCode
+
+    private static ClientDescriptor OpenCode => new(
+        Id: ClientId.OpenCode,
+        DisplayName: "OpenCode",
+        IconAsset: "client-opencode",
+        InstallKeys: [@"%LOCALAPPDATA%\Programs\OpenCode\OpenCode.exe"],
+        PackageFamilyNames: [],
+        ExecutableNames: ["opencode.cmd", "opencode.exe", "opencode"],
+        Sources:
+        [
+            new ConfigSource.ServerMap(
+                File: new PlatformPath(
+                    Darwin: "~/.config/opencode/opencode.json",
+                    Windows: @"%USERPROFILE%\.config\opencode\opencode.json"),
+                Format: ConfigFormat.Json,
+                ServersKey: "mcp",
+                Enablement: new EnablementStrategy.InlineFlag("enabled")),
+        ],
+        SchemaQuirks:
+            "A schema of its own, under `mcp` rather than `mcpServers`: " +
+            "`type: \"local\"` with the command and its arguments as one array in " +
+            "`command` and variables in `environment`, or `type: \"remote\"` with a " +
+            "`url`. `enabled: false` switches a server off and keeps it. The file is " +
+            "JSONC — comments and trailing commas survive a write — and holds " +
+            "OpenCode's whole configuration, including the `tools` map that " +
+            "switches off single MCP tools as `<server>_<tool>`. A global " +
+            "`opencode.jsonc`, `OPENCODE_CONFIG` or project `opencode.json` is not " +
+            "read; use a path override for the first two.")
+    {
+        ServerSchema = ServerSchema.OpenCode,
+    };
 }

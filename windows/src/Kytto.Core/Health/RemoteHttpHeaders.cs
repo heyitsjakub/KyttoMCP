@@ -258,13 +258,17 @@ public static class RemoteHttpHeaders
         var index = 0;
         while (index < value.Length)
         {
-            var open = value.IndexOf("${", index, StringComparison.Ordinal);
+            // `${VAR}` and `${env:VAR}` in most clients; OpenCode writes `{env:VAR}`.
+            var dollar = value.IndexOf("${", index, StringComparison.Ordinal);
+            var braced = value.IndexOf("{env:", index, StringComparison.Ordinal);
+            var open = dollar < 0 ? braced : braced < 0 ? dollar : Math.Min(dollar, braced);
             if (open < 0) break;
+            var opener = open == dollar ? 2 : 5;
             result.Append(value, index, open - index);
-            var close = value.IndexOf('}', open + 2);
+            var close = value.IndexOf('}', open + opener);
             if (close < 0) throw new RemoteHttpException(RemoteHttpFailure.UnresolvedCredential);
 
-            var key = value[(open + 2)..close];
+            var key = value[(open + opener)..close];
             if (key.StartsWith("env:", StringComparison.Ordinal)) key = key[4..];
             string? fallback = null;
             var split = key.IndexOf(":-", StringComparison.Ordinal);

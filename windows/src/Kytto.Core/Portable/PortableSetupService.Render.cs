@@ -19,7 +19,10 @@ public sealed partial class PortableSetupService
         ServerDraft draft,
         Func<PortableValue, string> resolve,
         JsonDocument document,
-        string serversKey)
+        string serversKey,
+        ServerSchema? schema = null,
+        bool enabled = true,
+        (string Key, bool OnValue)? flag = null)
     {
         // Indented to sit beside the entries the map already has, or as the first.
         var unit = IndentStyle.Detect(document.SourceText).Text;
@@ -35,7 +38,7 @@ public sealed partial class PortableSetupService
         }
         var newline = document.SourceText.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
 
-        var text = draft.Definition(baseIndent, unit, newline);
+        var text = draft.Definition(baseIndent, unit, newline, schema);
         if (copy.WorkingDirectory is { } cwd)
         {
             text = JsonDocument.Parse(text).SettingMember("cwd", [], JsonText.String(resolve(cwd)));
@@ -51,6 +54,12 @@ public sealed partial class PortableSetupService
                 [],
                 JsonBuilder.Render(JsonBuildValue.Object(fields), baseIndent + unit, unit, newline));
         }
+        // A client whose off switch sits on the entry gets it there, so a server
+        // imported switched off arrives switched off.
+        if (!enabled && flag is { } off)
+        {
+            text = JsonDocument.Parse(text).SettingMember(off.Key, [], JsonText.Bool(!off.OnValue));
+        }
         return text;
     }
 
@@ -59,13 +68,16 @@ public sealed partial class PortableSetupService
         PortableServer copy,
         ServerDraft draft,
         Func<PortableValue, string> resolve,
-        string serversKey)
+        string serversKey,
+        ServerSchema? schema = null,
+        bool enabled = true,
+        (string Key, bool OnValue)? flag = null)
     {
         var document = JsonDocument.Parse(text);
         return document.SettingMember(
             copy.Name,
             [serversKey],
-            RenderJson(copy, draft, resolve, document, serversKey));
+            RenderJson(copy, draft, resolve, document, serversKey, schema, enabled, flag));
     }
 
     private static string InsertToml(
