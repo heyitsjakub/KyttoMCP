@@ -554,6 +554,7 @@ struct PackageSafetyDTO: Encodable {
     let advisoryIDs: [String]
     let malware: Bool
     let installScripts: [String]
+    let deprecated: String?
     let checkedAt: Double
 
     nonisolated init(_ report: PackageSafetyReport) {
@@ -562,6 +563,7 @@ struct PackageSafetyDTO: Encodable {
         advisoryIDs = report.advisories.map(\.id)
         malware = report.advisories.contains(where: \.isMalware)
         installScripts = report.installScripts.keys.sorted()
+        deprecated = report.deprecation
         checkedAt = report.checkedAt.timeIntervalSince1970
     }
 }

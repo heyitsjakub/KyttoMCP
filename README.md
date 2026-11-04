@@ -5,12 +5,12 @@
 Free and **open source** under the MIT License — the full source of both the macOS
 and the Windows app lives in this repository. Read it, build it, or send a pull request.
 
-[![Version](https://img.shields.io/badge/beta-1.0.9-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
+[![Version](https://img.shields.io/badge/beta-1.0.9.2-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 [![Open source](https://img.shields.io/badge/open%20source-yes-brightgreen)](#source-code)
 
-[**Download Beta 1.0.9**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Source code](#source-code) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
+[**Download the beta**](https://kytto.jakubhecht.sk/) · [Website](https://kytto.jakubhecht.sk/) · [Source code](#source-code) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Report a bug](https://kytto.jakubhecht.sk/#report-bug)
 
 ---
 
@@ -46,11 +46,14 @@ Kytto reads those files locally and turns them into one workspace.
 **See and change what is enabled**
 Every server against every client in one matrix. Toggle a server on or off, edit a definition across every client that uses it, or remove it from one client without touching the others — Kytto writes each client in that client's own format and respects its rules. Add servers by hand or from a built-in catalog. Since 1.0.5, Kytto explains the first matrix write before it happens and offers Undo after successful changes, including exact backup restoration for a server that was previously absent.
 
+**Handle secrets without surprises**
+Find sensitive environment values while keeping them masked by default. Reveal on request, rotate one value everywhere it appears, keep an optional Keychain copy, or tighten config file permissions.
+
 **Attach custom sources without writing them**
 Attach multiple named JSON, JSONC or TOML configuration files as read-only custom sources with Global, Profile or Workspace display scope. Kytto discovers and watches their servers without rewriting, creating or deleting the selected files, and keeps them distinct from the built-in writable clients.
 
 **Find out why a server fails**
-Run an on-demand MCP handshake and read what the server actually reports: tools, prompts, resources, protocol details and stderr. MCP Doctor turns that evidence into concrete findings — missing environment values, relative paths, failed handshakes, executables that only resolve inside one client's PATH — and previews any fix before writing it. A package a server fetches by name without an exact version (`npx some-package`, `@latest`, `uvx`) is flagged, and once you check the latest release Doctor can pin that exact version in every client that uses it.
+Run an on-demand MCP handshake and read what the server actually reports: tools, prompts, resources, protocol details and stderr. MCP Doctor turns that evidence into concrete findings — missing environment values, relative paths, failed handshakes, executables that only resolve inside one client's PATH — and previews any fix before writing it. A package a server fetches by name without an exact version (`npx some-package`, `@latest`, `uvx`) is flagged, and once you check the latest release Doctor can pin that exact version in every client that uses it. Package names that imitate an official server (`mcp-server-github`) and archived reference servers that get no more fixes (`@modelcontextprotocol/server-github`, `-puppeteer`, `-slack` and others) are flagged offline; "Check package safety" asks osv.dev about known malware and vulnerabilities and the npm registry about install scripts and deprecation, only when you click.
 
 **Read what a server tells your model**
 A tool's name, description and input schema go straight into the model's context, so an MCP server can give instructions without ever being called. The Tool Safety Scanner reads them the way the model does and reports what a person would not see: hidden or direction-override characters, wording that addresses the model instead of describing the tool ("ignore previous instructions"), markup that imitates a system message, a tool advertised as read-only that names credential files, and two enabled servers claiming the same tool name in one client. Contract Guard remembers each server's tool contract between health checks and reports tools that were added or removed and changed descriptions, input schemas or safety annotations. Acknowledge a change and the contract you reviewed becomes the new baseline.
@@ -70,9 +73,6 @@ Clients differ in how and when they load MCP tool definitions. Kytto estimates t
 
 **Switch between setups**
 Save local profiles such as Coding, Research or Minimal. Preview exactly what a switch will change, then apply it to one client with the normal backup and restart safeguards.
-
-**Handle secrets without surprises**
-Find sensitive environment values while keeping them masked by default. Reveal on request, rotate one value everywhere it appears, keep an optional Keychain copy, or tighten config file permissions.
 
 **Undo anything**
 Every write checks whether the file changed outside Kytto, makes a timestamped backup, and writes atomically. Browse those backups in the app and restore an earlier configuration — the version being replaced is backed up too.
@@ -97,7 +97,7 @@ Custom sources are read-only and are not an additional writable client. Want ano
 
 ## Install
 
-Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.1 for macOS ([v1.0.9.1](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.1)) and Beta 1.0.9.1 for Windows ([v1.0.9.1-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.1-windows)).
+Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.2 for macOS ([v1.0.9.2](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.2)) and Beta 1.0.9.1 for Windows ([v1.0.9.1-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.1-windows)).
 
 ### macOS
 
@@ -115,8 +115,8 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.9.dmg
-# 2cb955c50c2df94af27fe4445fc6929f17cb4664089f383b9c0d49cdd8837846
+shasum -a 256 KyttoMCP-1.0.9.2.dmg
+# 5cbb4f0810ad9fb6985ef7163be2ed69ba80ca18428d18097c7e2d7e9995440e
 
 # Windows (PowerShell)
 Get-FileHash Kytto-Setup-win-x64-1.0.9.1.exe -Algorithm SHA256

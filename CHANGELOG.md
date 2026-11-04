@@ -9,6 +9,30 @@ without a backup.
 
 ## [Unreleased]
 
+## [1.0.9.2] — 2026-11-04
+
+MCP Doctor stops recommending archived reference servers and flags them where
+they are already in use. Released for macOS on 2026-11-04; the Windows build
+follows with the same change.
+
+**Download**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.9.2.dmg` | 6.0 MB | `5cbb4f0810ad9fb6985ef7163be2ed69ba80ca18428d18097c7e2d7e9995440e` |
+
+The macOS build is ad-hoc signed rather than notarized. Verify the SHA-256
+checksum before bypassing Gatekeeper.
+
+### Added (macOS)
+
+- Archived reference servers are flagged. Eleven of the npm reference servers the MCP project moved to [`modelcontextprotocol/servers-archived`](https://github.com/modelcontextprotocol/servers-archived) — among them `@modelcontextprotocol/server-github`, `-puppeteer`, `-slack` and `-postgres` — and the PyPI `mcp-server-sentry`, `mcp-server-sqlite` and `mcp-server-aws-kb-retrieval` get no more fixes, security fixes included, yet coding agents still install them by name. MCP Doctor now shows a warning for a server that runs one of them. The check is offline and changes nothing.
+- "Check package safety" also reads whether the npm registry marks the package version deprecated, and shows the registry's message.
+
+### Fixed (macOS)
+
+- The look-alike package warning no longer tells you to switch to the official package when that package is itself archived — `mcp-server-github` used to be pointed at `@modelcontextprotocol/server-github`, which npm marks deprecated.
+
 ## [1.0.9.1] — 2026-10-30
 
 Three new clients, switches for single tools, a package safety check in MCP

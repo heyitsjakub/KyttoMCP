@@ -25,6 +25,8 @@ public struct PackageSafetyReport: Equatable, Sendable {
     public let advisories: [Advisory]
     /// npm lifecycle scripts that run on install: name → command, as published.
     public let installScripts: [String: String]
+    /// The npm registry's deprecation message for the checked version, or nil.
+    public let deprecation: String?
     public let checkedAt: Date
 
     public init(
@@ -33,6 +35,7 @@ public struct PackageSafetyReport: Equatable, Sendable {
         version: String?,
         advisories: [Advisory],
         installScripts: [String: String],
+        deprecation: String? = nil,
         checkedAt: Date
     ) {
         self.ecosystem = ecosystem
@@ -40,6 +43,7 @@ public struct PackageSafetyReport: Equatable, Sendable {
         self.version = version
         self.advisories = advisories
         self.installScripts = installScripts
+        self.deprecation = deprecation
         self.checkedAt = checkedAt
     }
 
@@ -73,7 +77,34 @@ public enum PackageSafety {
     public static func findings(for server: Server, report: PackageSafetyReport?) -> [DoctorFinding] {
         guard let launch = launch(of: server) else { return [] }
         var findings: [DoctorFinding] = []
+        let checkAction: DoctorAction? = report?.describes(launch) == true ? nil : .checkPackageSafety
+        let archived = isArchivedReference(launch.name, ecosystem: launch.ecosystem)
+        if archived {
+            findings.append(DoctorFinding(
+                code: "archived-package",
+                severity: .warning,
+                title: "This reference server is archived and no longer maintained",
+                detail: """
+                The MCP project moved “\(launch.name)” to its archive of reference servers \
+                that are no longer maintained\(launch.ecosystem == .npm ? ", and npm marks it deprecated" : ""). \
+                It gets no fixes, security fixes included. Coding agents still install it \
+                by name because they remember it.
+                """,
+                remediation: """
+                Replace it with a server that the service itself, or another active \
+                maintainer, publishes — and check who publishes that one before switching. \
+                Kytto did not change anything on its own.
+                """,
+                action: checkAction
+            ))
+        }
         if let official = lookAlike(of: launch.name, ecosystem: launch.ecosystem) {
+            let advice = isArchivedReference(official, ecosystem: launch.ecosystem)
+                ? """
+                  “\(official)” is itself archived and no longer maintained, so switching to \
+                  it is not a fix either: use a maintained server for the same service.
+                  """
+                : "If you meant the official server, change the command to “\(official)”."
             findings.append(DoctorFinding(
                 code: "look-alike-package",
                 severity: .warning,
@@ -84,14 +115,31 @@ public enum PackageSafety {
                 machine details and secrets to attackers on install.
                 """,
                 remediation: """
-                If you meant the official server, change the command to “\(official)”. If \
-                this package is the one you chose on purpose, check who publishes it before \
-                the next launch — Check package safety asks osv.dev about known malware.
+                \(advice) If this package is the one you chose on purpose, check who \
+                publishes it before the next launch — Check package safety asks osv.dev \
+                about known malware.
                 """,
-                action: report?.describes(launch) == true ? nil : .checkPackageSafety
+                action: checkAction
             ))
         }
         guard let report, report.describes(launch) else { return findings }
+
+        if let deprecation = report.deprecation, !archived {
+            findings.append(DoctorFinding(
+                code: "deprecated-package",
+                severity: .warning,
+                title: "The registry marks this package deprecated",
+                detail: """
+                npm marks \(launch.name)\(report.version.map { " \($0)" } ?? "") deprecated: \
+                “\(truncated(deprecation))”. A deprecated package usually gets no more fixes, \
+                security fixes included.
+                """,
+                remediation: """
+                Move to the replacement the message names, or to another maintained server, \
+                and check who publishes it before switching.
+                """
+            ))
+        }
 
         let malware = report.advisories.filter(\.isMalware)
         if !malware.isEmpty {
@@ -208,6 +256,38 @@ public enum PackageSafety {
         "mcp",
     ]
 
+    /// Reference servers the MCP project moved to `modelcontextprotocol/servers-archived`
+    /// ("no longer maintained"). Every npm one is marked deprecated on the registry.
+    /// They stay in the official lists above, because imitations of them still circulate.
+    static let archivedNPM: Set<String> = [
+        "@modelcontextprotocol/server-aws-kb-retrieval",
+        "@modelcontextprotocol/server-brave-search",
+        "@modelcontextprotocol/server-everart",
+        "@modelcontextprotocol/server-gdrive",
+        "@modelcontextprotocol/server-github",
+        "@modelcontextprotocol/server-gitlab",
+        "@modelcontextprotocol/server-google-maps",
+        "@modelcontextprotocol/server-postgres",
+        "@modelcontextprotocol/server-puppeteer",
+        "@modelcontextprotocol/server-redis",
+        "@modelcontextprotocol/server-slack",
+    ]
+
+    static let archivedPyPI: Set<String> = [
+        "mcp-server-aws-kb-retrieval",
+        "mcp-server-sentry",
+        "mcp-server-sqlite",
+    ]
+
+    /// Whether `name` is one of the archived reference servers.
+    public static func isArchivedReference(_ name: String, ecosystem: PackageLaunch.Ecosystem) -> Bool {
+        let lowered = name.lowercased()
+        switch ecosystem {
+        case .npm: return archivedNPM.contains(lowered)
+        case .python: return archivedPyPI.map(normalizePyPI).contains(normalizePyPI(lowered))
+        }
+    }
+
     /// The official package `name` imitates, or nil.
     ///
     /// An unscoped npm name that reduces to the same words as an official one
@@ -320,5 +400,16 @@ public enum PackageSafety {
             if let command = scripts[name] as? String, !command.isEmpty { result[name] = command }
         }
         return result
+    }
+
+    /// The `deprecated` message in an npm version document, or nil when the
+    /// version is not deprecated (npm leaves the field out, or sends `false`).
+    public static func deprecation(fromNPMVersion data: Data) throws -> String? {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CocoaError(.coderReadCorrupt)
+        }
+        guard let message = object["deprecated"] as? String else { return nil }
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "deprecated" : String(trimmed.prefix(300))
     }
 }

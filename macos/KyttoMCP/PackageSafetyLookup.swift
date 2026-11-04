@@ -6,7 +6,8 @@ import KyttoCore
 /// Called only when the user asks. It sends osv.dev the package name, its
 /// registry, and the version when the launch pins one; for an npm package it
 /// also reads that version's document from the npm registry to see whether it
-/// runs install scripts. Nothing else from the configuration leaves the Mac.
+/// runs install scripts or is deprecated. Nothing else from the configuration
+/// leaves the Mac.
 @MainActor
 final class PackageSafetyLookup {
     enum LookupError: LocalizedError {
@@ -58,6 +59,7 @@ final class PackageSafetyLookup {
         }
 
         var scripts: [String: String] = [:]
+        var deprecation: String?
         if launch.ecosystem == .npm {
             var components = URLComponents()
             components.scheme = "https"
@@ -67,6 +69,7 @@ final class PackageSafetyLookup {
             let data = try await fetch(URLRequest(url: url), service: "the npm registry")
             do {
                 scripts = try PackageSafety.installScripts(fromNPMVersion: data)
+                deprecation = try PackageSafety.deprecation(fromNPMVersion: data)
             } catch {
                 throw LookupError.invalidResponse("The npm registry")
             }
@@ -78,6 +81,7 @@ final class PackageSafetyLookup {
             version: version,
             advisories: advisories,
             installScripts: scripts,
+            deprecation: deprecation,
             checkedAt: now()
         )
     }

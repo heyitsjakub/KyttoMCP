@@ -95,7 +95,71 @@ struct PackageSafetyResultTests {
         #expect(PackageSafety.findings(for: server, report: report).first?.action == nil)
         #expect(PackageSafety.findings(for: server, report: report).first { $0.code == "known-malware" }?.severity == .error)
 
-        let edited = stdioServer("github", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"])
+        let edited = stdioServer("filesystem", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem"])
         #expect(PackageSafety.findings(for: edited, report: report).isEmpty)
+    }
+
+    @Test("the npm deprecation message is read; false or a missing field is not deprecation")
+    func deprecationParsing() throws {
+        let deprecated = Data(#"{"name":"x","version":"1.0.0","deprecated":"Package no longer supported."}"#.utf8)
+        #expect(try PackageSafety.deprecation(fromNPMVersion: deprecated) == "Package no longer supported.")
+        #expect(try PackageSafety.deprecation(fromNPMVersion: Data(#"{"deprecated":false}"#.utf8)) == nil)
+        #expect(try PackageSafety.deprecation(fromNPMVersion: Data(#"{"name":"x"}"#.utf8)) == nil)
+    }
+
+    @Test("a checked deprecated package gets a finding; an archived one is not reported twice")
+    func deprecatedFinding() throws {
+        let server = stdioServer("old", command: "npx", args: ["-y", "some-old-mcp"])
+        let report = PackageSafetyReport(
+            ecosystem: .npm, packageName: "some-old-mcp", version: nil, advisories: [],
+            installScripts: [:], deprecation: "Use new-mcp instead", checkedAt: Date()
+        )
+        #expect(PackageSafety.findings(for: server, report: report).map(\.code) == ["deprecated-package"])
+
+        let archived = stdioServer("github", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"])
+        let archivedReport = PackageSafetyReport(
+            ecosystem: .npm, packageName: "@modelcontextprotocol/server-github", version: nil, advisories: [],
+            installScripts: [:], deprecation: "Package no longer supported.", checkedAt: Date()
+        )
+        #expect(PackageSafety.findings(for: archived, report: archivedReport).map(\.code) == ["archived-package"])
+    }
+}
+
+@Suite("Package safety — archived reference servers")
+struct PackageArchivedTests {
+
+    @Test("archived reference servers are flagged offline", arguments: [
+        ("npx", ["-y", "@modelcontextprotocol/server-github"]),
+        ("npx", ["-y", "@modelcontextprotocol/server-puppeteer@2025.5.12"]),
+        ("npx", ["-y", "@modelcontextprotocol/server-slack"]),
+        ("uvx", ["mcp-server-sqlite", "--db-path", "x.db"]),
+    ])
+    func flagged(_ command: String, _ args: [String]) {
+        let server = stdioServer("s", command: command, args: args)
+        let finding = PackageSafety.findings(for: server, report: nil).first
+        #expect(finding?.code == "archived-package")
+        #expect(finding?.severity == .warning)
+        #expect(finding?.action == .checkPackageSafety)
+    }
+
+    @Test("maintained reference servers are left alone", arguments: [
+        "@modelcontextprotocol/server-filesystem", "@modelcontextprotocol/server-memory",
+        "@modelcontextprotocol/server-everything", "@modelcontextprotocol/server-sequential-thinking",
+    ])
+    func maintained(_ name: String) {
+        let server = stdioServer("s", command: "npx", args: ["-y", name])
+        #expect(PackageSafety.findings(for: server, report: nil).isEmpty)
+    }
+
+    @Test("a look-alike of an archived server is not told to switch to it")
+    func lookAlikeOfArchived() throws {
+        let server = stdioServer("github", command: "npx", args: ["-y", "mcp-server-github"])
+        let finding = try #require(PackageSafety.findings(for: server, report: nil).first { $0.code == "look-alike-package" })
+        #expect(!finding.remediation.contains("change the command"))
+        #expect(finding.remediation.contains("no longer maintained"))
+
+        let live = stdioServer("fs", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesytem"])
+        let liveFinding = try #require(PackageSafety.findings(for: live, report: nil).first { $0.code == "look-alike-package" })
+        #expect(liveFinding.remediation.contains("change the command"))
     }
 }
