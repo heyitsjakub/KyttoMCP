@@ -1497,6 +1497,7 @@ const HANDLERS = {
       advisoryIDs: [],
       malware: false,
       installScripts: [],
+      deprecated: null,
       checkedAt: Date.now() / 1000,
     };
     return snapshot();

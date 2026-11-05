@@ -20,7 +20,9 @@ public sealed record PackageSafetyReport(
     IReadOnlyList<PackageSafetyReport.Advisory> Advisories,
     /// <summary>npm lifecycle scripts that run on install: name → command, as published.</summary>
     IReadOnlyDictionary<string, string> InstallScripts,
-    DateTimeOffset CheckedAt)
+    DateTimeOffset CheckedAt,
+    /// <summary>The npm registry's deprecation message for the checked version, or null.</summary>
+    string? Deprecation = null)
 {
     public sealed record Advisory(string Id, string? Summary)
     {
@@ -63,8 +65,30 @@ public static class PackageSafety
     {
         if (Launch(server) is not { } launch) return [];
         var findings = new List<DoctorFinding>();
+        DoctorAction? checkAction = report?.Describes(launch) == true ? null : DoctorAction.CheckPackageSafety;
+        var archived = IsArchivedReference(launch.Name, launch.Ecosystem);
+        if (archived)
+        {
+            findings.Add(new DoctorFinding(
+                "archived-package",
+                DoctorSeverity.Warning,
+                "This reference server is archived and no longer maintained",
+                $"The MCP project moved “{launch.Name}” to its archive of reference servers " +
+                "that are no longer maintained" +
+                (launch.Ecosystem == PackageEcosystem.Npm ? ", and npm marks it deprecated" : "") +
+                ". It gets no fixes, security fixes included. Coding agents still install it " +
+                "by name because they remember it.",
+                "Replace it with a server that the service itself, or another active " +
+                "maintainer, publishes — and check who publishes that one before switching. " +
+                "Kytto did not change anything on its own.",
+                checkAction));
+        }
         if (LookAlike(launch.Name, launch.Ecosystem) is { } official)
         {
+            var advice = IsArchivedReference(official, launch.Ecosystem)
+                ? $"“{official}” is itself archived and no longer maintained, so switching to " +
+                  "it is not a fix either: use a maintained server for the same service."
+                : $"If you meant the official server, change the command to “{official}”.";
             findings.Add(new DoctorFinding(
                 "look-alike-package",
                 DoctorSeverity.Warning,
@@ -72,12 +96,25 @@ public static class PackageSafety
                 $"“{launch.Name}” is not “{official}”, but its name is close enough to be " +
                 "mistaken for it. Fake MCP packages with official-looking names have sent " +
                 "machine details and secrets to attackers on install.",
-                $"If you meant the official server, change the command to “{official}”. If " +
-                "this package is the one you chose on purpose, check who publishes it before " +
-                "the next launch — Check package safety asks osv.dev about known malware.",
-                report?.Describes(launch) == true ? null : DoctorAction.CheckPackageSafety));
+                $"{advice} If this package is the one you chose on purpose, check who " +
+                "publishes it before the next launch — Check package safety asks osv.dev " +
+                "about known malware.",
+                checkAction));
         }
         if (report is null || !report.Describes(launch)) return findings;
+
+        if (report.Deprecation is { } deprecation && !archived)
+        {
+            findings.Add(new DoctorFinding(
+                "deprecated-package",
+                DoctorSeverity.Warning,
+                "The registry marks this package deprecated",
+                $"npm marks {launch.Name}{(report.Version is { } deprecatedVersion ? " " + deprecatedVersion : "")} " +
+                $"deprecated: “{Truncated(deprecation)}”. A deprecated package usually gets no " +
+                "more fixes, security fixes included.",
+                "Move to the replacement the message names, or to another maintained server, " +
+                "and check who publishes it before switching."));
+        }
 
         var malware = report.Advisories.Where(advisory => advisory.IsMalware).ToArray();
         if (malware.Length > 0)
@@ -191,6 +228,42 @@ public static class PackageSafety
         "awslabs.core-mcp-server",
         "mcp",
     ];
+
+    /// <summary>
+    /// Reference servers the MCP project moved to <c>modelcontextprotocol/servers-archived</c>
+    /// ("no longer maintained"). Every npm one is marked deprecated on the registry. They
+    /// stay in the official lists above, because imitations of them still circulate.
+    /// </summary>
+    internal static readonly string[] ArchivedNpm =
+    [
+        "@modelcontextprotocol/server-aws-kb-retrieval",
+        "@modelcontextprotocol/server-brave-search",
+        "@modelcontextprotocol/server-everart",
+        "@modelcontextprotocol/server-gdrive",
+        "@modelcontextprotocol/server-github",
+        "@modelcontextprotocol/server-gitlab",
+        "@modelcontextprotocol/server-google-maps",
+        "@modelcontextprotocol/server-postgres",
+        "@modelcontextprotocol/server-puppeteer",
+        "@modelcontextprotocol/server-redis",
+        "@modelcontextprotocol/server-slack",
+    ];
+
+    internal static readonly string[] ArchivedPyPi =
+    [
+        "mcp-server-aws-kb-retrieval",
+        "mcp-server-sentry",
+        "mcp-server-sqlite",
+    ];
+
+    /// <summary>Whether <paramref name="name"/> is one of the archived reference servers.</summary>
+    public static bool IsArchivedReference(string name, PackageEcosystem ecosystem)
+    {
+        var lowered = name.ToLowerInvariant();
+        return ecosystem == PackageEcosystem.Npm
+            ? ArchivedNpm.Contains(lowered, StringComparer.Ordinal)
+            : ArchivedPyPi.Select(NormalizePyPi).Contains(NormalizePyPi(lowered), StringComparer.Ordinal);
+    }
 
     /// <summary>The official package <paramref name="name"/> imitates, or null.</summary>
     /// <remarks>
@@ -351,6 +424,25 @@ public static class PackageSafety
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// The <c>deprecated</c> message in an npm version document, or null when the version
+    /// is not deprecated (npm leaves the field out, or sends <c>false</c>).
+    /// </summary>
+    public static string? DeprecationFromNpmVersion(byte[] data)
+    {
+        using var document = ParseObject(data);
+        if (!document.RootElement.TryGetProperty("deprecated", out var deprecated)
+            || deprecated.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+        var trimmed = (deprecated.GetString() ?? "").Trim();
+        if (trimmed.Length == 0) return "deprecated";
+        if (trimmed.Length <= 300) return trimmed;
+        // Never end on half of a surrogate pair.
+        return trimmed[..(char.IsHighSurrogate(trimmed[299]) ? 299 : 300)];
     }
 
     private static System.Text.Json.JsonDocument ParseObject(byte[] data)

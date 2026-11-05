@@ -79,8 +79,74 @@ public class PackageLookAlikeTests
         Assert.Null(findings[0].Action);
         Assert.Equal(DoctorSeverity.Error, findings.First(item => item.Code == "known-malware").Severity);
 
-        var edited = StdioServer("github", "npx", ["-y", "@modelcontextprotocol/server-github"]);
+        var edited = StdioServer("filesystem", "npx", ["-y", "@modelcontextprotocol/server-filesystem"]);
         Assert.Empty(PackageSafety.Findings(edited, report));
+    }
+
+    // MARK: - Archived reference servers (offline)
+
+    [Theory]
+    [InlineData("npx", new[] { "-y", "@modelcontextprotocol/server-github" })]
+    [InlineData("npx", new[] { "-y", "@modelcontextprotocol/server-puppeteer@2025.5.12" })]
+    [InlineData("npx", new[] { "-y", "@modelcontextprotocol/server-slack" })]
+    [InlineData("uvx", new[] { "mcp-server-sqlite", "--db-path", "x.db" })]
+    [InlineData("uvx", new[] { "MCP_Server.Sentry" })]
+    public void ArchivedReferenceServersAreFlaggedOffline(string command, string[] args)
+    {
+        var finding = PackageSafety.Findings(StdioServer("s", command, args), null).First();
+        Assert.Equal("archived-package", finding.Code);
+        Assert.Equal(DoctorSeverity.Warning, finding.Severity);
+        Assert.Equal(DoctorAction.CheckPackageSafety, finding.Action);
+    }
+
+    [Fact]
+    public void AnArchivedServerFindingNamesNpmDeprecationOnlyForNpm()
+    {
+        var npm = PackageSafety.Findings(StdioServer("s", "npx", ["-y", "@modelcontextprotocol/server-postgres"]), null).Single();
+        Assert.Contains("npm marks it deprecated", npm.Detail, StringComparison.Ordinal);
+        var pypi = PackageSafety.Findings(StdioServer("s", "uvx", ["mcp-server-sqlite"]), null).Single();
+        Assert.DoesNotContain("npm", pypi.Detail, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("@modelcontextprotocol/server-filesystem")]
+    [InlineData("@modelcontextprotocol/server-memory")]
+    [InlineData("@modelcontextprotocol/server-everything")]
+    [InlineData("@modelcontextprotocol/server-sequential-thinking")]
+    public void MaintainedReferenceServersAreLeftAlone(string name) =>
+        Assert.Empty(PackageSafety.Findings(StdioServer("s", "npx", ["-y", name]), null));
+
+    [Fact]
+    public void ALookAlikeOfAnArchivedServerIsNotToldToSwitchToIt()
+    {
+        var server = StdioServer("github", "npx", ["-y", "mcp-server-github"]);
+        var finding = PackageSafety.Findings(server, null).First(item => item.Code == "look-alike-package");
+        Assert.DoesNotContain("change the command", finding.Remediation, StringComparison.Ordinal);
+        Assert.Contains("no longer maintained", finding.Remediation, StringComparison.Ordinal);
+
+        var live = StdioServer("fs", "npx", ["-y", "@modelcontextprotocol/server-filesytem"]);
+        var liveFinding = PackageSafety.Findings(live, null).First(item => item.Code == "look-alike-package");
+        Assert.Contains("change the command", liveFinding.Remediation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ACheckedDeprecatedPackageGetsAFindingAndAnArchivedOneIsNotReportedTwice()
+    {
+        var server = StdioServer("old", "npx", ["-y", "some-old-mcp"]);
+        var report = new PackageSafetyReport(
+            PackageEcosystem.Npm, "some-old-mcp", null, [], new Dictionary<string, string>(),
+            DateTimeOffset.UtcNow, "Use new-mcp instead");
+        var finding = Assert.Single(PackageSafety.Findings(server, report));
+        Assert.Equal("deprecated-package", finding.Code);
+        Assert.Contains("Use new-mcp instead", finding.Detail, StringComparison.Ordinal);
+
+        var archived = StdioServer("github", "npx", ["-y", "@modelcontextprotocol/server-github"]);
+        var archivedReport = new PackageSafetyReport(
+            PackageEcosystem.Npm, "@modelcontextprotocol/server-github", null, [], new Dictionary<string, string>(),
+            DateTimeOffset.UtcNow, "Package no longer supported.");
+        var only = Assert.Single(PackageSafety.Findings(archived, archivedReport));
+        Assert.Equal("archived-package", only.Code);
+        Assert.Null(only.Action);
     }
 
     [Fact]
@@ -136,6 +202,19 @@ public class PackageSafetyResultTests
         Assert.Equal("postinstall", scripts.Keys.Single());
     }
 
+    [Fact]
+    public void TheNpmDeprecationMessageIsReadAndFalseOrAMissingFieldIsNotDeprecation()
+    {
+        Assert.Equal("Package no longer supported.", PackageSafety.DeprecationFromNpmVersion(
+            """{"name":"x","version":"1.0.0","deprecated":"  Package no longer supported.\n"}"""u8.ToArray()));
+        Assert.Null(PackageSafety.DeprecationFromNpmVersion("""{"deprecated":false}"""u8.ToArray()));
+        Assert.Null(PackageSafety.DeprecationFromNpmVersion("""{"name":"x"}"""u8.ToArray()));
+        Assert.Equal("deprecated", PackageSafety.DeprecationFromNpmVersion("""{"deprecated":"  "}"""u8.ToArray()));
+        Assert.Equal(300, PackageSafety.DeprecationFromNpmVersion(
+            Encoding.UTF8.GetBytes($$"""{"deprecated":"{{new string('a', 500)}}"}"""))!.Length);
+        Assert.Throws<InvalidDataException>(() => PackageSafety.DeprecationFromNpmVersion("[]"u8.ToArray()));
+    }
+
     [Theory]
     [InlineData("@modelcontextprotocol/server-github", true, true)]
     [InlineData("left-pad", true, true)]
@@ -170,7 +249,7 @@ public class PackageSafetyResultTests
     {
         var handler = new RecordingHandler(request => request.RequestUri!.Host == "api.osv.dev"
             ? Json("""{"vulns":[{"id":"GHSA-aaaa-bbbb-cccc"}]}""")
-            : Json("""{"scripts":{"postinstall":"node x.js"}}"""));
+            : Json("""{"scripts":{"postinstall":"node x.js"},"deprecated":"Use @scope/next"}"""));
         using var lookup = new PackageSafetyLookup(new HttpClient(handler), () => DateTimeOffset.FromUnixTimeSeconds(1_000));
         var launch = PackageLaunch.Parse("npx", ["-y", "@scope/pkg@1.2.3"])!;
 
@@ -185,6 +264,7 @@ public class PackageSafetyResultTests
         Assert.Equal("1.2.3", report.Version);
         Assert.Equal(["GHSA-aaaa-bbbb-cccc"], report.Advisories.Select(item => item.Id));
         Assert.Equal("node x.js", report.InstallScripts["postinstall"]);
+        Assert.Equal("Use @scope/next", report.Deprecation);
         Assert.Equal(1_000, report.CheckedAt.ToUnixTimeSeconds());
         Assert.True(report.Describes(launch));
     }
@@ -200,6 +280,7 @@ public class PackageSafetyResultTests
         Assert.Single(handler.Requests);
         Assert.Contains("MAL-2026-1", report.Advisories.Select(item => item.Id));
         Assert.Empty(report.InstallScripts);
+        Assert.Null(report.Deprecation);
     }
 
     [Fact]

@@ -694,17 +694,21 @@ server fetches by name (§7.10). Native code sends osv.dev
 (`POST https://api.osv.dev/v1/query`) the package name, its ecosystem (`npm` or
 `PyPI`) and the version only when the launch pins one; for npm it also reads
 `https://registry.npmjs.org/<name>/<version|latest>` to see whether that version
-declares `preinstall`/`install`/`postinstall` scripts. Nothing else leaves the
-machine, and nothing is requested on launch, during discovery or during a health
-check. The result is kept in memory for the session and applies only while the
-server still launches the same package and version; it shows up as Doctor
-findings (`known-malware`, `known-vulnerabilities`, `install-script`) and as
-`ServerDTO.packageSafety`
-`{ packageName, version, advisoryIDs, malware, installScripts, checkedAt }`.
+declares `preinstall`/`install`/`postinstall` scripts and whether the registry
+marks it deprecated — the same document, no further request. Nothing else leaves
+the machine, and nothing is requested on launch, during discovery or during a
+health check. The result is kept in memory for the session and applies only while
+the server still launches the same package and version; it shows up as Doctor
+findings (`known-malware`, `known-vulnerabilities`, `install-script`,
+`deprecated-package`) and as `ServerDTO.packageSafety`
+`{ packageName, version, advisoryIDs, malware, installScripts, deprecated, checkedAt }`,
+where `deprecated` is the registry's message (at most 300 characters) or null.
 Without a pinned version only `MAL-` (malware) records are kept, since OSV then
-answers for every release ever published. The offline `look-alike-package`
-finding needs no request and carries the `checkPackageSafety` action. Nothing
-is switched off automatically.
+answers for every release ever published. The offline `look-alike-package` and
+`archived-package` findings need no request and carry the `checkPackageSafety`
+action; `archived-package` names a reference server the MCP project archived, and
+a deprecation on such a package is not reported a second time. Nothing is
+switched off automatically.
 
 ### `imports.prompt` → `ImportPromptDTO`
 

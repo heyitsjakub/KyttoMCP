@@ -76,6 +76,7 @@ internal static class DtoMapping
         AdvisoryIDs: report.Advisories.Select(advisory => advisory.Id).ToArray(),
         Malware: report.Advisories.Any(advisory => advisory.IsMalware),
         InstallScripts: report.InstallScripts.Keys.Order(StringComparer.Ordinal).ToArray(),
+        Deprecated: report.Deprecation,
         CheckedAt: report.CheckedAt.ToUnixTimeMilliseconds() / 1000.0);
 
     internal static ServerDto ToDto(this Server server) => server.ToDto(null);

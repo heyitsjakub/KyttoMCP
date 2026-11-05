@@ -176,6 +176,8 @@ internal sealed record PackageSafetyDto(
     IReadOnlyList<string> AdvisoryIDs,
     bool Malware,
     IReadOnlyList<string> InstallScripts,
+    /// The npm registry's deprecation message for the checked version, or null.
+    string? Deprecated,
     double CheckedAt);
 
 /// <summary>

@@ -506,6 +506,28 @@ public class WireFormatTests
     }
 
     /// <summary>
+    /// A package safety check reaches the page with the same keys the macOS
+    /// <c>PackageSafetyDTO</c> writes, the npm deprecation message included.
+    /// </summary>
+    [Fact]
+    public void APackageSafetyCheckCarriesItsDeprecation()
+    {
+        var report = new Kytto.Core.Doctor.PackageSafetyReport(
+            Kytto.Core.Model.PackageEcosystem.Npm, "@modelcontextprotocol/server-slack", null,
+            [new("MAL-2026-1", null)], new Dictionary<string, string> { ["postinstall"] = "node x.js" },
+            DateTimeOffset.FromUnixTimeSeconds(1_000), "Package no longer supported.");
+        var encoded = Encode(report.ToDto());
+
+        Assert.Equal(
+            ["packageName", "version", "advisoryIDs", "malware", "installScripts", "deprecated", "checkedAt"],
+            KeysOf(encoded));
+        Assert.Equal("Package no longer supported.", encoded.GetProperty("deprecated").GetString());
+
+        var clean = Encode((report with { Deprecation = null }).ToDto());
+        Assert.Equal(JsonValueKind.Null, clean.GetProperty("deprecated").ValueKind);
+    }
+
+    /// <summary>
     /// The package pin rides on the executable pin's preview. The web layer reads
     /// <c>action</c> to choose the sheet and echoes <c>version</c> back to apply, so
     /// a misspelled key here would pin nothing, or the wrong thing, without an error.

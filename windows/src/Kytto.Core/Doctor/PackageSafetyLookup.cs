@@ -24,8 +24,8 @@ public sealed class PackageSafetyException(string message, Exception? inner = nu
 /// <remarks>
 /// Called only when the user asks. It sends osv.dev the package name, its registry, and
 /// the version when the launch pins one; for an npm package it also reads that version's
-/// document from the npm registry to see whether it runs install scripts. Nothing else
-/// from the configuration leaves the machine.
+/// document from the npm registry to see whether it runs install scripts or is deprecated.
+/// Nothing else from the configuration leaves the machine.
 /// </remarks>
 public sealed class PackageSafetyLookup : IDisposable
 {
@@ -79,6 +79,7 @@ public sealed class PackageSafetyLookup : IDisposable
         }
 
         IReadOnlyDictionary<string, string> scripts = new Dictionary<string, string>();
+        string? deprecation = null;
         if (launch.Ecosystem == PackageEcosystem.Npm)
         {
             var npmUri = new Uri(
@@ -90,6 +91,7 @@ public sealed class PackageSafetyLookup : IDisposable
             try
             {
                 scripts = PackageSafety.InstallScriptsFromNpmVersion(data);
+                deprecation = PackageSafety.DeprecationFromNpmVersion(data);
             }
             catch (InvalidDataException)
             {
@@ -98,7 +100,7 @@ public sealed class PackageSafetyLookup : IDisposable
         }
 
         return new PackageSafetyReport(
-            launch.Ecosystem, launch.Name, version, advisories, scripts, _now());
+            launch.Ecosystem, launch.Name, version, advisories, scripts, _now(), deprecation);
     }
 
     private async Task<byte[]> FetchAsync(
