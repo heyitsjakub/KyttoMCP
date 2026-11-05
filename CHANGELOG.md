@@ -12,17 +12,19 @@ without a backup.
 ## [1.0.9.2] — 2026-11-04
 
 MCP Doctor stops recommending archived reference servers and flags them where
-they are already in use. Released for macOS on 2026-11-04; the Windows build
-follows with the same change.
+they are already in use. Released for macOS on 2026-11-04 and for Windows on
+2026-11-05 with the same change, listed under the Windows headings below.
 
 **Download**
 
 | Platform | File | Size | SHA-256 |
 |---|---|---:|---|
 | macOS (universal) | `KyttoMCP-1.0.9.2.dmg` | 6.0 MB | `5cbb4f0810ad9fb6985ef7163be2ed69ba80ca18428d18097c7e2d7e9995440e` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.9.2.exe` | 78.6 MB | `fa24c7ff8d80a312a41e86959047f3d9c5bf3486712523485216a3f2d1243618` |
 
 The macOS build is ad-hoc signed rather than notarized. Verify the SHA-256
-checksum before bypassing Gatekeeper.
+checksum before bypassing Gatekeeper. The Windows installer is unsigned;
+verify its checksum before running it.
 
 ### Added (macOS)
 
