@@ -5,6 +5,10 @@ import SwiftUI
 /// shortcuts below are the ones a developer will try within the first minute.
 struct MenuCommands: Commands {
     let router: CommandRouter
+    /// Both commands act on the main window, which may be closed (the menu bar
+    /// item keeps Kytto running) or behind Settings. Bringing it forward first
+    /// is what makes them do something visible instead of nothing.
+    let mainWindow: MainWindowLink
 
     var body: some Commands {
         // Replaces the New Window / New Item group, which this app has no use for.
@@ -12,6 +16,7 @@ struct MenuCommands: Commands {
 
         CommandGroup(after: .newItem) {
             Button("Refresh Configurations") {
+                mainWindow.open()
                 Task { await router.emit("menu.refresh", payload: EmptyEvent()) }
             }
             .keyboardShortcut("r", modifiers: .command)
@@ -19,6 +24,7 @@ struct MenuCommands: Commands {
 
         CommandGroup(after: .textEditing) {
             Button("Find…") {
+                mainWindow.open()
                 Task { await router.emit("menu.find", payload: EmptyEvent()) }
             }
             .keyboardShortcut("f", modifiers: .command)

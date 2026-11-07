@@ -44,7 +44,9 @@ export function renderBackups(state) {
     tr.append(el('td', 'col-when', new Date(backup.takenAt * 1000).toLocaleString()));
 
     const fileCell = el('td', 'col-server');
-    fileCell.append(el('div', 'server-command', backup.pathDisplay));
+    const path = el('div', 'server-command', backup.pathDisplay);
+    path.title = backup.pathDisplay;
+    fileCell.append(path);
     fileCell.append(
       el(
         'div',

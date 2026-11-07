@@ -82,6 +82,25 @@ test('restart notices name each client and distinguish dismissal from confirmati
   assert.match(main, /invoke\('restarts\.dismiss', \{ clientID: null \}\)/);
 });
 
+test('Restart now is offered only where native can restart, and asks first', () => {
+  const matrix = source('js/screens/matrix.js');
+  const main = source('js/main.js');
+  const css = source('css/app.css');
+  // Branches on the capability and the client's own flag, never on a name.
+  assert.match(matrix, /includes\('client-restart'\)/);
+  assert.match(matrix, /\?\.canRestart\)/);
+  assert.match(matrix, /'Restart now', 'restart-client'/);
+  // Opening the confirmation writes nothing; only its own button restarts.
+  assert.match(main, /case 'restart-client':\s*openRestartConfirm/);
+  assert.match(main, /case 'confirm-restart':\s*await confirmRestart\(\)/);
+  assert.match(main, /invoke\('restarts\.restart', \{ clientIDs: current\.clientIds \}\)/);
+  assert.match(matrix, /Unsaved work in/);
+  // Every class the bar builds is styled, so rows line up.
+  for (const name of ['restart-list', 'restart-item', 'restart-message', 'restart-actions', 'restart-controls']) {
+    assert.match(css, new RegExp(`\\.${name}\\b[^{]*{`), name);
+  }
+});
+
 test('the first matrix write is explained and successful changes offer undo', () => {
   const main = source('js/main.js');
   const matrix = source('js/screens/matrix.js');
@@ -190,7 +209,7 @@ test('the sidebar width is draggable, keyboard-reachable and remembered natively
   const fixtures = source('js/dev/fixtures.js');
   const ipc = readFileSync(join(webRoot, '..', 'docs', 'ipc.md'), 'utf8');
   // The handle follows the CSS variable, so a drag needs no re-render.
-  assert.match(css, /\.side-resize\s*{[^}]*left:\s*calc\(var\(--sidebar-width\)/s);
+  assert.match(css, /\.side-resize\s*{[^}]*left:\s*calc\(min\(var\(--sidebar-width\), 40vw\)/s);
   assert.match(sidebar, /role', 'separator'/);
   assert.match(main, /invoke\('settings\.setSidebarWidth', \{ width: clampSidebarWidth\(width\) \}\)/);
   assert.match(main, /'--sidebar-width'/);

@@ -15,7 +15,7 @@ export function renderLibrary(state) {
   copy.append(el('h2', null, 'MCP Library & agent import'));
   copy.append(el('p', 'muted', 'Find local MCP definitions, or paste a strict JSON description from an agent. Nothing is executed during discovery.'));
   head.append(copy, el('span', 'spacer'));
-  head.append(button(state.libraryBusy ? 'Scanning…' : 'Choose directory', state.libraryBusy ? 'noop' : 'choose-library-directory'));
+  head.append(button(state.libraryBusy ? 'Working…' : 'Choose directory', state.libraryBusy ? 'noop' : 'choose-library-directory'));
   panel.append(head);
 
   const location = el('div', 'library-location');

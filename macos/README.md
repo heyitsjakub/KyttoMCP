@@ -423,7 +423,7 @@ Row states:
 
 Header shows total configured / active count and summed token weight of enabled servers.
 
-Footer bar shows pending-restart warning: *"Restart Claude Desktop to apply 2 changes"* — clients hold config in memory and only pick up changes on restart. Do not try to work around this, just state it clearly. Also show last backup timestamp.
+Footer bar shows pending-restart warning: *"Restart Claude Desktop to apply 2 changes"* — clients hold config in memory and only pick up changes on restart. Do not try to work around this, just state it clearly. Also show last backup timestamp. Where the client is an installed desktop app that reads its config at launch, the notice also offers **Restart now** (and **Restart all** for several): after a confirmation that names the apps and warns about unsaved work, Kytto asks each app to quit the way its own Quit command would, reopens it in the background and only then clears its notice. It never force-quits; an app that refuses keeps its notice and "I restarted". Terminal clients keep "I restarted" only — Kytto cannot restart a shell session.
 
 ### 7.2 Add server
 

@@ -189,6 +189,15 @@ final class AppModel {
             if sourcesChanged { ledger.forgetAll() }
             reload()
         }
+        if pathsChanged {
+            // Pointing a client at another file is Kytto looking somewhere
+            // else, not a change the client has to restart for. Without a new
+            // baseline every server in the old file counted as pending (§7.1).
+            let keys = Set(updated.clientPathOverrides.keys).union(previous.clientPathOverrides.keys)
+            for key in keys where updated.clientPathOverrides[key] != previous.clientPathOverrides[key] {
+                if let clientID = ClientID(rawValue: key) { acknowledgeRestart(clientID: clientID) }
+            }
+        }
         onSettingsChanged?(updated, discoveryChanged)
         return updated
     }
@@ -919,8 +928,15 @@ final class AppModel {
         // and two would start every server twice, in parallel, which is what
         // "sequential on purpose" is for.
         guard !isCheckingAll else { throw AppError.checkAllAlreadyRunning }
+        // The menu bar item is a static menu rebuilt on state changes; it has
+        // to hear both edges of the run, or it keeps offering a run that is
+        // already going, and afterwards stays on "Checking All Servers…".
         isCheckingAll = true
-        defer { isCheckingAll = false }
+        onStateChanged?()
+        defer {
+            isCheckingAll = false
+            onStateChanged?()
+        }
         let servers = current().servers.filter { $0.transport != .sse }
         var persistenceFailures = 0
         var interrupted = 0
@@ -1600,6 +1616,42 @@ final class AppModel {
             pendingRestarts.removeValue(forKey: id)
             dismissedRestartClients.remove(id)
         }
+    }
+
+    /// What Restart now did for each client it was asked about.
+    struct ClientRestartReport {
+        var restarted: [ClientID] = []
+        var notRunning: [ClientID] = []
+        var failures: [(clientID: ClientID, message: String)] = []
+    }
+
+    /// Quits and reopens each client's app, one after another, and clears a
+    /// client's notice only once its app has actually quit (Restart now, §7.1).
+    /// A client that was not running needs nothing: its next launch reads the
+    /// new configuration, so its notice clears too. A refusal to quit leaves
+    /// the notice exactly as it was.
+    func restartClients(_ clientIDs: [ClientID]) async -> ClientRestartReport {
+        var report = ClientRestartReport()
+        for id in clientIDs {
+            guard let descriptor = ClientRegistry.descriptorIfKnown(for: id) else {
+                report.failures.append((id, "Kytto cannot restart this client for you. Restart it yourself, then choose I restarted."))
+                continue
+            }
+            do {
+                switch try await ClientRestarter.restart(descriptor) {
+                case .restarted: report.restarted.append(id)
+                case .notRunning: report.notRunning.append(id)
+                }
+                acknowledgeRestart(clientID: id)
+            } catch let error as ClientRestarter.RestartError {
+                // It quit, so whatever opens it next reads the new file.
+                if case .couldNotReopen = error { acknowledgeRestart(clientID: id) }
+                report.failures.append((id, error.localizedDescription))
+            } catch {
+                report.failures.append((id, error.localizedDescription))
+            }
+        }
+        return report
     }
 
     /// Hides the notice without claiming that the client has been restarted.

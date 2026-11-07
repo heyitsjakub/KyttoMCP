@@ -152,22 +152,24 @@ only ever confirms that something happened.
 
 ## Verifying UI work
 
-Screenshots beat description here, and both surfaces can be captured headlessly:
+Look at the running UI through the **cua computer-use tools**
+(`mcp__cua-computer-use__*`), not through terminal screenshots (headless
+Chrome/Brave `--screenshot`, `screencapture`). cua shows the real window, reads
+its accessibility tree and can click through a flow in the background:
 
-```sh
-# The harness, either theme (flip data-theme in dev.html or the fixture).
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
-  --disable-gpu --screenshot=out.png --window-size=1080,700 \
-  --virtual-time-budget=3000 http://localhost:8765/dev.html
+- **The app:** build the Debug app, launch it with `launch_app`, then
+  `get_window_state` for the screenshot and the tree, and `run_steps` to click
+  through a flow. Point it at an isolated home (`KYTTO_TEST_HOME=<scratch dir>`)
+  whenever a step could write, so no real client config is touched.
+- **The web harness:** `cd web && python3 -m http.server 8765`, open
+  `http://localhost:8765/dev.html` in a browser with `launch_app` (`urls`), and
+  read and press its buttons through the accessibility tree
+  (`get_window_state` with `query`, then `run_steps` with the element token).
+  To show a state the fixtures do not start in, serve a scratch copy of `web/`
+  with an edited `js/dev/fixtures.js`, never the repo copy.
 
-# The real window, including vibrancy and real client icons.
-B=$(osascript -e 'tell application "System Events" to tell process "KyttoMCP" \
-  to get {position, size} of window 1' | tr -d ' ')
-screencapture -x -R"$B" out.png
-```
-
-The harness cannot show vibrancy, the native title bar or real application icons.
-Check those in the app.
+The harness cannot show vibrancy, the native title bar or real application
+icons. Check those in the app.
 
 ## Platform
 

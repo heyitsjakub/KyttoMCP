@@ -5,7 +5,7 @@
 Free and **open source** under the MIT License — the full source of both the macOS
 and the Windows app lives in this repository. Read it, build it, or send a pull request.
 
-[![Version](https://img.shields.io/badge/beta-1.0.9.2-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
+[![Version](https://img.shields.io/badge/beta-1.0.9.3-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 [![Open source](https://img.shields.io/badge/open%20source-yes-brightgreen)](#source-code)
@@ -44,7 +44,7 @@ Different formats, different locations, different rules about what a valid entry
 Kytto reads those files locally and turns them into one workspace.
 
 **See and change what is enabled**
-Every server against every client in one matrix. Toggle a server on or off, edit a definition across every client that uses it, or remove it from one client without touching the others — Kytto writes each client in that client's own format and respects its rules. Add servers by hand or from a built-in catalog. Since 1.0.5, Kytto explains the first matrix write before it happens and offers Undo after successful changes, including exact backup restoration for a server that was previously absent.
+Every server against every client in one matrix. Toggle a server on or off, edit a definition across every client that uses it, or remove it from one client without touching the others — Kytto writes each client in that client's own format and respects its rules. Add servers by hand or from a built-in catalog. Since 1.0.5, Kytto explains the first matrix write before it happens and offers Undo after successful changes, including exact backup restoration for a server that was previously absent. Most clients only read their configuration at launch, so Kytto says which ones still need a restart — and since 1.0.9.3 it can restart Claude Desktop, Cursor, VS Code, Antigravity and Devin Desktop for you, after asking, because unsaved work in them may be lost.
 
 **Handle secrets without surprises**
 Find sensitive environment values while keeping them masked by default. Reveal on request, rotate one value everywhere it appears, keep an optional Keychain copy, or tighten config file permissions.
@@ -97,7 +97,7 @@ Custom sources are read-only and are not an additional writable client. Want ano
 
 ## Install
 
-Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.2 for macOS ([v1.0.9.2](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.2)) and Beta 1.0.9.2 for Windows ([v1.0.9.2-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.2-windows)).
+Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.3 for macOS ([v1.0.9.3](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.3)) and Beta 1.0.9.2 for Windows ([v1.0.9.2-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.2-windows)); Windows 1.0.9.3 is coming soon.
 
 ### macOS
 
@@ -115,8 +115,8 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.9.2.dmg
-# 5cbb4f0810ad9fb6985ef7163be2ed69ba80ca18428d18097c7e2d7e9995440e
+shasum -a 256 KyttoMCP-1.0.9.3.dmg
+# c92bd99bc4a8ca01a0682e476662b9e93b6759b4c7babe4a48218fcae65d5aff
 
 # Windows (PowerShell)
 Get-FileHash Kytto-Setup-win-x64-1.0.9.2.exe -Algorithm SHA256

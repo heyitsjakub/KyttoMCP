@@ -276,6 +276,25 @@ public struct ClientDescriptor: Sendable {
     /// Where single tools can be switched off in this client's own files, or
     /// nil when only Gateway can hide them (§7.11).
     public var toolSwitch: ToolSwitch? = nil
+    /// True when this client is first of all a desktop app that reads its
+    /// configuration at launch, so quitting and reopening that app is what
+    /// applies a pending change (Restart now, §7.1). False for terminal
+    /// clients, and for apps that are a side door to a CLI-first client (the
+    /// Codex and OpenCode apps): restarting one would clear the notice while
+    /// every terminal session kept the old configuration. Where a launcher in
+    /// `executableNames` can also start sessions, `restartCaveat` says so.
+    public var restartsWithApp: Bool = false
+
+    /// What Restart now cannot reach, for the confirmation — terminal sessions
+    /// started with this client's command line launcher. Nil when there is none.
+    public var restartCaveat: String? {
+        guard restartsWithApp, !executableNames.isEmpty else { return nil }
+        let names = executableNames.map { "`\($0)`" }
+        let listed = names.count == 1
+            ? names[0]
+            : names.dropLast().joined(separator: ", ") + " or " + names[names.count - 1]
+        return "Terminal sessions started with \(listed) keep the old configuration until you restart them."
+    }
 
     /// The file and key holding servers the user can add, edit and remove.
     ///

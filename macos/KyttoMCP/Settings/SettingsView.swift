@@ -33,8 +33,14 @@ struct SettingsView: View {
         // atomic settings write and, for path changes, one discovery pass.
         .task(id: settings) {
             guard settings != model.settings else { return }
+            // A path is typed, not clicked: every save of one re-reads every
+            // config, and a pause mid-path (`/Us`) is not a choice. Paths wait
+            // longer than toggles and steppers; closing the window still
+            // flushes at once.
+            let pathsEdited = settings.clientPathOverrides != model.settings.clientPathOverrides
+                || settings.customConfigSources != model.settings.customConfigSources
             do {
-                try await Task.sleep(for: .milliseconds(350))
+                try await Task.sleep(for: .milliseconds(pathsEdited ? 1500 : 350))
             } catch {
                 return
             }
@@ -145,7 +151,7 @@ struct SettingsView: View {
                 // §4: these paths move between client releases, which is exactly
                 // when an override stops being a nicety.
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Kytto has five built-in local clients: Claude Desktop, Claude Code, Cursor, VS Code and Codex.")
+                    Text("Kytto has \(Self.builtInClientCount) built-in local clients: \(Self.builtInClientNames).")
                         .foregroundStyle(.secondary)
                     Text("Leave blank to use the standard location. Set a path if a client has moved its configuration and Kytto is looking in the wrong place.")
                         .foregroundStyle(.secondary)
@@ -324,6 +330,19 @@ struct SettingsView: View {
         settings.clientPathOverrides.values.contains { value in
             value != "~" && !Self.isSavablePath(value)
         }
+    }
+
+    /// Read from the registry so the sentence cannot fall behind it again.
+    private static var builtInClientCount: String {
+        let count = ClientRegistry.all.count
+        let words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"]
+        return count < words.count ? words[count] : String(count)
+    }
+
+    private static var builtInClientNames: String {
+        let names = ClientRegistry.all.map(\.displayName)
+        guard names.count > 1 else { return names.joined() }
+        return names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
     }
 
     nonisolated private static func isSavablePath(_ value: String) -> Bool {

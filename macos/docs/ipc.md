@@ -80,6 +80,8 @@ shell implements the first-party update check and verified download/install
 actions below. `library` and `agent-import` expose the read-only local inventory
 and strict JSON preview flow. `skills` exposes a read-only inventory of agent
 skill folders. `provenance` exposes an explicit, read-only package metadata check.
+`client-restart` means `restarts.restart` can quit and reopen the apps whose
+client carries `canRestart`.
 
 `platformDisplayName` is for display only — branching on it is a §3.2 violation.
 
@@ -193,6 +195,8 @@ attached custom sources follow them with opaque `custom.<uuid>` ids.
 | `scopeLabel` | Optional user-visible profile or workspace name |
 | `toolBudget` | `{ toolCount, maskedToolCount, unmeasuredServerIDs, limit, state, pastLimitSummary }` — see below |
 | `toolSwitchSummary` | One sentence on what switching a single tool off writes in this client, or null when only Gateway mode can hide its tools (§7.11) |
+| `canRestart` | True when `restarts.restart` can quit and reopen this client's app (an installed desktop app that reads its configuration at launch). False for terminal clients and read-only sources |
+| `restartCaveat` | One sentence on what Restart now does not reach — terminal sessions of the client's launcher — or null |
 
 `toolBudget` counts the tools this client hands its model: every server
 `enabled` in it with a passing health check contributes its measured
@@ -521,6 +525,31 @@ plugin: restore Direct mode first, and installed software is not configuration.
 Marks the named client as restarted and treats its current semantic
 configuration as applied. Nil `clientID` marks every client. This command must
 only be used after the client was actually restarted.
+
+### `restarts.restart` → `RestartResultDTO`
+
+```json
+{ "clientIDs": ["claudeDesktop", "antigravity"] }
+```
+
+Restart now (§7.1). For each named client in order, asks its running app to
+quit the way its own Quit command would, waits up to 20 seconds, then opens it
+again in the background, and only then marks the client as restarted, exactly
+like `restarts.acknowledge`. An app that was not running is left closed and is
+acknowledged too: its next launch reads the new configuration. Kytto never
+force-quits. An app that refuses or does not finish quitting (an unsaved-work
+dialog) keeps its pending notice.
+
+```json
+{ "restarted": ["claudeDesktop"], "notRunning": [], "failures": [
+    { "clientID": "antigravity", "message": "Antigravity did not quit. …" } ],
+  "state": { … } }
+```
+
+Every requested id lands in exactly one list. `message` is a sentence the UI can
+show as it is. Only offered when `app.info` advertises `client-restart` and the
+client's `canRestart` is true; the UI confirms first, because quitting an app can
+lose unsaved work.
 
 ### `restarts.dismiss` → `StateDTO`
 

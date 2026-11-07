@@ -49,12 +49,25 @@ struct KyttoMCPApp: App {
         model.onStateChanged = { [weak menuBar] in menuBar?.refresh() }
         model.onSettingsChanged = { [weak menuBar, weak router] settings, stateChanged in
             menuBar?.apply(settings: settings)
+            Self.applyAppearance(settings.theme)
             guard let router else { return }
             Task {
                 await router.emit("settings.changed", payload: SettingsDTO(settings))
                 if stateChanged {
                     await router.emit("configs.changed", payload: StateDTO(model))
                 }
+            }
+        }
+
+        // The menu bar item belongs to the app, not to the main window: a launch
+        // that restores no window still has to show it (§7.7). `install()` is
+        // idempotent, so the window's own `.task` calling it again is harmless.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
+        ) { [weak menuBar] _ in
+            MainActor.assumeIsolated {
+                menuBar?.apply(settings: model.settings)
+                Self.applyAppearance(model.settings.theme)
             }
         }
 
@@ -88,10 +101,25 @@ struct KyttoMCPApp: App {
         // its own toolbar band under, and ChromeView tells it how tall that strip
         // is. A toolbar style here would size a bar that has nothing in it.
         .defaultSize(width: 1080, height: 700)
-        .commands { MenuCommands(router: router) }
+        .commands { MenuCommands(router: router, mainWindow: mainWindow) }
 
         Settings {
             SettingsView(model: model)
+        }
+    }
+}
+
+extension KyttoMCPApp {
+    /// Kytto's Appearance setting, applied to everything native as well as the
+    /// page: the material behind the page's chrome, the title bar, Settings,
+    /// alerts and panels. Without it a forced Light on a Dark Mac tinted the
+    /// light chrome over dark material and every native window disagreed.
+    @MainActor
+    static func applyAppearance(_ theme: KyttoSettings.Theme) {
+        NSApp.appearance = switch theme {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
         }
     }
 }

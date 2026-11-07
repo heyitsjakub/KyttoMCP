@@ -255,6 +255,21 @@ enum CommandRegistry {
             return StateDTO(model)
         }
 
+        router.register("restarts.restart") { (payload: RestartClientsPayload) -> RestartResultDTO in
+            var clientIDs: [ClientID] = []
+            for raw in payload.clientIDs {
+                guard let resolved = ClientID(rawValue: raw) else {
+                    throw CommandError.badArgument("Unknown client \(raw).")
+                }
+                if !clientIDs.contains(resolved) { clientIDs.append(resolved) }
+            }
+            guard !clientIDs.isEmpty else {
+                throw CommandError.badArgument("Name at least one client to restart.")
+            }
+            let report = await model.restartClients(clientIDs)
+            return RestartResultDTO(report, model: model)
+        }
+
         router.register("restarts.dismiss") { (payload: AcknowledgePayload) -> StateDTO in
             let clientID: ClientID?
             if let raw = payload.clientID {
@@ -546,7 +561,7 @@ enum CommandRegistry {
             build: info?["CFBundleVersion"] as? String ?? "0",
             // The UI enables features by asking for a capability, never by
             // guessing from the platform (§3.2). M4 adds `secrets`, M5 `health`.
-            capabilities: ["config.read", "config.write", "backups", "authoring", "catalog", "health", "health.http", "health.oauth", "portable-setup", "provenance", "package-safety", "secrets", "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking", "doctor", "activity", "contract-guard", "context-optimizer", "drift", "updates", "library", "agent-import", "skills"],
+            capabilities: ["config.read", "config.write", "backups", "authoring", "catalog", "health", "health.http", "health.oauth", "portable-setup", "provenance", "package-safety", "secrets", "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking", "doctor", "activity", "contract-guard", "context-optimizer", "drift", "updates", "library", "agent-import", "skills", "client-restart"],
             platformDisplayName: "macOS",
             secretStoreDisplayName: "Keychain"
         )
@@ -785,6 +800,11 @@ struct HealthProgressDTO: Encodable {
 struct AcknowledgePayload: Decodable {
     /// Nil acknowledges every client at once.
     let clientID: String?
+}
+
+struct RestartClientsPayload: Decodable {
+    /// The clients whose apps to quit and reopen, in order. Never empty.
+    let clientIDs: [String]
 }
 
 struct BackupsListPayload: Decodable {

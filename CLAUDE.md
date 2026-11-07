@@ -13,6 +13,10 @@ run its commands from inside that folder. Each platform has its own `web/`,
 `docs/ipc.md` and design document; the two web layers share an origin but have
 diverged, so a UI change on one platform does not carry over automatically.
 
+To look at or click through the app or its web harness, use the cua
+computer-use tools (`mcp__cua-computer-use__*`), not screenshots taken from
+the terminal (headless browser `--screenshot`, `screencapture`).
+
 The root holds only the public face of the project: `README.md` (for users),
 `CHANGELOG.md` (user-facing release notes, Keep a Changelog format), `LICENSE`
 and `.github/`. Record user-visible changes under `## [Unreleased]` in

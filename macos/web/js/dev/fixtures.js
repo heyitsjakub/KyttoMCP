@@ -38,6 +38,7 @@ const OFF_SWITCH = {
 const CLIENTS = [
   {
     id: 'claudeDesktop',
+    canRestart: true,
     displayName: 'Claude Desktop',
     iconAsset: 'client-claude-desktop',
     state: 'ready',
@@ -75,6 +76,7 @@ const CLIENTS = [
   },
   {
     id: 'vsCode',
+    canRestart: true,
     displayName: 'VS Code',
     iconAsset: 'client-vscode',
     state: 'ready',
@@ -981,7 +983,7 @@ const HANDLERS = {
   'app.info': () => ({
     version: '1.0',
     build: '1',
-    capabilities: ['config.read', 'config.write', 'backups', 'gateway.stdio', 'gateway.masking', 'updates', 'provenance', 'package-safety', 'health.http', 'health.oauth', 'portable-setup'],
+    capabilities: ['config.read', 'config.write', 'backups', 'gateway.stdio', 'gateway.masking', 'updates', 'provenance', 'package-safety', 'health.http', 'health.oauth', 'portable-setup', 'client-restart'],
     platformDisplayName: 'fixtures',
     // Deliberately neither "Keychain" nor "Credential Manager": the harness is
     // not pretending to be either platform, and a screen that reads correctly
@@ -1634,6 +1636,23 @@ const HANDLERS = {
 
   // Hides the notice and keeps the count; a later write to the client shows it
   // again (recordWrite).
+  // The harness has no apps to quit. Claude Desktop is "running" and restarts;
+  // VS Code is closed, so it is left closed and its notice still clears.
+  'restarts.restart': ({ clientIDs }) => {
+    const result = { restarted: [], notRunning: [], failures: [] };
+    for (const clientID of clientIDs) {
+      const client = CLIENTS.find((entry) => entry.id === clientID);
+      if (!client?.canRestart) {
+        result.failures.push({ clientID, message: `Kytto cannot restart ${client?.displayName ?? clientID} for you. Restart it yourself, then choose I restarted.` });
+        continue;
+      }
+      (clientID === 'vsCode' ? result.notRunning : result.restarted).push(clientID);
+      delete world.pendingRestarts[clientID];
+      world.dismissedRestarts = world.dismissedRestarts.filter((id) => id !== clientID);
+    }
+    return { ...result, state: snapshot() };
+  },
+
   'restarts.dismiss': ({ clientID }) => {
     const hidden = clientID
       ? [clientID]

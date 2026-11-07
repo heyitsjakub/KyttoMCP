@@ -230,6 +230,11 @@ final class ChromeView: NSVisualEffectView {
     private let dragView = WindowDragView()
     private var published: (titlebar: CGFloat, trafficLights: CGFloat)?
     private var configuredUITestFrame = false
+    /// The strip's height from the last time the window had a title bar of its
+    /// own. Full screen moves the title bar into AppKit's reveal window, which
+    /// measures as zero; the page still needs a strip for its counts row.
+    private var windowedTitlebar: CGFloat = 28
+    private var fullScreenObservers: [NSObjectProtocol] = []
 
     init(webView: WKWebView) {
         self.webView = webView
@@ -284,7 +289,27 @@ final class ChromeView: NSVisualEffectView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         configureWindow()
+        observeFullScreen()
         publishWindowMetrics()
+    }
+
+    /// `layout()` only runs when the frame changes, and entering or leaving
+    /// full screen settles `contentLayoutRect` and the traffic lights after
+    /// that, so the transition itself is what republishes.
+    private func observeFullScreen() {
+        for observer in fullScreenObservers { NotificationCenter.default.removeObserver(observer) }
+        fullScreenObservers = []
+        guard let window else { return }
+        let names: [Notification.Name] = [
+            NSWindow.didEnterFullScreenNotification,
+            NSWindow.didExitFullScreenNotification,
+            NSWindow.didChangeBackingPropertiesNotification,
+        ]
+        fullScreenObservers = names.map { name in
+            NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.publishWindowMetrics(force: true) }
+            }
+        }
     }
 
     /// Full screen and a window moved between displays both change the numbers.
@@ -363,7 +388,16 @@ final class ChromeView: NSVisualEffectView {
     private var windowMetrics: (titlebar: CGFloat, trafficLights: CGFloat)? {
         guard let window, let contentView = window.contentView else { return nil }
 
+        // In full screen there are no traffic lights on screen and the title
+        // bar lives in a separate reveal window: the buttons still report their
+        // windowed frames and the layout rect reports no title bar at all. The
+        // strip keeps its windowed height and starts at the leading edge.
+        if window.styleMask.contains(.fullScreen) {
+            return (titlebar: windowedTitlebar, trafficLights: 0)
+        }
+
         let titlebar = contentView.bounds.height - window.contentLayoutRect.height
+        if titlebar > 0 { windowedTitlebar = titlebar.rounded() }
         let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
         let trafficLights = buttons
             .compactMap { window.standardWindowButton($0) }
@@ -435,6 +469,17 @@ private final class WindowDragView: NSView {
     override var mouseDownCanMoveWindow: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
+        // This view sits where AppKit's own title bar would take the click, so
+        // it also answers the double-click the way System Settings → Desktop &
+        // Dock says a title bar should.
+        if event.clickCount == 2 {
+            switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+            case "Minimize": window?.performMiniaturize(nil)
+            case "None": break
+            default: window?.performZoom(nil)
+            }
+            return
+        }
         window?.performDrag(with: event)
     }
 }

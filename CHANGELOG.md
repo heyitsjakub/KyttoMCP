@@ -29,6 +29,65 @@ without a backup.
 - The sticky restart bar, secret and diagnostic layouts, onboarding, and the matrix at 1280 px lay out correctly.
 - Settings labels are announced by screen readers.
 
+## [1.0.9.3] — 2026-11-07
+
+Restart now: Kytto can quit and reopen the apps that only read their MCP
+configuration at launch, so a change takes effect without a trip to the Dock or
+the tray ([#14](https://github.com/heyitsjakub/KyttoMCP/issues/14)). Plus a pass
+over the whole interface for layout, focus and wording bugs. Released for macOS
+on 2026-11-07; Windows 1.0.9.3, which also fixes a maximised window covering the
+taskbar ([#15](https://github.com/heyitsjakub/KyttoMCP/issues/15)), follows —
+its changes are under [Unreleased] until then.
+
+**Download**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.9.3.dmg` | 6.0 MB | `c92bd99bc4a8ca01a0682e476662b9e93b6759b4c7babe4a48218fcae65d5aff` |
+
+The macOS build is ad-hoc signed rather than notarized. Verify the SHA-256
+checksum before bypassing Gatekeeper.
+
+### Added (macOS)
+
+- **Restart now** in the pending-changes notice ([#14](https://github.com/heyitsjakub/KyttoMCP/issues/14)). For Claude Desktop, Cursor, VS Code, Antigravity and Devin Desktop, Kytto can quit the app and open it again so it loads the new configuration, then clears the notice. With several apps waiting, **Restart all** does them one after another. Kytto asks first and names the apps, because unsaved work in them may be lost. It quits each app the way its own Quit command does and never force-quits: an app that asks about unsaved work, or refuses to quit, keeps its notice and "I restarted". An app that is not running is left closed, since it reads the new configuration when you next open it. Terminal clients (Claude Code, Codex, OpenCode) keep "I restarted", because Kytto cannot restart a shell session.
+
+### Fixed (macOS)
+
+- The restart notice lists several clients as aligned rows, with their buttons in one column, instead of buttons trailing each sentence.
+- In full screen, the top row with the server and token counts is no longer cut in half or pushed right as if the window buttons were still there.
+- Double-clicking the top strip of the window zooms or minimises it, as System Settings says a title bar should.
+- The Appearance setting now applies to the whole window, the Settings window, alerts and file panels, not only to the page. A forced Light theme on a Dark Mac no longer leaves the sidebar and toolbar a muddy grey.
+- The menu bar item no longer stays on "Checking All Servers…" after a check, and no longer offers a check that is already running.
+- Typing a configuration path in Settings no longer re-reads every config at each pause, and pointing a client at another file no longer raises a false "restart" notice.
+- Refresh Configurations (⌘R) and Find… (⌘F) bring the main window forward instead of doing nothing when it is closed or behind Settings.
+- The menu bar icon appears when Kytto starts without its main window.
+- Settings names all eight built-in clients, not five.
+- In windows up to 1280 pt wide, clicking a server shows its details right below the matrix instead of under every row, and the client icons stay above their columns while the matrix scrolls.
+- On a client's screen in a narrow window, the token and on/off columns are no longer clipped off the right edge.
+- The update banner has its accent tint again, and "Check for updates" in the status bar is a link-sized control instead of the whole empty width of the bar.
+- After you close a dialog, keyboard focus returns to the control that opened it. A new dialog focuses its first field instead of Close, so Enter no longer closes it.
+- Selecting text in a dialog and releasing the mouse outside it no longer closes the dialog and discards what you typed.
+- A form's validation error is scrolled into view when you submit, instead of appearing above the visible part of the form.
+- Changing the client in "Apply profile" no longer replays the dialog's opening animation, and plugin servers in a profile are no longer reported as missing.
+- Disabled buttons look disabled, and save errors in the tool pickers are shown as errors.
+- After installing an update that needs a manual relaunch, the banner no longer offers to download the same version again.
+- A long configuration path in Diagnostics no longer squeezes the error message into one word per line. The full path is in its tooltip.
+- A wide sidebar in a small window no longer leaves the content pane a sliver. The sidebar takes at most 40% of the window, and the update banner wraps.
+- Truncated failure reasons, commands, matched tools and backup paths show their full text on hover.
+- Choosing another screen while a slow one is loading (Skills) no longer jumps back to the slow one when it finishes.
+- The column highlight under the pointer works for every client column, not only the first five.
+- In a server's detail, a client's state and its "Read-only" or "Gateway" badge no longer run together.
+- A failed "Continue to matrix" on the first-run screen now says why.
+- The Library button says "Working…" during preview and import, not "Scanning…".
+- "Check visible" is disabled with an explanation while a single server is being checked, instead of ignoring the click.
+- Typing accented characters (č, ô) in the matrix filter no longer drops or doubles them.
+- After switching a matrix cell from the keyboard, focus stays on that cell instead of jumping to the top of the page.
+- On first launch with many sources, the top of the "What Kytto found" card is no longer cut off above the scroll area.
+- With several clients waiting for a restart in a short window, the restart notice scrolls inside itself instead of covering the matrix.
+- A revealed long token no longer pushes the Hide button off the right edge of the window.
+- "1 require sign-in" now reads "1 requires sign-in".
+
 ## [1.0.9.2] — 2026-11-04
 
 MCP Doctor stops recommending archived reference servers and flags them where

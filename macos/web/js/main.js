@@ -12,7 +12,7 @@ import {
   draftFromServer,
   visibleServers,
 } from './state.js';
-import { render as renderMatrix } from './screens/matrix.js';
+import { render as renderMatrix, restartableClientIds } from './screens/matrix.js';
 import { diagnosticReport } from './screens/serverDetail.js';
 import { activityReport } from './screens/activity.js';
 import { renderLibrary } from './screens/library.js';
@@ -151,6 +151,9 @@ async function installUpdate() {
       updateProgress: null,
       updateStage: null,
       updateError: null,
+      // The installed version is no longer "available": left as it was, the
+      // banner offered to download it again beside this notice.
+      updateDismissed: true,
       // `installed` without a relaunch is a real outcome (DTO.swift), not only
       // the harness's: the new version runs once Kytto is reopened.
       notice: {
@@ -772,6 +775,8 @@ async function confirmUnify(serverId, sourceClientId) {
     if (parked > 0) {
       parts.push(`${parked} switched-off cop${parked === 1 ? 'y' : 'ies'} updated in place`);
     }
+    // Never an empty list after the colon.
+    if (parts.length === 0) parts.push('no file needed changing');
     setState({
       sheet: null,
       notice: withRefreshWarning(
@@ -1003,6 +1008,43 @@ async function commitSidebarWidth(width) {
   } catch (error) {
     reportFailure(error);
   }
+}
+
+// MARK: - Restart now (§7.1)
+
+function openRestartConfirm(clientIds) {
+  const ids = clientIds.filter(Boolean);
+  if (ids.length === 0) return;
+  setState({ sheet: { kind: 'confirmRestart', clientIds: ids, error: null } });
+}
+
+async function confirmRestart() {
+  const current = getState().sheet;
+  if (current?.kind !== 'confirmRestart' || current.busy) return;
+  const request = beginSheetRequest();
+  try {
+    const result = await invoke('restarts.restart', { clientIDs: current.clientIds });
+    applyState(result.state);
+    setState({ sheet: null, notice: restartNotice(result) });
+  } catch (error) {
+    failSheetRequest(request, error);
+  }
+}
+
+function restartNotice(result) {
+  const name = (id) => getState().clients.find((client) => client.id === id)?.displayName ?? id;
+  const names = (ids) => {
+    const list = ids.map(name);
+    return list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+  };
+  const parts = [];
+  if (result.restarted.length > 0) parts.push(`Restarted ${names(result.restarted)}.`);
+  if (result.notRunning.length > 0) {
+    const single = result.notRunning.length === 1;
+    parts.push(`${names(result.notRunning)} ${single ? 'was' : 'were'} not running and will read the new configuration when opened.`);
+  }
+  for (const failure of result.failures) parts.push(failure.message);
+  return { kind: result.failures.length > 0 ? 'error' : 'info', message: parts.join(' ') };
 }
 
 async function confirmToggle(serverId, clientId, currentlyEnabled) {
@@ -1376,7 +1418,7 @@ async function checkVisible() {
     const contract = contractNotice(newContractAlerts(alertsBefore));
     const messages = [`Checked ${servers.length} visible server${servers.length === 1 ? '' : 's'}.`];
     if (failed.length) messages.push(`${failed.length} failed; open their details for the reason.`);
-    if (waiting.length) messages.push(`${waiting.length} require sign-in.`);
+    if (waiting.length) messages.push(`${waiting.length} ${waiting.length === 1 ? 'requires' : 'require'} sign-in.`);
     if (contract) messages.push(contract.message);
     setState({ notice: withRefreshWarning({ kind: failed.length || waiting.length || contract ? 'warning' : 'info', message: messages.join(' ') }, warning) });
   } catch (error) {
@@ -1466,6 +1508,15 @@ async function restoreBackup(backupId, clientId) {
 // once, on release, when it is committed as a native setting. The move/up
 // listeners exist only for the drag's duration, like the caret exceptions in
 // the input handler below.
+// Bumped on every sidebar navigation; see `select-panel`.
+let panelNavigation = 0;
+
+// Where the press that ends in a click began; see `close-sheet`.
+let pointerDownOnBackdrop = false;
+root.addEventListener('pointerdown', (event) => {
+  pointerDownOnBackdrop = event.target instanceof Element && event.target.classList.contains('sheet-backdrop');
+}, true);
+
 root.addEventListener('pointerdown', (event) => {
   const target = event.target.closest('[data-action="resize-sidebar"]');
   if (!target || event.button !== 0) return;
@@ -1532,6 +1583,7 @@ root.addEventListener('click', async (event) => {
       setState({ updateDismissed: true });
       break;
     case 'toggle':
+      if (state.busyCells.has(cellKey(target.dataset.serverId, target.dataset.clientId))) break;
       if (!state.settings?.hasConfirmedMatrixWrites) {
         setState({
           sheet: {
@@ -1571,15 +1623,19 @@ root.addEventListener('click', async (event) => {
     case 'select-panel': {
       const panel = target.dataset.panel ?? null;
       if (panel === state.panel) break;
+      // A slow load (a Skills scan) must not take the window back from a panel
+      // the person chose while it ran: only the latest choice lands.
+      const navigation = ++panelNavigation;
       try {
         if (panel === 'secrets') await reloadSecrets();
         if (panel === 'activity') await reloadActivity();
         if (panel === 'library') await openLibraryPanel();
         if (panel === 'skills') await refreshSkills();
       } catch (error) {
-        reportFailure(error);
+        if (navigation === panelNavigation) reportFailure(error);
         break;
       }
+      if (navigation !== panelNavigation) break;
       setState({ panel, selectedClient: null, revealedSecrets: {} });
       break;
     }
@@ -1644,6 +1700,15 @@ root.addEventListener('click', async (event) => {
       } catch (error) {
         reportFailure(error);
       }
+      break;
+    case 'restart-client':
+      openRestartConfirm([target.dataset.clientId]);
+      break;
+    case 'restart-clients':
+      openRestartConfirm(restartableClientIds(getState()));
+      break;
+    case 'confirm-restart':
+      await confirmRestart();
       break;
     case 'dismiss-restarts':
       try {
@@ -1797,8 +1862,10 @@ root.addEventListener('click', async (event) => {
       break;
     case 'close-sheet':
       // Only the backdrop itself closes; clicks inside the panel bubble up here
-      // too and must be ignored.
-      if (target.classList.contains('sheet-backdrop') && event.target !== target) break;
+      // too and must be ignored. So must a drag that started inside the panel
+      // (selecting text) and ended over the backdrop: the click then lands on
+      // their common ancestor, the backdrop, and used to discard the draft.
+      if (target.classList.contains('sheet-backdrop') && (event.target !== target || !pointerDownOnBackdrop)) break;
       // A sheet with a write in flight stays until the reply lands, so its
       // outcome has somewhere to go.
       if (sheet?.busy) break;
@@ -1966,6 +2033,12 @@ root.addEventListener('click', async (event) => {
   }
 });
 
+// The composed text lands with compositionend; WebKit fires its last `input`
+// while still composing, so the filter is applied here as well.
+root.addEventListener('compositionend', (event) => {
+  if (event.target.dataset?.action === 'filter') setState({ filter: event.target.value });
+});
+
 root.addEventListener('input', (event) => {
   const action = event.target.dataset.action;
   if (!action) return;
@@ -1980,6 +2053,10 @@ root.addEventListener('input', (event) => {
 
   switch (action) {
     case 'filter': {
+      // Mid-composition (a dead key for č or ô, an IME) the render would
+      // replace the field under the composition; the final input after
+      // compositionend carries the finished text.
+      if (event.isComposing) break;
       setState({ filter: value });
       break;
     }
@@ -2140,7 +2217,7 @@ document.addEventListener('keydown', (event) => {
     return;
   }
 
-  const modal = root.querySelector('.sheet[role="dialog"]');
+  const modal = root.querySelector('.sheet-backdrop:not([inert]) .sheet[role="dialog"]');
   if (event.key === 'Tab' && modal) {
     const focusable = [...modal.querySelectorAll(
       'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',

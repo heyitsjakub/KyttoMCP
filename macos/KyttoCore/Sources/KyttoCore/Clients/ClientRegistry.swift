@@ -212,7 +212,8 @@ public enum ClientRegistry {
         `server.mcp_config` and their on/off state in a separate settings file. \
         Extension args contain `${__dirname}`, which is relative to the bundle \
         directory and must not be resolved for display.
-        """
+        """,
+        restartsWithApp: true
         // No tool limit: none is documented. A cut to the alphabetically first
         // 256 connector tools in July 2026 was a regression and has been fixed
         // (https://www.mintmcp.com/docs/mcp-client-issues-claude), not a cap.
@@ -292,7 +293,8 @@ public enum ClientRegistry {
         stores state internally, not in `mcp.json`, so Kytto cannot read or write it \
         — presence is the only lever. Note that `~/.cursor` survives uninstalling \
         Cursor, so it is not evidence the client is installed.
-        """
+        """,
+        restartsWithApp: true
         // No tool limit any more. Cursor used to send only the first 40 tools
         // and silently drop the rest
         // (https://forum.cursor.com/t/tools-limited-to-40-total/67976). Since
@@ -337,7 +339,8 @@ public enum ClientRegistry {
             agent mode refuses the request ("Cannot have more than 128 tools per \
             request") unless the experimental virtual tools setting groups them.
             """
-        )
+        ),
+        restartsWithApp: true
     )
 
     // MARK: - Codex
@@ -417,7 +420,8 @@ public enum ClientRegistry {
         Workspace configs (`.agents/mcp_config.json`) are not read.
         """,
         serverSchema: .antigravity,
-        toolSwitch: .entryLists(deny: "disabledTools", allow: "enabledTools")
+        toolSwitch: .entryLists(deny: "disabledTools", allow: "enabledTools"),
+        restartsWithApp: true
     )
 
     // MARK: - Devin Desktop (formerly Windsurf)
@@ -450,7 +454,8 @@ public enum ClientRegistry {
         has not been migrated can be pointed at with a path override. Project \
         configs (`.devin/mcp_config.json`) are not read.
         """,
-        serverSchema: .devin
+        serverSchema: .devin,
+        restartsWithApp: true
     )
 
     // MARK: - OpenCode

@@ -119,6 +119,13 @@ struct ClientDTO: Encodable {
     /// What switching a single tool off writes in this client, or null when
     /// only Gateway mode can hide its tools (§7.11).
     let toolSwitchSummary: String?
+    /// Whether Kytto can quit and reopen this client's app to apply pending
+    /// changes (Restart now, §7.1). False for terminal clients and read-only
+    /// sources; those keep "I restarted".
+    let canRestart: Bool
+    /// What Restart now does not reach — sessions of the client's command line
+    /// launcher — for the confirmation. Null when there is nothing to add.
+    let restartCaveat: String?
 
     init(_ client: DiscoveredClient, toolBudget: ClientToolBudget) {
         id = client.id.rawValue
@@ -140,7 +147,11 @@ struct ClientDTO: Encodable {
         configurationScope = client.configurationScope.rawValue
         scopeLabel = client.scopeLabel
         self.toolBudget = ClientToolBudgetDTO(toolBudget)
-        toolSwitchSummary = client.isReadOnly ? nil : ClientRegistry.descriptorIfKnown(for: client.id)?.toolSwitch?.summary
+        let descriptor = client.isReadOnly ? nil : ClientRegistry.descriptorIfKnown(for: client.id)
+        toolSwitchSummary = descriptor?.toolSwitch?.summary
+        // Discovery has already asked LaunchServices whether the app is there.
+        canRestart = client.isInstalled && descriptor?.restartsWithApp == true
+        restartCaveat = canRestart ? descriptor?.restartCaveat : nil
     }
 }
 
@@ -585,6 +596,28 @@ struct ToolSwitchResultDTO: Encodable {
         requiresRestart = result.requiresRestart
         backupID = result.backupID
         pathDisplay = result.pathDisplay
+        state = StateDTO(model)
+    }
+}
+
+/// What Restart now did (§7.1). Every id named in the request lands in exactly
+/// one of the three lists.
+struct RestartResultDTO: Encodable {
+    struct Failure: Encodable {
+        let clientID: String
+        let message: String
+    }
+
+    let restarted: [String]
+    let notRunning: [String]
+    let failures: [Failure]
+    let state: StateDTO
+
+    @MainActor
+    init(_ report: AppModel.ClientRestartReport, model: AppModel) {
+        restarted = report.restarted.map(\.rawValue)
+        notRunning = report.notRunning.map(\.rawValue)
+        failures = report.failures.map { Failure(clientID: $0.clientID.rawValue, message: $0.message) }
         state = StateDTO(model)
     }
 }

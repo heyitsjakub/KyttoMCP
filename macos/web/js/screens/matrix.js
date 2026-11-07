@@ -16,7 +16,7 @@ import {
   toolBudgetStrained,
   scopeOptions,
 } from '../state.js';
-import { el, button, formatTokens, sheet, glyph, GLYPH, clientIcon, definitionList } from '../dom.js';
+import { el, button, busyButton, formatTokens, sheet, glyph, GLYPH, clientIcon, definitionList } from '../dom.js';
 import { addedIn, appeared, began, changed, changedIn, stagger } from '../anim.js';
 import { toggleCell, cellSnapshot, serverOpener, dotSnapshot } from './serverRow.js';
 import { renderBackups } from './backups.js';
@@ -99,6 +99,10 @@ export function render(root) {
 
   // First run: say what was found before showing anything to act on (§8).
   if (state.settings && !state.settings.hasCompletedOnboarding) {
+    // A failed "Continue to matrix" reports through the notice; without it
+    // here the button simply did nothing.
+    const currentNotice = state.notice ?? state.leavingNotice;
+    if (currentNotice) root.append(notice(currentNotice, !state.notice));
     root.append(renderOnboarding(state));
     restoreScroll(scrollBeforeRender, root);
     renderedSheetSubject = nextSheetSubject;
@@ -171,7 +175,7 @@ export function render(root) {
     ? state.pendingRestarts
     : state.leavingRestarts;
   const restarts = restartSource ? restartsPending(restartSource, state.dismissedRestarts) : [];
-  if (restarts.length > 0) content.append(restartBar(restarts, Boolean(state.leavingRestarts && !Object.values(state.pendingRestarts).some((count) => count > 0))));
+  if (restarts.length > 0) content.append(restartBar(state, restarts, Boolean(state.leavingRestarts && !Object.values(state.pendingRestarts).some((count) => count > 0))));
 
   content.append(footer(state));
   body.append(content);
@@ -185,13 +189,32 @@ export function render(root) {
   // jump the matrix (and a horizontally scrolled client column) to an edge.
   restoreScroll(scrollBeforeRender, root);
 
+  // Up to 1280 pt the inspector sits below the matrix. A server just chosen
+  // there must come into view, or the click looks like it did nothing; side by
+  // side it is already on screen and `nearest` leaves the pane where it is.
+  const freshInspector = root.querySelector('.server-inspector.inspector-entering:not(:has(.inspector-empty))');
+  if (freshInspector && !state.sheet) freshInspector.scrollIntoView({ block: 'nearest' });
+
+  // A sheet body keeps its scroll across renders, so errors drawn at its top
+  // could land above the fold of a scrolled form: a failed submit then showed
+  // nothing. Bring them into view on the render where they first appear.
+  const formErrors = modal?.querySelector('.sheet-body .form-errors');
+  if (began('sheet-form-errors', formErrors?.textContent ?? null) && formErrors) {
+    formErrors.scrollIntoView({ block: 'nearest' });
+  }
+
   if (closingSheet) {
     restoreFocus(returnFocus, root);
     returnFocus = null;
   } else if (nextSheetSubject && nextSheetSubject !== renderedSheetSubject) {
-    const initial = modal?.querySelector(
-      '.sheet-body input:not([disabled]), .sheet-body select:not([disabled]), .sheet-body textarea:not([disabled]), .sheet-body button:not([disabled]), .sheet-footer button:not([disabled]), .sheet-header button:not([disabled])',
-    );
+    // In order of preference, not document order: one selector list would
+    // always find the header's Close first, and Enter would close the sheet.
+    const initial = [
+      '.sheet-body input:not([disabled]), .sheet-body select:not([disabled]), .sheet-body textarea:not([disabled])',
+      '.sheet-body button:not([disabled])',
+      '.sheet-footer button:not([disabled])',
+      '.sheet-header button:not([disabled])',
+    ].map((selector) => modal?.querySelector(selector)).find(Boolean);
     initial?.focus();
   } else {
     restoreFocus(focusBeforeRender, root);
@@ -209,15 +232,24 @@ function focusSnapshot(element, root) {
   };
 }
 
+/// Data attributes that describe a control's current value rather than which
+/// control it is.
+const VOLATILE_FOCUS_KEYS = new Set(['enabled', 'state', 'previousState']);
+
 function restoreFocus(snapshot, root) {
   if (!snapshot?.dataset?.action) return;
   // With a dialog open, focus belongs inside it. The inspector behind the
   // backdrop renders the same buttons first in DOM order, and focus landing
   // there would let Enter act outside the modal.
-  const scope = root.querySelector('.sheet[role="dialog"]') ?? root;
+  // A sheet that is animating out is inert and no longer the dialog: the
+  // opener being restored lives outside it.
+  const scope = root.querySelector('.sheet-backdrop:not([inert]) .sheet[role="dialog"]') ?? root;
   const candidates = scope.querySelectorAll(`[data-action="${snapshot.dataset.action}"]`);
+  // Which control it was, not what it showed: a toggle's `enabled` flips with
+  // the write it just made, and matching on it lost focus after every switch.
+  const identity = Object.entries(snapshot.dataset).filter(([key]) => !VOLATILE_FOCUS_KEYS.has(key));
   const element = [...candidates].find((candidate) =>
-    Object.entries(snapshot.dataset).every(([key, value]) => candidate.dataset[key] === value),
+    identity.every(([key, value]) => candidate.dataset[key] === value),
   );
   if (!(element instanceof HTMLElement)) return;
   element.focus({ preventScroll: true });
@@ -283,8 +315,10 @@ function renderSheet(state) {
   return modal;
 }
 
+// The client of "Apply profile" is a field the person edits, not which sheet
+// this is; counting it replayed the entrance and reset the scroll per change.
 const sheetSubject = (current) =>
-  [current.kind, current.serverId, current.clientId, current.routeId, current.secretId, current.profileId, current.mode]
+  [current.kind, current.serverId, current.kind === 'profileApply' ? null : current.clientId, current.routeId, current.secretId, current.profileId, current.mode]
     .filter(Boolean)
     .join(':');
 
@@ -303,6 +337,8 @@ function sheetBody(state) {
       return renderRemoveConfirm(state);
     case 'confirmToggle':
       return renderToggleConfirm(state);
+    case 'confirmRestart':
+      return renderRestartConfirm(state);
     case 'gatewayPreview':
       return renderGatewayPreview(state);
     case 'gatewayRestore':
@@ -401,13 +437,21 @@ function chromeBand(state) {
     search.dataset.action = 'filter';
     search.setAttribute('aria-label', 'Filter servers');
 
+    // A single server's check blocks the run too (checkVisible returns early),
+    // so the button says so rather than ignoring the click.
+    const singleCheck = !checking && state.checking.size > 0;
+    const checkButton = button(
+      checking ? `Checking ${checking.index}/${checking.total}…` : 'Check visible',
+      checking || singleCheck ? 'noop' : 'check-visible',
+      { className: checking ? 'button busy' : 'button' },
+    );
+    if (singleCheck) {
+      checkButton.disabled = true;
+      checkButton.title = 'Wait for the current check to finish';
+    }
     actions.append(
       button('Add server', 'add-server', { className: 'button primary' }),
-      button(
-        checking ? `Checking ${checking.index}/${checking.total}…` : 'Check visible',
-        checking ? 'noop' : 'check-visible',
-        { className: checking ? 'button busy' : 'button' },
-      ),
+      checkButton,
     );
     bar.append(search);
   } else {
@@ -791,27 +835,96 @@ function updateBanner(update, state) {
 
 /// Clients hold config in memory and only pick changes up on restart. There is
 /// no way around that, so Kytto states it plainly (§7.1).
-function restartBar(restarts, leaving = false) {
+function restartBar(state, restarts, leaving = false) {
   const text = restarts
     .map((entry) => `${entry.displayName}:${entry.count}`)
     .join('|');
   const fresh = appeared('restarts', text);
   const bar = el('div', `restart-bar${fresh && !leaving ? ' is-entering' : ''}${leaving ? ' is-leaving' : ''}`);
+  bar.setAttribute('role', 'status');
+  // Restart now only where native says it can quit and reopen the app; a
+  // terminal client keeps "I restarted", which is the only honest answer there.
+  const restartable = new Set(restartableClientIds(state, restarts));
   const list = el('div', 'restart-list');
   for (const entry of restarts) {
     const row = el('div', 'restart-item');
     const count = `${entry.count} pending configuration change${entry.count === 1 ? '' : 's'}`;
-    row.append(el('span', null, `Restart ${entry.displayName} to apply ${count}.`));
-    const restarted = el('button', 'button subtle', 'I restarted');
-    restarted.dataset.action = 'acknowledge-restart';
-    restarted.dataset.clientId = entry.id;
-    row.append(restarted);
+    row.append(el('span', 'restart-message', `Restart ${entry.displayName} to apply ${count}.`));
+    const actions = el('div', 'restart-actions');
+    if (restartable.has(entry.id)) {
+      actions.append(button('Restart now', 'restart-client', {
+        className: 'button subtle',
+        dataset: { clientId: entry.id },
+      }));
+    }
+    actions.append(button('I restarted', 'acknowledge-restart', {
+      className: 'button subtle',
+      dataset: { clientId: entry.id },
+    }));
+    row.append(actions);
     list.append(row);
   }
-  const dismiss = el('button', 'button subtle', 'Dismiss');
-  dismiss.dataset.action = 'dismiss-restarts';
-  bar.append(list, dismiss);
+  const controls = el('div', 'restart-controls');
+  if (restartable.size > 1) {
+    controls.append(button(
+      restartable.size === restarts.length ? 'Restart all' : `Restart ${restartable.size} apps`,
+      'restart-clients',
+      { className: 'button subtle' },
+    ));
+  }
+  controls.append(button('Dismiss', 'dismiss-restarts', { className: 'button subtle' }));
+  bar.append(list, controls);
   return bar;
+}
+
+/// The pending clients Restart now can reach, in banner order.
+export function restartableClientIds(state, restarts = restartsPending(state.pendingRestarts, state.dismissedRestarts)) {
+  if (!(state.app?.capabilities ?? []).includes('client-restart')) return [];
+  return restarts
+    .map((entry) => entry.id)
+    .filter((id) => state.clients.find((client) => client.id === id)?.canRestart);
+}
+
+/// Restart now quits apps the person may be working in, so it asks first and
+/// says exactly which ones, and what it cannot reach.
+function renderRestartConfirm(state) {
+  const current = state.sheet;
+  const clients = current.clientIds
+    .map((id) => state.clients.find((client) => client.id === id))
+    .filter(Boolean);
+  if (clients.length === 0) return null;
+
+  const names = listOfNames(clients.map((client) => client.displayName));
+  const single = clients.length === 1;
+  const body = [
+    el(
+      'p',
+      null,
+      `${names} will quit and open again so ${single ? 'it reads' : 'they read'} the new configuration. Unsaved work in ${single ? 'it' : 'them'} may be lost.`,
+    ),
+    el(
+      'p',
+      'muted',
+      `${single ? 'If it asks about unsaved work, answer it there' : 'If one asks about unsaved work, answer it there'}. An app that is not running is left closed — it reads the new configuration when you next open it.`,
+    ),
+  ];
+  for (const client of clients) {
+    if (client.restartCaveat) body.push(el('p', 'field-hint', `${client.displayName}: ${client.restartCaveat}`));
+  }
+  if (current.error) body.push(el('p', 'failure-message', current.error));
+
+  const title = single ? `Restart ${clients[0].displayName}?` : `Restart ${clients.length} apps?`;
+  return sheet(title, body, [
+    button('Cancel', 'close-sheet', { className: 'button subtle' }),
+    busyButton(current.busy, single ? 'Restart' : 'Restart all', 'Restarting…', 'confirm-restart', {
+      className: 'button primary',
+    }),
+  ]);
+}
+
+function listOfNames(names) {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 // MARK: - Supporting states
@@ -877,7 +990,9 @@ function diagnostics(items) {
   const list = el('ul');
   for (const item of items) {
     const entry = el('li', `diagnostic ${item.severity}`);
-    entry.append(el('span', 'diagnostic-path', item.pathDisplay));
+    const path = el('span', 'diagnostic-path', item.pathDisplay);
+    path.title = item.pathDisplay;
+    entry.append(path);
     entry.append(el('span', 'diagnostic-message', item.message));
     list.append(entry);
   }
@@ -899,9 +1014,12 @@ function footer(state) {
   );
   if (state.app) {
     if (state.app.capabilities.includes('updates')) {
+      // The spacer is its own element: on the button it made the whole empty
+      // width of the status bar start an update check.
+      bar.append(el('span', 'spacer'));
       const check = el(
         'button',
-        'status-link spacer',
+        'status-link',
         state.checkingForUpdates ? 'Checking for updates…' : 'Check for updates',
       );
       check.dataset.action = state.checkingForUpdates ? 'noop' : 'check-for-updates';

@@ -244,12 +244,15 @@ function applyPreview(state, profile, client) {
     previewLine('Keep on', knownDesired.filter((server) => server.enabledIn[client.id] === 'enabled')),
     previewLine('Switch off', toDisable),
   );
-  if (profile.serverIDs.length > knownDesired.length) {
+  // Missing means gone from every client. A plugin server is still there; it
+  // is only left alone, which the line above the preview already says.
+  const missing = profile.serverIDs.filter((id) => !state.servers.some((server) => server.id === id)).length;
+  if (missing > 0) {
     box.append(
       el(
         'p',
         'profile-summary warning',
-        `${profile.serverIDs.length - knownDesired.length} profile server(s) are no longer present and will be reported as skipped.`,
+        `${missing} profile server${missing === 1 ? ' is' : 's are'} no longer present and will be reported as skipped.`,
       ),
     );
   }

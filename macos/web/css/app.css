@@ -164,7 +164,7 @@ img {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(var(--sidebar-width) - 3px);
+  left: calc(min(var(--sidebar-width), 40vw) - 3px);
   width: 7px;
   cursor: col-resize;
   z-index: 3;
@@ -315,7 +315,9 @@ img {
    made moving between screens look like an action rather than a place. Here it
    is a place, and the toolbar goes back to being about the matrix. */
 .sidebar {
-  flex: 0 0 var(--sidebar-width);
+  /* Never more than 40% of the window: a sidebar dragged wide in a large
+     window must not leave a small one a sliver of content. */
+  flex: 0 0 min(var(--sidebar-width), 40vw);
   display: flex;
   flex-direction: column;
   padding-top: 0;
@@ -875,6 +877,23 @@ img {
   transform: scale(0.97);
 }
 
+/* A control that cannot act now must look it, or it reads as broken when
+   nothing happens. Busy buttons have their own treatment. */
+.button:disabled:not(.busy) {
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: none;
+}
+
+.button:disabled:not(.busy):hover {
+  background-color: var(--control);
+  border-color: var(--control-edge);
+}
+
+.button:disabled:not(.busy):active {
+  transform: none;
+}
+
 .button:focus-visible {
   outline: 2px solid AccentColor;
   outline-offset: 1px;
@@ -970,7 +989,26 @@ img {
 .matrix:has(tbody td:nth-child(4):hover) tr > :nth-child(4),
 .matrix:has(tbody td:nth-child(5):hover) tr > :nth-child(5),
 .matrix:has(tbody td:nth-child(6):hover) tr > :nth-child(6),
-.matrix:has(tbody td:nth-child(7):hover) tr > :nth-child(7) {
+.matrix:has(tbody td:nth-child(7):hover) tr > :nth-child(7),
+.matrix:has(tbody td:nth-child(8):hover) tr > :nth-child(8),
+.matrix:has(tbody td:nth-child(9):hover) tr > :nth-child(9),
+.matrix:has(tbody td:nth-child(10):hover) tr > :nth-child(10),
+.matrix:has(tbody td:nth-child(11):hover) tr > :nth-child(11),
+.matrix:has(tbody td:nth-child(12):hover) tr > :nth-child(12),
+.matrix:has(tbody td:nth-child(13):hover) tr > :nth-child(13),
+.matrix:has(tbody td:nth-child(14):hover) tr > :nth-child(14),
+.matrix:has(tbody td:nth-child(15):hover) tr > :nth-child(15),
+.matrix:has(tbody td:nth-child(16):hover) tr > :nth-child(16),
+.matrix:has(tbody td:nth-child(17):hover) tr > :nth-child(17),
+.matrix:has(tbody td:nth-child(18):hover) tr > :nth-child(18),
+.matrix:has(tbody td:nth-child(19):hover) tr > :nth-child(19),
+.matrix:has(tbody td:nth-child(20):hover) tr > :nth-child(20),
+.matrix:has(tbody td:nth-child(21):hover) tr > :nth-child(21),
+.matrix:has(tbody td:nth-child(22):hover) tr > :nth-child(22),
+.matrix:has(tbody td:nth-child(23):hover) tr > :nth-child(23),
+.matrix:has(tbody td:nth-child(24):hover) tr > :nth-child(24),
+.matrix:has(tbody td:nth-child(25):hover) tr > :nth-child(25),
+.matrix:has(tbody td:nth-child(26):hover) tr > :nth-child(26) {
   background-color: var(--column-hover);
 }
 
@@ -1812,8 +1850,9 @@ th.col-client.idle .app-icon {
 }
 
 .update-banner {
-  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
-  box-shadow: inset 2px 0 0 var(--accent);
+  flex-wrap: wrap;
+  background: color-mix(in srgb, AccentColor 10%, var(--bg-raised));
+  box-shadow: inset 2px 0 0 AccentColor;
 }
 
 .update-banner-copy {
@@ -1825,7 +1864,7 @@ th.col-client.idle .app-icon {
 }
 
 .update-banner-copy span {
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -1864,6 +1903,10 @@ th.col-client.idle .app-icon {
   position: sticky;
   bottom: 0;
   z-index: 2;
+  /* Several waiting clients in a short window must not bury the matrix under
+     the bar; past this it scrolls inside itself. */
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 .restart-bar.is-entering {
@@ -1877,8 +1920,51 @@ th.col-client.idle .app-icon {
   }
 }
 
-.restart-bar span {
+/* One row per client: the sentence takes the room, its buttons keep their
+   width and line up at the trailing edge, so several clients read as a
+   column rather than buttons trailing each sentence at a different x. */
+.restart-list {
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.restart-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.restart-message {
+  flex: 1 1 16rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.restart-actions,
+.restart-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+/* With several clients the bar-wide buttons sit apart from the per-client
+   ones, at the top, so they never read as belonging to the last row. */
+.restart-controls {
+  align-self: flex-start;
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in srgb, currentcolor 25%, transparent);
+}
+
+.restart-list:has(.restart-item:only-child) + .restart-controls {
+  align-self: center;
+  padding-left: 0;
+  border-left: none;
 }
 
 /* Sits inside a banner that already has a colour of its own, so it borrows that
@@ -2213,6 +2299,11 @@ th.col-client.idle .app-icon {
 
 .client-state.enabled {
   color: var(--ok);
+}
+
+/* The state and its badge are two words, not one ("EnabledRead-only"). */
+.client-state .badge {
+  margin-left: 7px;
 }
 
 .client-state.disabled {
@@ -2610,6 +2701,7 @@ th.col-client.idle .app-icon {
 
 .secret-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -2619,6 +2711,10 @@ th.col-client.idle .app-icon {
 }
 
 .secret-value {
+  /* A revealed token is one unbroken word; without these it pushed Hide off
+     the right edge of the window. */
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--text-muted);
   user-select: text;
   -webkit-user-select: text;
@@ -3232,6 +3328,12 @@ th.col-client.idle .app-icon {
 
 /* The section headings are the landmarks on this screen, so a table header that
    stuck to the top of the scroller would arrive over the wrong one. */
+/* Three columns, not the matrix's dozen: the matrix's minimum width would clip
+   the token and switch columns off a narrow window. The name ellipsizes. */
+.matrix.client-servers {
+  min-width: 0;
+}
+
 .client-servers thead th {
   position: static;
   padding-inline: 0;
@@ -3289,7 +3391,15 @@ th.col-client.idle .app-icon {
 }
 
 .diagnostic-path {
-  flex: 0 0 auto;
+  /* Shrinks with an ellipsis (the full path is its tooltip) so the message
+     beside it keeps a readable width; a long config path used to leave the
+     reason one word per line. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-faint);
@@ -3477,7 +3587,7 @@ th.col-client.idle .app-icon {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--muted);
+  color: var(--text-muted);
   font: inherit;
   cursor: pointer;
 }
@@ -3525,7 +3635,9 @@ body[data-stubbed='true'] .statusbar::after {
 .onboarding {
   flex: 1 1 auto;
   display: flex;
-  align-items: center;
+  /* `safe`: a card taller than the window starts at the top and scrolls,
+     instead of overflowing equally above the scroll origin, out of reach. */
+  align-items: safe center;
   justify-content: center;
   padding: clamp(24px, 5vw, 64px) 24px;
   overflow-y: auto;
@@ -4264,6 +4376,7 @@ body[data-stubbed='true'] .statusbar::after {
 .inspector-body .clients-table .client-action { grid-column: 1 / -1; white-space: normal; }
 .inspector-body .clients-table .client-action { display: flex; flex-wrap: wrap; gap: 5px; }
 .inspector-body .clients-table .client-state { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.inspector-body .clients-table .client-state .badge { margin-left: 0; }
 .auth-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .auth-actions + .field-hint { margin-bottom: 12px; }
 .field-hint.warning { color: var(--warn); }
@@ -4302,6 +4415,10 @@ body[data-stubbed='true'] .statusbar::after {
   .matrix-workspace { flex: 0 0 auto; }
   .matrix-split { display: flex; flex-direction: column; min-height: 0; }
   .matrix-list { flex: 0 0 auto; }
+  /* Bounded, so the table stays its own scroller: the client icons in its
+     sticky header keep labelling the columns, and a server's inspector opens
+     right below instead of under every row of the table. */
+  .matrix-list .table-scroll { max-height: max(calc(50px + 2.5 * var(--row-height)), 55vh); }
   .server-inspector { flex: 0 0 auto; max-height: 420px; }
   .server-inspector:has(.inspector-empty) { display: none; }
   .inspector-body { max-height: 320px; }
@@ -4311,4 +4428,13 @@ body[data-stubbed='true'] .statusbar::after {
 
 @media (prefers-reduced-motion: reduce) {
   .inspector-entering { animation: none; }
+}
+
+/* A save error inside a sheet's footer (tool switch, Gateway tool mask). */
+.sheet-error {
+  min-width: 0;
+  color: var(--fail);
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
 }

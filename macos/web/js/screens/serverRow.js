@@ -68,7 +68,10 @@ export function toggle(state, server, client, value, flipped) {
 
   if (state.busyCells.has(cellKey(server.id, client.id))) {
     button.classList.add('busy');
-    button.disabled = true;
+    // Not `disabled`: a disabled button drops keyboard focus, and the person
+    // who pressed Space on this cell lost their place in the matrix. The click
+    // handler already ignores a busy cell.
+    button.setAttribute('aria-disabled', 'true');
   }
 
   // The write landed and the file on disk now says something else. The cell is
@@ -176,22 +179,24 @@ export function serverOpener(state, server, settled) {
 
   // A failed check replaces the command with the reason it failed — that is what
   // the user needs at a glance, and the command is one click away in the detail.
+  // The line ellipsizes, so its full text is its tooltip.
+  let line;
   if (status === 'failed' && server.health.message) {
-    opener.append(el('div', 'server-command failure', firstLine(server.health.message)));
+    line = el('div', 'server-command failure', firstLine(server.health.message));
   } else if (status === 'needsAuthorization') {
     // Its own colour and its own words, because red here was the bug: the
     // server is healthy and waiting on the user, not broken (§7.3).
-    opener.append(el('div', 'server-command authwait', 'Waiting for you to authorize it in the browser'));
+    line = el('div', 'server-command authwait', 'Waiting for you to authorize it in the browser');
   } else {
     // A row that is only on screen because one of its tools matched has to say
     // which one, or it reads as a filter that is simply broken.
     const hits = matchingTools(server);
-    opener.append(
-      hits.length > 0
-        ? el('div', 'server-command matched-tools', hits.join(', '))
-        : el('div', 'server-command', server.commandSummary),
-    );
+    line = hits.length > 0
+      ? el('div', 'server-command matched-tools', hits.join(', '))
+      : el('div', 'server-command', server.commandSummary);
   }
+  line.title = line.textContent;
+  opener.append(line);
   return opener;
 }
 
