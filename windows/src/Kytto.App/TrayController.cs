@@ -33,18 +33,26 @@ internal sealed class TrayController : IDisposable
     private readonly Window _window;
     private readonly Action _requestQuit;
     private readonly ISupportLinkLauncher _supportLinks;
+    private readonly Action? _stateChanged;
     private bool _disposed;
 
+    /// <param name="stateChanged">
+    /// Told when a tray action changed the configuration, so the open window can show it.
+    /// A tray toggle runs a reload of its own, which leaves the watcher nothing to report,
+    /// so without this the window kept showing the old switch (audit W-03).
+    /// </param>
     internal TrayController(
         AppModel model,
         Window window,
         Action requestQuit,
-        ISupportLinkLauncher? supportLinks = null)
+        ISupportLinkLauncher? supportLinks = null,
+        Action? stateChanged = null)
     {
         _model = model;
         _window = window;
         _requestQuit = requestQuit;
         _supportLinks = supportLinks ?? SystemBrowserSupportLauncher.Shared;
+        _stateChanged = stateChanged;
     }
 
     /// <summary>
@@ -100,6 +108,10 @@ internal sealed class TrayController : IDisposable
             };
 
             _icon.DoubleClick += (_, _) => Show();
+            // The tooltip is built from the state at the time it is set. Asking again each time
+            // the pointer reaches the icon keeps it in step with changes made in the window,
+            // which the watcher does not always report (audit W-10).
+            _icon.MouseMove += (_, _) => Refresh();
             // Rebuilt on open rather than kept in step, because the state behind it
             // changes from three directions — the window, the file watcher, and the
             // client itself — and a menu that is only ever right when it is visible
@@ -205,6 +217,7 @@ internal sealed class TrayController : IDisposable
         {
             _model.SetEnabled(enabled, serverId, client);
             Refresh();
+            _stateChanged?.Invoke();
         }
         catch (Exception error)
         {
@@ -257,11 +270,21 @@ internal sealed class TrayController : IDisposable
         return failing > 0 ? $"{text}, {failing} failing" : text;
     }
 
-    private void Show()
+    private void Show() => Reveal(_window);
+
+    /// <summary>
+    /// Shows the window again after it was hidden to the tray, or brings it forward when a
+    /// second launch asks for it (audit W-05).
+    /// </summary>
+    /// <remarks>
+    /// The system restores to the state the window had before it was minimised, so a
+    /// maximised window comes back maximised (audit W-11). Setting Normal lost that.
+    /// </remarks>
+    internal static void Reveal(Window window)
     {
-        _window.Show();
-        if (_window.WindowState == WindowState.Minimized) _window.WindowState = WindowState.Normal;
-        _window.Activate();
+        window.Show();
+        if (window.WindowState == WindowState.Minimized) SystemCommands.RestoreWindow(window);
+        window.Activate();
     }
 
     public void Dispose()

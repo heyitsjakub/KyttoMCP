@@ -48,18 +48,10 @@
     <local:InterfaceRecoveryPanel x:Name="Recovery" Visibility="Collapsed" />
 
     <!--
-      In a Popup because the web view is a child window and paints over anything
-      WPF puts behind it. A Popup gets a window of its own, so these land on top.
-      Positioned against the window's top-right on every move and resize.
+      The caption buttons are not here: they live in CaptionOverlay, an owned window,
+      because the web view is a child window that paints over anything WPF draws in
+      this one. The overlay is placed against the window's top-right in code.
     -->
-    <Popup x:Name="CaptionPopup"
-           Placement="Relative"
-           PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=Window}}"
-           AllowsTransparency="True"
-           StaysOpen="True"
-           PopupAnimation="None">
-      <local:CaptionButtons x:Name="Caption" />
-    </Popup>
   </Grid>
 
 </Window>

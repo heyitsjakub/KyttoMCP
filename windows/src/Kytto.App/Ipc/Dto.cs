@@ -70,7 +70,26 @@ internal sealed record ClientDto(
     ClientToolBudgetDto ToolBudget,
     /// What switching a single tool off writes in this client, or null when only
     /// Gateway mode can hide its tools (§7.11).
-    string? ToolSwitchSummary = null);
+    string? ToolSwitchSummary = null,
+    /// <summary>
+    /// Whether "Restart now" is offered: an installed desktop app that reads its config at launch (issue #14).
+    /// </summary>
+    bool CanRestart = false,
+    /// <summary>What a restart does not reach, or null (issue #14).</summary>
+    string? RestartCaveat = null);
+
+/// <summary>One client that did not restart, and why. The notice stays for it.</summary>
+internal sealed record RestartFailureDto(string ClientID, string Message);
+
+/// <summary>
+/// Every requested client lands in exactly one of the three lists (issue #14). Restarted and
+/// not-running clients are acknowledged; a failure keeps its notice.
+/// </summary>
+internal sealed record RestartResultDto(
+    IReadOnlyList<string> Restarted,
+    IReadOnlyList<string> NotRunning,
+    IReadOnlyList<RestartFailureDto> Failures,
+    StateDto State);
 
 /// <summary>
 /// A count and a verdict. Server ids name what was not counted; no tool list

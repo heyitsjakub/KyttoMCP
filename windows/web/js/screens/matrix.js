@@ -76,19 +76,26 @@ function panelRank(identity) {
   return PANEL_ORDER.get(identity) ?? 0;
 }
 
+/// The frameless window can only be moved by its declared drag region (§3.2). The
+/// screens that have no toolbar (first run, loading, startup failure) need one too,
+/// or nothing on them moves the window (audit W5).
+function dragStrip() {
+  return el('div', 'drag-strip');
+}
+
 export function render(root) {
   const state = getState();
   const scrollBeforeRender = scrollSnapshot(root);
   root.replaceChildren();
 
   if (state.phase === 'loading') {
-    root.append(loadingState());
+    root.append(dragStrip(), loadingState());
     restoreScroll(scrollBeforeRender, root);
     return;
   }
 
   if (state.phase === 'error') {
-    root.append(errorState(state.error));
+    root.append(dragStrip(), errorState(state.error));
     restoreScroll(scrollBeforeRender, root);
     return;
   }
@@ -101,7 +108,7 @@ export function render(root) {
 
   // First run: say what was found before showing anything to act on (§8).
   if (state.settings && !state.settings.hasCompletedOnboarding) {
-    root.append(renderOnboarding(state));
+    root.append(dragStrip(), renderOnboarding(state));
     restoreScroll(scrollBeforeRender, root);
     return;
   }
@@ -178,6 +185,7 @@ export function render(root) {
   if (restarts.length > 0) content.append(restartBar(
     restarts,
     Boolean(state.leavingRestarts && !Object.values(state.pendingRestarts).some((count) => count > 0)),
+    state,
   ));
 
   content.append(footer(state));
@@ -302,6 +310,8 @@ function sheetBody(state) {
       return renderDoctorFix(state);
     case 'confirmMatrixWrite':
       return renderMatrixWriteConfirmation(state);
+    case 'confirmRestart':
+      return renderRestartConfirm(state);
     case 'agentImport':
       return renderAgentImport(state);
     case 'library':
@@ -350,13 +360,19 @@ function chromeBand(state) {
     if (importAgent) actions.append(importAgent);
     // "Check visible" runs the checks for the rows the filters leave, one after
     // another. Every server at once is MCP Doctor's "Check all servers".
-    actions.append(
-      button(
-        checking ? `Checking ${checking.index}/${checking.total}…` : 'Check visible',
-        checking ? 'noop' : 'check-visible',
-        { className: checking ? 'button busy' : 'button' },
-      ),
+    // While one server's "Check now" runs, a click here would be dropped without a
+    // word (audit W14), so the button says why it is unavailable instead.
+    const singleCheckRunning = !checking && state.checking.size > 0;
+    const visibleCheck = button(
+      checking ? `Checking ${checking.index}/${checking.total}…` : 'Check visible',
+      checking ? 'noop' : 'check-visible',
+      { className: checking ? 'button busy' : 'button' },
     );
+    if (singleCheckRunning) {
+      visibleCheck.disabled = true;
+      visibleCheck.title = 'Waiting for a running check to finish';
+    }
+    actions.append(visibleCheck);
     bar.append(search);
   } else {
     bar.append(el('span', 'spacer'));
@@ -863,9 +879,54 @@ function renderMatrixWriteConfirmation(state) {
   ]);
 }
 
+/// The pending clients that "Restart now" can act on: installed desktop apps the native
+/// shell can restart (issue #14). Empty when the shell does not report the capability.
+export function restartableClientIds(state) {
+  if (!state?.app?.capabilities?.includes('client-restart')) return [];
+  return (state.clients ?? []).filter((client) => client.canRestart).map((client) => client.id);
+}
+
+/// The confirmation before quitting an app (issue #14). Restarting is the one step here that
+/// can lose unsaved work, so it asks first, and says what happens to an app that is not running.
+function renderRestartConfirm(state) {
+  const current = state.sheet;
+  const clients = state.clients.filter((client) => current.clientIDs.includes(client.id));
+  if (clients.length === 0) return null;
+
+  const names = clients.map((client) => client.displayName);
+  const title = clients.length === 1 ? `Restart ${names[0]}?` : `Restart ${clients.length} apps?`;
+  const body = [
+    el(
+      'p',
+      null,
+      `${names.join(', ')} will quit and open again so it reads the new configuration. Unsaved work in ${clients.length === 1 ? 'it' : 'them'} may be lost.`,
+    ),
+    el(
+      'p',
+      'muted',
+      'An app that asks about unsaved work keeps running until you answer it. An app that is not running is not opened.',
+    ),
+  ];
+  for (const client of clients) {
+    if (client.restartCaveat) body.push(el('p', 'field-hint', client.restartCaveat));
+  }
+  if (current.error) body.push(el('p', 'failure-message', current.error));
+
+  return sheet(title, body, [
+    button('Cancel', 'close-sheet', { className: 'button subtle' }),
+    el('span', 'spacer'),
+    button(
+      current.busy ? 'Restarting…' : clients.length === 1 ? 'Restart' : 'Restart all',
+      current.busy ? 'noop' : 'confirm-restart',
+      { className: current.busy ? 'button primary busy' : 'button primary' },
+    ),
+  ]);
+}
+
 /// Clients hold config in memory and only pick changes up on restart. There is
 /// no way around that, so Kytto states it plainly (§7.1).
-function restartBar(restarts, leaving = false) {
+function restartBar(restarts, leaving = false, state = null) {
+  const restartable = restartableClientIds(state);
   const text = restarts.map((entry) => `${entry.id}:${entry.count}`).join('|');
   const fresh = appeared('restarts', text);
   const bar = el('div', `restart-bar${fresh && !leaving ? ' is-entering' : ''}${leaving ? ' is-leaving' : ''}`);
@@ -881,8 +942,21 @@ function restartBar(restarts, leaving = false) {
     acknowledged.dataset.clientId = entry.id;
     const dismissed = button('Dismiss', 'dismiss-restart', { className: 'button subtle' });
     dismissed.dataset.clientId = entry.id;
+    // Offered only where the native shell can restart this client (issue #14).
+    if (restartable.includes(entry.id)) {
+      const now = button('Restart now', 'restart-client', { className: 'button primary' });
+      now.dataset.clientId = entry.id;
+      item.append(now);
+    }
     item.append(acknowledged, dismissed);
     bar.append(item);
+  }
+  const pendingRestartable = restartable.filter((id) => restarts.some((entry) => entry.id === id));
+  if (pendingRestartable.length > 1) {
+    const label = pendingRestartable.length === restarts.length
+      ? 'Restart all'
+      : `Restart ${pendingRestartable.length} apps`;
+    bar.append(button(label, 'restart-clients', { className: 'button primary' }));
   }
   if (restarts.length > 1) {
     const all = button('I restarted all', 'acknowledge-restarts', { className: 'button subtle' });

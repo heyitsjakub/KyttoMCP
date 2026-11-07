@@ -26,6 +26,7 @@ namespace Kytto.App;
 public partial class MainWindow : Window
 {
     private readonly CommandRouter _router = new();
+    private readonly CaptionOverlay _captionOverlay = new();
     private (double Titlebar, double Buttons)? _published;
     private bool _micaApplied;
     private bool _allowClose;
@@ -37,6 +38,8 @@ public partial class MainWindow : Window
     private WebHost? _host;
     private InterfaceRecovery? _recovery;
     private bool _webDetached;
+    private bool _settingsOpen;
+    private SettingsWindow? _settingsWindow;
 
     /// <summary>
     /// Opens the two fixed report links (§7.14). Settable so a test never starts a
@@ -76,9 +79,12 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        // Popup content lives in another native window, so it cannot discover the
-        // main window by walking its own visual tree.
-        Caption.HostWindow = this;
+        // The caption buttons live in their own window, which cannot find the main window
+        // by walking a visual tree, so they are told which window they control.
+        // Owned rather than a topmost popup: it stays above this window, hides with it,
+        // and does not vanish when another app is clicked (audit W-01).
+        _captionOverlay.Caption.HostWindow = this;
+        IsVisibleChanged += (_, e) => { if ((bool)e.NewValue) PlaceCaptionButtons(); };
         Loaded += OnLoaded;
         Closing += OnClosing;
         Closed += OnClosed;
@@ -90,6 +96,9 @@ public partial class MainWindow : Window
     }
 
     internal CommandRouter Router => _router;
+
+    /// <summary>The caption buttons, which live in the overlay window.</summary>
+    internal CaptionButtons Caption => _captionOverlay.Caption;
 
     /// <summary>
     /// Renders this window's own WPF content in software (§7.14).
@@ -110,10 +119,40 @@ public partial class MainWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        if (PresentationSource.FromVisual(this) is HwndSource { CompositionTarget: { } target })
+        // Owner can only be set once this window has a handle: WPF refuses an owner that has not
+        // been shown. The overlay is owned, not a topmost popup, so it stays above this window (W-01).
+        _captionOverlay.Owner = this;
+        if (PresentationSource.FromVisual(this) is HwndSource source)
         {
-            target.RenderMode = RenderMode.SoftwareOnly;
+            // Maximised to the work area, not the monitor (issue #15).
+            source.AddHook(MaximizeWindowProc);
+            if (source.CompositionTarget is { } target)
+            {
+                target.RenderMode = RenderMode.SoftwareOnly;
+            }
         }
+    }
+
+    /// <summary>
+    /// Keeps a maximised window out from under the taskbar (issue #15).
+    /// </summary>
+    /// <remarks>
+    /// Answered here because the window has no frame of its own for Windows to size it
+    /// against. The minimum size is converted to device pixels, since
+    /// <c>WM_GETMINMAXINFO</c> speaks in them and <c>MinWidth</c> does not.
+    /// </remarks>
+    private IntPtr MaximizeWindowProc(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message != MaximizeFit.WmGetMinMaxInfo) return IntPtr.Zero;
+
+        var scale = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
+        MaximizeFit.Fill(
+            hwnd,
+            lParam,
+            (int)Math.Round(MinWidth * scale.M11),
+            (int)Math.Round(MinHeight * scale.M22));
+        handled = true;
+        return IntPtr.Zero;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -122,12 +161,28 @@ public partial class MainWindow : Window
         _initializationStarted = true;
 
         // Before the frame, because the appearance the frame takes is the one the
-        // settings ask for.
-        _model = AppModel.ForCurrentProcess();
-        // Before the page exists, so nothing Kytto stored under an earlier version is
-        // still readable by another local account by the time a command can touch it.
-        _model.TightenStoragePermissions();
-        ApplyAppearance();
+        // settings ask for. A settings or routes file that cannot be read used to end
+        // the process here with nothing shown (audit W-06); it now gets a message.
+        try
+        {
+            _model = AppModel.ForCurrentProcess();
+            // Before the page exists, so nothing Kytto stored under an earlier version is
+            // still readable by another local account by the time a command can touch it.
+            _model.TightenStoragePermissions();
+            ApplyAppearance();
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            Log.Failure("startup", error);
+            MessageBox.Show(
+                this,
+                "Kytto could not read its settings. Its log has the details; fix or remove the file it names, then open Kytto again.",
+                "Kytto could not start",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            RequestQuit();
+            return;
+        }
 
         // Register before navigation begins. A cached page can run its first module
         // immediately after Navigate; it must never beat the command registry and
@@ -174,7 +229,12 @@ public partial class MainWindow : Window
             _tray?.Refresh();
         });
 
-        _tray = new TrayController(_model, this, RequestQuit, SupportLinkLauncher);
+        _tray = new TrayController(_model, this, RequestQuit, SupportLinkLauncher, () =>
+            Dispatcher.InvokeAsync(async () =>
+            {
+                await _router.EmitAsync("configs.changed", _model.ToStateDto());
+                _tray?.Refresh();
+            }));
         _tray.Apply(_model.Settings);
         _model.SettingsChanged += settings =>
         {
@@ -199,11 +259,9 @@ public partial class MainWindow : Window
             Caption.SyncMaximiseGlyph(WindowState);
             PlaceCaptionButtons();
         };
-        // A popup is its own window, so it would otherwise sit over whatever the
-        // user switched to.
+        // The overlay is owned, so it stays above this window and is placed against it;
+        // activation does not change it, and it is kept in step with the window's moves.
         Activated += (_, _) => PlaceCaptionButtons();
-        Deactivated += (_, _) => CaptionPopup.IsOpen = false;
-        Closing += (_, _) => CaptionPopup.IsOpen = false;
 
         Caption.SyncMaximiseGlyph(WindowState);
         PlaceCaptionButtons();
@@ -426,7 +484,7 @@ public partial class MainWindow : Window
         if (!ShouldKeepRunning(_model?.Settings.TrayEnabled == true, _allowClose)) return;
 
         args.Cancel = true;
-        CaptionPopup.IsOpen = false;
+        _captionOverlay.Hide();
         Hide();
     }
 
@@ -454,6 +512,7 @@ public partial class MainWindow : Window
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         }
         _tray?.Dispose();
+        _captionOverlay.Close();
 
         if (_model is not { } model) return;
         model.Dispose();
@@ -507,16 +566,39 @@ public partial class MainWindow : Window
     private async void OpenSettings()
     {
         if (_model is null) return;
+        // Two settings.open requests can queue before the first dialog disables this
+        // window, and the second would then open a dialog on top of the first (audit W-16).
+        if (_settingsOpen)
+        {
+            if (_settingsWindow is { } open) TrayController.Reveal(open);
+            return;
+        }
 
-        var settings = new SettingsWindow(_model, SupportLinkLauncher) { Owner = this };
-        if (settings.ShowDialog() != true) return;
+        _settingsOpen = true;
+        try
+        {
+            var settings = new SettingsWindow(_model, SupportLinkLauncher) { Owner = this };
+            _settingsWindow = settings;
+            if (settings.ShowDialog() != true) return;
 
-        // The page renders the theme it is told, so it hears about a change here
-        // the same way it hears about anything else: as state.
-        await _router.EmitAsync("configs.changed", _model.ToStateDto());
-        await _router.EmitAsync("settings.changed", _model.Settings.ToDto());
-        // And the material the chrome is a tint over changes with it.
-        ApplyAppearance();
+            // The page renders the theme it is told, so it hears about a change here
+            // the same way it hears about anything else: as state.
+            await _router.EmitAsync("configs.changed", _model.ToStateDto());
+            await _router.EmitAsync("settings.changed", _model.Settings.ToDto());
+            // And the material the chrome is a tint over changes with it.
+            ApplyAppearance();
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            // An exception here used to escape an async void handler and close the app
+            // (audit W-06). It is logged, and the app keeps running.
+            Log.Failure("settings", error);
+        }
+        finally
+        {
+            _settingsOpen = false;
+            _settingsWindow = null;
+        }
     }
 
     /// <summary>
@@ -525,22 +607,24 @@ public partial class MainWindow : Window
     /// </summary>
     private void PlaceCaptionButtons()
     {
-        if (WindowState == WindowState.Minimized)
+        if (!IsVisible || WindowState == WindowState.Minimized)
         {
-            CaptionPopup.IsOpen = false;
+            _captionOverlay.Hide();
             return;
         }
 
-        const double ButtonStripWidth = 46 * 3;
-        CaptionPopup.HorizontalOffset = ActualWidth - ButtonStripWidth;
-        CaptionPopup.VerticalOffset = 0;
-        CaptionPopup.IsOpen = true;
+        // The window's top-right corner in device pixels, converted to the DIPs WPF
+        // positions a window in. Computed from the screen rather than from Left/Top,
+        // which do not describe a maximised window's position.
+        var corner = PointToScreen(new Point(ActualWidth, 0));
+        if (PresentationSource.FromVisual(this)?.CompositionTarget is { } target)
+        {
+            corner = target.TransformFromDevice.Transform(corner);
+        }
 
-        // HorizontalOffset only moves an open popup when it changes, and a window
-        // that merely moved keeps the same offset — so nudge it into recomputing
-        // its screen position against the window's new origin.
-        CaptionPopup.HorizontalOffset += 0.01;
-        CaptionPopup.HorizontalOffset -= 0.01;
+        _captionOverlay.Left = corner.X - CaptionOverlay.StripWidth;
+        _captionOverlay.Top = corner.Y;
+        if (!_captionOverlay.IsVisible) _captionOverlay.Show();
     }
 
     /// <summary>
@@ -620,9 +704,10 @@ public partial class MainWindow : Window
     {
         if (LiveCore() is not { } core) return;
 
-        // Maximised, a Windows window's top edge sits above the work area, so the
-        // strip grows by the amount that is off screen or the numbers are clipped.
-        var titlebar = WindowState == WindowState.Maximized ? 40d : 32d;
+        // Maximised, the window now fills exactly its monitor's work area (see
+        // MaximizeWindowProc), so the strip keeps its normal height. The 40 px this
+        // used to publish compensated for a window that sat above the work area (#15).
+        var titlebar = 32d;
         var metrics = (Titlebar: titlebar, Buttons: 0d);
 
         if (!force && _published == metrics) return;

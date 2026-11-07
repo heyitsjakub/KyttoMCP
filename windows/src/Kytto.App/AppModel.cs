@@ -142,6 +142,9 @@ internal sealed partial class AppModel : IDisposable
 
     internal BackupStore Backups { get; }
 
+    /// <summary>The home directory discovery reads from (issue #14 finds a client's processes under it).</summary>
+    internal string Home => _home;
+
     internal KyttoSettings Settings => _settingsStore.Current;
 
     internal bool LaunchAtLoginEnabled => _loginItem.IsEnabled();
@@ -728,21 +731,57 @@ internal sealed partial class AppModel : IDisposable
             change,
             beforePersist: (stored, candidate) =>
             {
-                if (candidate.LaunchAtLogin == stored.LaunchAtLogin) return;
+                // Compared with the Run value itself, not the stored setting: when the two
+                // disagree, the checkbox shows the registry and a save must still write it
+                // (audit W-12).
+                if (candidate.LaunchAtLogin == _loginItem.IsEnabled()) return;
                 previousLoginState = _loginItem.IsEnabled();
                 _loginItem.SetEnabled(candidate.LaunchAtLogin);
             },
             rollBackBeforePersist: (stored, candidate) =>
             {
-                if (candidate.LaunchAtLogin == stored.LaunchAtLogin || previousLoginState is null) return;
+                if (previousLoginState is null) return;
                 _loginItem.SetEnabled(previousLoginState.Value);
             });
         // Custom sources and path overrides both change discovery's read/watch
         // targets. Rebuild them only after the settings write succeeded.
         ResetPortableSetupIfReconfigured(previous, updated);
-        Reload();
+        // The backup count is read on every prune, so the new value takes effect now
+        // rather than at the next launch (audit W-04).
+        Backups.RetentionPerClient = updated.BackupRetention;
+        // Discovery is only re-run when what it reads changed: a sidebar width or a
+        // toggle in Settings does not move any file, and on a large ~/.claude.json the
+        // re-run stalled the window for every sidebar step (audit W-07).
+        if (ReadTargetsChanged(previous, updated))
+        {
+            Reload();
+            RebaselineRestartsForReadTargets(previous, updated);
+        }
         SettingsChanged?.Invoke(updated);
         return updated;
+    }
+
+    /// <summary>
+    /// A client whose config path was just pointed at a different file already reads that
+    /// file, so the change is not a restart to do (audit W-08). The new file becomes the
+    /// baseline, and the notice the move raised is withdrawn.
+    /// </summary>
+    private void RebaselineRestartsForReadTargets(KyttoSettings previous, KyttoSettings updated)
+    {
+        var routes = _gatewayRoutes.All();
+        var keys = previous.ClientPathOverrides.Keys.Concat(updated.ClientPathOverrides.Keys).Distinct();
+        foreach (var key in keys)
+        {
+            previous.ClientPathOverrides.TryGetValue(key, out var before);
+            updated.ClientPathOverrides.TryGetValue(key, out var after);
+            if (before == after || ClientIds.FromRaw(key) is not { } client) continue;
+
+            var snapshot = RestartSnapshot(client, routes);
+            _restartBaselines[client] = snapshot;
+            _restartObserved[client] = new Dictionary<string, string>(snapshot, StringComparer.Ordinal);
+            PendingRestarts.Remove(client);
+            _dismissedRestarts.Remove(client);
+        }
     }
 
     internal void AcknowledgeRestart(ClientId? client)

@@ -320,6 +320,27 @@ public sealed record ClientDescriptor(
     public ToolSwitch? ToolSwitch { get; init; }
 
     /// <summary>
+    /// Whether the client reads its configuration only when its app starts, so quitting and
+    /// reopening it makes a pending change take effect (issue #14).
+    /// </summary>
+    /// <remarks>
+    /// Terminal-first clients stay false: restarting their desktop app would clear the notice
+    /// while the sessions they started keep the old configuration.
+    /// </remarks>
+    public bool RestartsWithApp { get; init; }
+
+    /// <summary>
+    /// What a restart does not reach, for a client that restarts with its app but also runs
+    /// from a terminal; null when there is nothing to say.
+    /// </summary>
+    public string? RestartCaveat => RestartsWithApp && ExecutableNames.Count > 0
+        ? $"Terminal sessions started with {string.Join(" or ", ExecutableNames
+            .Select(name => Path.GetFileNameWithoutExtension(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(name => $"`{name}`"))} keep the old configuration until you restart them."
+        : null;
+
+    /// <summary>
     /// The file and key holding servers the user can add, edit and remove.
     /// </summary>
     /// <remarks>

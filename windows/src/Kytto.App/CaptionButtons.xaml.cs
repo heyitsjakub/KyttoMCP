@@ -11,11 +11,10 @@ namespace Kytto.App;
 /// <para>
 /// They exist as WPF rather than as the frame's because the web view is a child
 /// window that covers the whole frame, and a child window is painted over
-/// anything WPF draws behind it. So the buttons are hosted in a <c>Popup</c>,
-/// which gets a window of its own and therefore lands on top — the standard way
-/// out of that overlap, and cheaper than the alternative of giving the shell a
-/// strip of the window and taking it away from the page (§7.1 puts the header
-/// counts up there).
+/// anything WPF draws behind it. So the buttons are hosted in <see cref="CaptionOverlay"/>,
+/// a window of their own that the main window owns and that never takes activation,
+/// rather than in the frame, which would take the strip away from the page (§7.1 puts
+/// the header counts up there).
 /// </para>
 /// <para>
 /// The glyphs are the system's own, so they match whatever the user's Windows
@@ -51,8 +50,8 @@ public partial class CaptionButtons : UserControl
 
     /// <summary>The window these buttons control.</summary>
     /// <remarks>
-    /// A popup owns a separate native window, so <see cref="Window.GetWindow"/>
-    /// cannot recover the main window from its child. The shell supplies the owner
+    /// The overlay is a separate native window, so <see cref="Window.GetWindow"/>
+    /// cannot recover the main window from it. The shell supplies the owner
     /// explicitly; otherwise all three caption buttons look live and do nothing.
     /// </remarks>
     internal Window? HostWindow { get; set; }
@@ -63,6 +62,9 @@ public partial class CaptionButtons : UserControl
         var maximised = state == WindowState.Maximized;
         MaximiseButton.Content = maximised ? RestoreGlyph : MaximiseGlyph;
         MaximiseButton.ToolTip = maximised ? "Restore Down" : "Maximize";
+        // The glyph is a private-use character a screen reader cannot name, so the
+        // automation name is set explicitly and follows the same state (audit W-13).
+        System.Windows.Automation.AutomationProperties.SetName(MaximiseButton, maximised ? "Restore" : "Maximize");
     }
 
     private void OnMinimise(object sender, RoutedEventArgs e)

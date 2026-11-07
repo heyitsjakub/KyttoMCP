@@ -83,12 +83,21 @@ internal sealed partial class AppModel
     /// moment it was made. A change to either makes every plan one for a world that is
     /// gone; a change of theme or sidebar width does not.
     /// </summary>
-    private void ResetPortableSetupIfReconfigured(KyttoSettings previous, KyttoSettings updated)
+    /// <summary>
+    /// Whether a settings change moves where Kytto reads or watches clients from: a path
+    /// override or a custom source. Only those need discovery run again (audit W-07).
+    /// </summary>
+    private static bool ReadTargetsChanged(KyttoSettings previous, KyttoSettings updated)
     {
         var sameOverrides = previous.ClientPathOverrides.Count == updated.ClientPathOverrides.Count &&
             previous.ClientPathOverrides.All(pair =>
                 updated.ClientPathOverrides.TryGetValue(pair.Key, out var path) && path == pair.Value);
-        if (sameOverrides && previous.CustomConfigSources.SequenceEqual(updated.CustomConfigSources)) return;
+        return !sameOverrides || !previous.CustomConfigSources.SequenceEqual(updated.CustomConfigSources);
+    }
+
+    private void ResetPortableSetupIfReconfigured(KyttoSettings previous, KyttoSettings updated)
+    {
+        if (!ReadTargetsChanged(previous, updated)) return;
 
         _portable?.DiscardAll();
         _portable = null;

@@ -83,7 +83,9 @@ capabilities are available. `updates` is advertised only when the signed update
 pipeline is available; the other flags describe read-only inspection or safe
 authoring surfaces. `portable-setup` is advertised because the native file choosers
 and masked-input window exist, and enables the Export and Import actions on the
-Profiles screen (§7.13).
+Profiles screen (§7.13). `client-restart` is advertised when the shell can quit and
+reopen a desktop client (issue #14): "Restart now" is offered only for clients whose
+`canRestart` is true, and only with this capability.
 
 `package-safety` is advertised where `doctor.checkPackageSafety` can reach osv.dev
 and the npm registry; the UI shows the "Check package safety" button only with it.
@@ -655,6 +657,20 @@ plugin: restore Direct mode first, and installed software is not configuration.
 ```
 
 Nil `clientID` clears every client.
+
+### `restarts.restart` → `RestartResultDTO`
+
+```json
+{ "clientIDs": ["claudeDesktop"] }
+```
+
+Quits each client's desktop app and opens it again, so it reads the configuration
+Kytto wrote (issue #14). Capability `client-restart`. Every requested id lands in exactly
+one of `restarted` (quit and opened again), `notRunning` (was not running, so nothing was
+opened) or `failures` (`{ clientID, message }`, which keeps its notice). Restarted and
+not-running clients are acknowledged as `restarts.acknowledge` would. The reply carries the
+full `state` as well. A client whose app is not running is never opened. The native side
+runs the quit off the UI thread and the page waits, showing the sheet as busy.
 
 ### `restarts.dismiss` → `StateDTO`
 

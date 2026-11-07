@@ -1,0 +1,23 @@
+<Window x:Class="Kytto.App.CaptionOverlay"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Kytto.App"
+        Title="Kytto window controls"
+        Width="138" Height="32"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="False">
+
+  <!--
+    The window's own caption buttons, in a window of their own that Kytto owns. Not a
+    Popup: a popup is topmost and closes whenever the window deactivates, so the
+    buttons vanished the moment another app was clicked (audit W-01), and WPF clamps
+    a popup to the screen, so they floated at an edge or a monitor seam (W-02). An
+    owned window stays above its owner, hides with it, and is placed in code.
+  -->
+  <local:CaptionButtons x:Name="Buttons" />
+</Window>

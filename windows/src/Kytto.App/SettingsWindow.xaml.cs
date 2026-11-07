@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using Kytto.Core.Clients;
+using Kytto.Core.Gateway;
 using Kytto.Core.Settings;
 
 namespace Kytto.App;
@@ -195,6 +196,8 @@ public partial class SettingsWindow : Window
             {
                 PathError.Text = $"{row.DisplayName}: enter a complete drive path such as C:\\Users\\… or a UNC path such as \\\\server\\share\\….";
                 PathError.Visibility = Visibility.Visible;
+                // Scrolled down to Save, the message sat off screen and Save looked dead (audit W-15).
+                PathError.BringIntoView();
                 return;
             }
             overrides[row.Id.Raw()] = path;
@@ -237,7 +240,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception error) when (
             error is SettingsTransactionException or IOException or UnauthorizedAccessException or
-                     InvalidOperationException or System.Security.SecurityException)
+                     InvalidOperationException or System.Security.SecurityException or GatewayRouteException)
         {
             CustomSourceError.Text = error.Message;
             CustomSourceError.Visibility = Visibility.Visible;

@@ -44,8 +44,12 @@ public sealed class BackupStore(KyttoPaths paths, int retentionPerClient = Backu
     public const int DefaultRetentionPerClient = 20;
     private readonly Lock _lock = new();
 
-    /// <summary>How many to keep per client. Configurable in Settings (§7.6).</summary>
-    public int RetentionPerClient { get; } = retentionPerClient;
+    /// <summary>
+    /// How many to keep per client. Configurable in Settings (§7.6). Settable so a saved
+    /// change applies to the next prune; before this it was fixed at launch, and old
+    /// backups were pruned at the old number until restart (audit W-04).
+    /// </summary>
+    public int RetentionPerClient { get; set; } = retentionPerClient;
 
     private string Directory(ClientId client) => Path.Combine(paths.Backups, client.Raw());
 

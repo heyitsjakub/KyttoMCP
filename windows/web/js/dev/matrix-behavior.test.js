@@ -191,7 +191,7 @@ test('toggle routing rejects disabled and notInstalled targets before IPC', asyn
   const source = await readFile(path.resolve(here, '..', 'main.js'), 'utf8');
   assert.match(
     source,
-    /case 'toggle':\s*\{[\s\S]*?if \(target\.disabled \|\| client\?\.isReadOnly \|\| client\?\.state === 'notInstalled'\) break;[\s\S]*?await toggleCell/,
+    /case 'toggle':\s*\{[\s\S]*?if \(target\.disabled \|\| target\.classList\.contains\('busy'\) \|\| client\?\.isReadOnly \|\| client\?\.state === 'notInstalled'\) break;[\s\S]*?await toggleCell/,
   );
 });
 

@@ -321,7 +321,7 @@ test('at 1280px the inspector moves under the matrix', async () => {
   assert.notEqual(block, '');
   assert.match(block, /\.matrix-split\s*\{[^}]*flex-direction:\s*column/);
   assert.match(block, /\.server-inspector\s*\{[^}]*max-height:\s*420px/);
-  assert.match(block, /\.matrix-workspace\s*\{[^}]*flex:\s*0 0 auto/);
+  assert.match(block, /\.matrix-workspace\s*\{[^}]*flex:\s*1 0 auto/);
   // With nothing selected, stacked, the inspector takes no room.
   assert.match(block, /\.server-inspector:has\(\.inspector-empty\)\s*\{[^}]*display:\s*none/);
   // And above it the workspace takes what is left and never fewer than its parts.
@@ -397,7 +397,7 @@ test('the three selects commit on change and never on a keystroke inside the men
 
 test('focus returns to the half of the page it left, never to the inert twin behind a sheet', async () => {
   const main = await source('js/main.js');
-  assert.match(main, /snapshot\.insideSheet \? root\.querySelector\('\.sheet'\) : root\.querySelector\('#body'\)/);
+  assert.match(main, /snapshot\.insideSheet \? root\.querySelector\('\.sheet'\) \?\? root : root/);
   assert.match(main, /candidate\.focus\(\{ preventScroll: true \}\)/);
 });
 

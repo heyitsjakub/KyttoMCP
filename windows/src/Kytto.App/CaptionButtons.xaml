@@ -62,11 +62,14 @@
 
   <StackPanel Orientation="Horizontal" Background="Transparent">
     <Button x:Name="MinimiseButton" Style="{StaticResource CaptionButton}"
-            Content="&#xE921;" ToolTip="Minimize" Click="OnMinimise" />
+            Content="&#xE921;" ToolTip="Minimize" AutomationProperties.Name="Minimize"
+            Click="OnMinimise" />
     <Button x:Name="MaximiseButton" Style="{StaticResource CaptionButton}"
-            Content="&#xE922;" ToolTip="Maximize" Click="OnMaximise" />
+            Content="&#xE922;" ToolTip="Maximize" AutomationProperties.Name="Maximize"
+            Click="OnMaximise" />
     <Button x:Name="CloseButton" Style="{StaticResource CloseButton}"
-            Content="&#xE8BB;" ToolTip="Close" Click="OnClose" />
+            Content="&#xE8BB;" ToolTip="Close" AutomationProperties.Name="Close"
+            Click="OnClose" />
   </StackPanel>
 
 </UserControl>

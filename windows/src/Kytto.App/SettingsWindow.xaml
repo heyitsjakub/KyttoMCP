@@ -35,7 +35,7 @@
 
     <StackPanel Style="{StaticResource Row}">
       <TextBlock Style="{StaticResource Label}" Text="Appearance" />
-      <ComboBox x:Name="ThemeBox" SelectedIndex="0">
+      <ComboBox x:Name="ThemeBox" SelectedIndex="0" AutomationProperties.Name="Appearance">
         <ComboBoxItem Content="Follow Windows" Tag="system" />
         <ComboBoxItem Content="Light" Tag="light" />
         <ComboBoxItem Content="Dark" Tag="dark" />
@@ -44,14 +44,16 @@
 
     <StackPanel Style="{StaticResource Row}">
       <TextBlock Style="{StaticResource Label}" Text="Backups to keep, per client" />
-      <TextBox x:Name="RetentionBox" Width="90" HorizontalAlignment="Left" />
+      <TextBox x:Name="RetentionBox" Width="90" HorizontalAlignment="Left"
+               AutomationProperties.Name="Backups to keep, per client" />
       <TextBlock Style="{StaticResource Hint}"
                  Text="Every change is backed up before it is written. Older copies past this count are removed." />
     </StackPanel>
 
     <StackPanel Style="{StaticResource Row}">
       <TextBlock Style="{StaticResource Label}" Text="Warn above this many tokens" />
-      <TextBox x:Name="ThresholdBox" Width="90" HorizontalAlignment="Left" />
+      <TextBox x:Name="ThresholdBox" Width="90" HorizontalAlignment="Left"
+               AutomationProperties.Name="Warn above this many tokens" />
       <TextBlock Style="{StaticResource Hint}"
                  Text="A server whose tool definitions cost more than this is called out in the matrix." />
     </StackPanel>
@@ -60,7 +62,7 @@
       <CheckBox x:Name="TrayBox" Content="Show the Kytto tray item" />
       <TextBlock Style="{StaticResource Hint}"
                  Text="Lists your servers with a quick switch, without opening the window. Changes take effect immediately." />
-      <ComboBox x:Name="TrayClientBox" Margin="0,8,0,0" />
+      <ComboBox x:Name="TrayClientBox" Margin="0,8,0,0" AutomationProperties.Name="Tray client" />
     </StackPanel>
 
     <StackPanel Style="{StaticResource Row}">
@@ -123,7 +125,8 @@
               </Grid.ColumnDefinitions>
               <TextBlock Grid.Column="0" Text="{Binding DisplayName}" VerticalAlignment="Center" />
               <TextBox Grid.Column="1" Text="{Binding Path, UpdateSourceTrigger=PropertyChanged}"
-                       VerticalAlignment="Center" />
+                       VerticalAlignment="Center"
+                       AutomationProperties.Name="{Binding DisplayName, StringFormat='Configuration path for {0}'}" />
               <Button Grid.Column="2" Content="Browse…" Margin="6,0,0,0" Padding="10,3"
                       Tag="{Binding}" Click="OnBrowse" />
             </Grid>

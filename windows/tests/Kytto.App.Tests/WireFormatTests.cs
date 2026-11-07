@@ -410,7 +410,8 @@ public class WireFormatTests
         Assert.Equal(
             ["id", "displayName", "shortName", "iconAsset", "state", "configPathDisplay",
              "configFormatDisplay", "offSwitchSummary", "serverCount", "schemaQuirks",
-             "isReadOnly", "configurationScope", "scopeLabel", "toolBudget", "toolSwitchSummary"],
+             "isReadOnly", "configurationScope", "scopeLabel", "toolBudget", "toolSwitchSummary",
+             "canRestart", "restartCaveat"],
             KeysOf(encoded));
         var budget = encoded.GetProperty("toolBudget");
         Assert.Equal(

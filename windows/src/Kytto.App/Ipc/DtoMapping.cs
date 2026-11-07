@@ -45,7 +45,15 @@ internal static class DtoMapping
         ToolBudget: toolBudget.ToDto(),
         ToolSwitchSummary: client.IsReadOnly || client.Id.BuiltIn is not { } builtIn
             ? null
-            : ClientRegistry.Descriptor(builtIn).ToolSwitch?.Summary);
+            : ClientRegistry.Descriptor(builtIn).ToolSwitch?.Summary,
+        CanRestart: CanRestart(client),
+        RestartCaveat: CanRestart(client) && client.Id.BuiltIn is { } caveated
+            ? ClientRegistry.Descriptor(caveated).RestartCaveat
+            : null);
+
+    /// <summary>An installed desktop app that reads its configuration only at launch (issue #14).</summary>
+    internal static bool CanRestart(DiscoveredClient client) =>
+        client.IsInstalled && client.Id.BuiltIn is { } builtIn && ClientRegistry.Descriptor(builtIn).RestartsWithApp;
 
     internal static ClientToolBudgetDto ToDto(this ClientToolBudget budget) => new(
         ToolCount: budget.ToolCount,

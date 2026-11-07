@@ -379,6 +379,12 @@ img {
   gap: 5px;
   width: 100%;
   font: inherit;
+  /* `font: inherit` above reset the heading style it is meant to carry (audit W11). */
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
   text-align: left;
   background: none;
   border: none;
@@ -685,6 +691,12 @@ img {
   border-left: 1px solid var(--hairline);
 }
 
+/* A lone action has nothing to divide from the toolbar, so the divider goes (W12). */
+.toolbar-actions:has(> :only-child) {
+  border-left: none;
+  padding-left: 0;
+}
+
 .counts {
   display: flex;
   align-items: center;
@@ -775,6 +787,9 @@ img {
   /* Takes the slack the counts used to take, and pushes the actions right. */
   flex: 0 1 260px;
   margin-right: auto;
+  /* A whole-pixel height: the line-height made the band fractional, and it differed
+     by about 5px between the Matrix and every other panel (audit W12). */
+  height: 32px;
   min-height: 32px;
   padding: 7px 11px 7px 31px;
   font: inherit;
@@ -1546,6 +1561,12 @@ th.col-client.idle .app-icon {
    which is also why it stops accepting clicks. */
 .cell-toggle.busy {
   opacity: 0.45;
+  cursor: default;
+}
+
+/* A busy cell is focusable but not a target: no hover wash while it waits. */
+.cell-toggle.busy:hover {
+  background: transparent;
 }
 
 .cell-toggle.busy .cell-mark {
@@ -1855,6 +1876,10 @@ th.col-client.idle .app-icon {
   position: sticky;
   bottom: 0;
   z-index: 2;
+  /* Several pending clients can take most of a short window; capped, it scrolls
+     instead of hiding the matrix (audit W8). */
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 .read-only-note {
@@ -2014,6 +2039,14 @@ th.col-client.idle .app-icon {
   gap: 8px;
   flex: 0 0 auto;
   padding: 12px var(--gutter);
+}
+
+/* A failed save in a picker sheet (audit W13): red, wrapping, beside Cancel. */
+.sheet-error {
+  flex: 1 1 12rem;
+  min-width: 0;
+  color: var(--fail);
+  overflow-wrap: anywhere;
 }
 
 .sheet-header {
@@ -2760,6 +2793,7 @@ th.col-client.idle .app-icon {
 
 .secret-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -2769,6 +2803,8 @@ th.col-client.idle .app-icon {
 }
 
 .secret-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--text-muted);
   user-select: text;
   -webkit-user-select: text;
@@ -3111,13 +3147,16 @@ th.col-client.idle .app-icon {
 
 .diagnostic {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 3px 0;
   align-items: baseline;
 }
 
 .diagnostic-path {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-faint);
@@ -3333,7 +3372,9 @@ body[data-stubbed='true'] .statusbar::after {
 .onboarding {
   flex: 1 1 auto;
   display: flex;
-  align-items: center;
+  /* `safe` keeps an overflowing card's top reachable; plain centring pushed the
+     top of a tall card above the scroll origin (audit W4). */
+  align-items: safe center;
   justify-content: center;
   padding: clamp(24px, 5vw, 64px) 24px;
   overflow-y: auto;
@@ -4222,12 +4263,14 @@ body[data-stubbed='true'] .statusbar::after {
   /* Matrix, then inspector: taller than most windows, so it is the page that
      scrolls and not the diagnostics bar that gets painted over. */
   .matrix-workspace {
-    flex: 0 0 auto;
+    /* Grows into the leftover height, so the matrix is not capped under an empty
+       band (audit W3). */
+    flex: 1 0 auto;
     min-height: 0;
   }
 
   .matrix-split {
-    flex: 0 0 auto;
+    flex: 1 0 auto;
     display: flex;
     flex-direction: column;
     min-height: 0;

@@ -119,7 +119,7 @@ export function renderLibrary(state) {
     }
     if (current.preview) body.push(libraryPreview(state, current.preview));
   }
-  if (current.warnings?.length) appendMessages(body, current.warnings, 'muted', 'Scan warnings');
+  if (current.warnings?.length) body.push(messagesSection(current.warnings, 'muted', 'Scan warnings'));
   if (current.error) body.push(el('p', 'failure-message', current.error));
 
   const hasCandidate = Boolean(current.selectedCandidateID);
@@ -198,7 +198,7 @@ export function renderSkills(state) {
   } else {
     body.push(skillList(current.skills));
   }
-  if (current.warnings?.length) appendMessages(body, current.warnings, 'muted', 'Inventory warnings');
+  if (current.warnings?.length) body.push(messagesSection(current.warnings, 'muted', 'Inventory warnings'));
   if (current.error) body.push(el('p', 'failure-message', current.error));
 
   return sheet('Skills inventory', body, [

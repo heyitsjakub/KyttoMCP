@@ -9,6 +9,26 @@ without a backup.
 
 ## [Unreleased]
 
+### Added (Windows)
+
+- **Restart now** (#14): the pending-restart notice offers Restart now per client and Restart all when several apply. Kytto quits the client's app and opens it again, so it reads the new configuration; an app that is not running is not opened, and an app that asks about unsaved work is left running for you to answer. Claude Desktop, Cursor, VS Code, Antigravity and Devin Desktop restart this way; the terminal clients stay on "I restarted".
+
+### Fixed (Windows)
+
+- A maximised window no longer covers the taskbar (#15).
+- The caption buttons stay visible when another app is active, and no longer float off the window at a screen edge or a monitor seam.
+- The window follows tray changes: switching a server from the tray updates the open window, and the tray tooltip stays current.
+- "Backups to keep" applies immediately instead of after a restart.
+- Changing sidebar width no longer re-reads every config.
+- Saving a path override no longer shows a false restart notice.
+- Only one Kytto runs at a time; opening it from the Start menu while it sits in the tray shows the running window.
+- An unreadable settings file shows a message instead of closing the app silently.
+- Windows keeps Kytto sharp on a monitor with a different scale.
+- Several Skills and MCP Library screens no longer fail to render when native reports a warning.
+- The filter field keeps focus while you type; keyboard focus stays on a matrix switch after it changes.
+- The sticky restart bar, secret and diagnostic layouts, onboarding, and the matrix at 1280 px lay out correctly.
+- Settings labels are announced by screen readers.
+
 ## [1.0.9.2] — 2026-11-04
 
 MCP Doctor stops recommending archived reference servers and flags them where

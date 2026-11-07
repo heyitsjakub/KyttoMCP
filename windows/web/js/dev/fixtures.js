@@ -70,6 +70,7 @@ const CLIENTS = [
     displayName: 'Claude Desktop',
     iconAsset: 'client-claude-desktop',
     state: 'ready',
+    canRestart: true,
     configPathDisplay: '~/Library/Application Support/Claude/claude_desktop_config.json',
     configFormatDisplay: 'JSON',
     offSwitchSummary: `${OFF_SWITCH.presence} ${OFF_SWITCH.extensions}`,
@@ -106,6 +107,7 @@ const CLIENTS = [
     id: 'vsCode',
     displayName: 'VS Code',
     iconAsset: 'client-vscode',
+    canRestart: true,
     state: UNDETECTED_CLIENT === 'vsCode' ? 'notInstalled' : 'ready',
     configPathDisplay: '~/Library/Application Support/Code/User/mcp.json',
     configFormatDisplay: 'JSON',
@@ -1104,7 +1106,7 @@ const HANDLERS = {
     build: '1',
     // `library` and `agent-import` are what native reports too; the sidebar's
     // Discover group and the toolbar's Import agent button are gated on them.
-    capabilities: ['config.read', 'config.write', 'backups', 'gateway.stdio', 'gateway.masking', 'updates', 'skills', 'provenance', 'package-safety', 'library', 'agent-import', 'health.http', 'health.oauth', 'portable-setup'],
+    capabilities: ['config.read', 'config.write', 'backups', 'gateway.stdio', 'gateway.masking', 'updates', 'skills', 'provenance', 'package-safety', 'library', 'agent-import', 'health.http', 'health.oauth', 'portable-setup', 'client-restart'],
     platformDisplayName: 'fixtures',
     // Deliberately neither "Keychain" nor "Credential Manager": the harness is
     // not pretending to be either platform, and a screen that reads correctly
@@ -1802,6 +1804,21 @@ const HANDLERS = {
     else world.pendingRestarts = {};
     world.dismissedRestarts = clientID ? world.dismissedRestarts.filter((id) => id !== clientID) : [];
     return snapshot();
+  },
+
+  // "Restart now" (issue #14). The fixture quits nothing: Claude Desktop "restarts",
+  // VS Code "was not running", and a client that does not restart with its app fails.
+  'restarts.restart': ({ clientIDs = [] }) => {
+    const restarted = [];
+    const notRunning = [];
+    const failures = [];
+    for (const id of clientIDs) {
+      if (id === 'claudeDesktop') restarted.push(id);
+      else if (id === 'vsCode') notRunning.push(id);
+      else failures.push({ clientID: id, message: 'Restart it yourself, then choose I restarted.' });
+    }
+    for (const id of [...restarted, ...notRunning]) delete world.pendingRestarts[id];
+    return { restarted, notRunning, failures, state: snapshot() };
   },
 
   // Hides the notice and keeps the count; a later write to the client shows it

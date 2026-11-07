@@ -9,8 +9,22 @@ namespace Kytto.Core.Clients;
 /// </remarks>
 public static class ClientRegistry
 {
-    public static IReadOnlyList<ClientDescriptor> All { get; } =
+    /// <summary>
+    /// The desktop apps that read their configuration at launch, and so restart with Kytto
+    /// (issue #14). Terminal-first clients are deliberately absent.
+    /// </summary>
+    private static readonly HashSet<ClientId> AppRestartable =
     [
+        ClientId.ClaudeDesktop,
+        ClientId.Cursor,
+        ClientId.VsCode,
+        ClientId.Antigravity,
+        ClientId.DevinDesktop,
+    ];
+
+    public static IReadOnlyList<ClientDescriptor> All { get; } =
+    new ClientDescriptor[]
+    {
         ClaudeDesktop,
         ClaudeCode,
         Cursor,
@@ -19,7 +33,9 @@ public static class ClientRegistry
         Antigravity,
         DevinDesktop,
         OpenCode,
-    ];
+    }
+        .Select(descriptor => descriptor with { RestartsWithApp = AppRestartable.Contains(descriptor.Id) })
+        .ToArray();
 
     public static ClientDescriptor Descriptor(ClientId id) =>
         All.FirstOrDefault(descriptor => descriptor.Id == id)

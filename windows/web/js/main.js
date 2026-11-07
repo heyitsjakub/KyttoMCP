@@ -15,7 +15,7 @@ import {
   visibleServers,
   setToolOpen,
 } from './state.js';
-import { render as renderMatrix } from './screens/matrix.js';
+import { render as renderMatrix, restartableClientIds } from './screens/matrix.js';
 import { diagnosticReport } from './screens/serverDetail.js';
 import { activityReport } from './screens/activity.js';
 import { formatTokens } from './dom.js';
@@ -117,18 +117,29 @@ function restoreFocus(snapshot) {
   // With a dialog open, focus belongs inside it: a control behind the backdrop is
   // not somewhere keyboard focus may land.
   if (!snapshot.insideSheet && root.querySelector('.sheet')) return false;
-  const entries = Object.entries(snapshot.dataset);
-  // The inspector and the detail sheet render the same controls for one server
-  // (§7.1.2), so a bare `[data-action]` search can land on the inert copy behind
-  // an open sheet. Search the half of the page the focus came from.
-  const scope =
-    (snapshot.insideSheet ? root.querySelector('.sheet') : root.querySelector('#body')) ?? root;
-  const candidate = [...scope.querySelectorAll('[data-action]')].find(
+  // Keys that describe a control's current state rather than which control it is.
+  // A toggle's `data-enabled` flips on every write and a check button's label goes
+  // "Checking…" and back, so matching on them lost focus after the very action the
+  // user had just taken (windows audit W6).
+  const volatileKeys = new Set(['enabled', 'state', 'previousState']);
+  const entries = Object.entries(snapshot.dataset).filter(([key]) => !volatileKeys.has(key));
+  // The toolbar band sits beside `#body`, so searching only `#body` lost the filter
+  // field after every keystroke (audit W1). Search the whole root, but when a sheet is
+  // open only inside it, and never inside it when focus was outside it.
+  const scope = snapshot.insideSheet ? root.querySelector('.sheet') ?? root : root;
+  const matches = [...scope.querySelectorAll('[data-action]')].filter(
     (node) =>
+      (snapshot.insideSheet || !node.closest('.sheet')) &&
       node.tagName === snapshot.tagName &&
-      (snapshot.text === null || node.textContent === snapshot.text) &&
       entries.every(([key, value]) => node.dataset[key] === value),
   );
+  // The inspector and the detail sheet render the same controls for one server
+  // (§7.1.2), so the identity match can land on the inert copy behind an open sheet;
+  // that is why the scope above is restricted. Prefer the same label when several
+  // controls share an identity.
+  const candidate =
+    matches.find((node) => snapshot.text === null || node.textContent === snapshot.text) ??
+    matches[0];
   if (!(candidate instanceof HTMLElement)) return false;
 
   candidate.focus({ preventScroll: true });
@@ -944,7 +955,9 @@ async function confirmUnify(serverId, sourceClientId) {
       kind: result.parkedFailures.length > 0 ? 'warning' : 'info',
       message: result.parkedFailures.length > 0
         ? `“${result.serverName}” was unified — ${parts.join(', ')} — but Kytto could not update the stored off copy for ${clientNames(getState(), result.parkedFailures)}. Switching it on there would bring back the old definition.`
-        : `“${result.serverName}” now reads the same everywhere: ${parts.join(', ')}. Every file was backed up first.`,
+        : parts.length === 0
+          ? `“${result.serverName}” now reads the same everywhere. Every file was backed up first.`
+          : `“${result.serverName}” now reads the same everywhere: ${parts.join(', ')}. Every file was backed up first.`,
     };
     setState({ sheet: null, notice });
     await refreshAfterMutation(['Backups'], notice);
@@ -1151,6 +1164,44 @@ async function confirmMatrixWrite() {
     closeSheetOnSuccess: true,
     failureInSheet: true,
   });
+}
+
+/// Quits and reopens the chosen clients (issue #14). The sheet stays busy until the native
+/// side has answered, then closes and reports what happened.
+async function confirmRestart() {
+  const current = getState().sheet;
+  if (current?.kind !== 'confirmRestart' || current.busy) return;
+
+  const request = beginSheetRequest();
+  try {
+    const result = await invoke('restarts.restart', { clientIDs: current.clientIDs });
+    applyState(result.state);
+    setState({ sheet: null, notice: restartNotice(result) });
+  } catch (error) {
+    failSheetRequest(request, error);
+  }
+}
+
+/// One line per outcome. Any client that did not restart makes it an error, and its
+/// notice stays (issue #14).
+function restartNotice(result) {
+  const failures = result.failures ?? [];
+  if (failures.length > 0) {
+    return {
+      kind: 'error',
+      message: failures
+        .map((failure) => `${clientNames(getState(), [failure.clientID])}: ${failure.message}`)
+        .join(' '),
+    };
+  }
+  const messages = [];
+  if (result.restarted.length > 0) {
+    messages.push(`Restarted ${clientNames(getState(), result.restarted)}.`);
+  }
+  if (result.notRunning.length > 0) {
+    messages.push(`${clientNames(getState(), result.notRunning)} was not running and will read the new configuration when opened.`);
+  }
+  return { kind: 'info', message: messages.join(' ') };
 }
 
 /// The page asks for settings; what a settings window is stays native (§3.2).
@@ -1562,7 +1613,7 @@ async function checkVisible() {
     }
     const messages = [`Checked ${servers.length} visible server${servers.length === 1 ? '' : 's'}.`];
     if (failed.length > 0) messages.push(`${failed.length} failed; open their details for the reason.`);
-    if (waiting.length > 0) messages.push(`${waiting.length} require sign-in.`);
+    if (waiting.length > 0) messages.push(`${waiting.length} ${waiting.length === 1 ? 'requires' : 'require'} sign-in.`);
     const contract = contractNotice(newContractAlerts(alertsBefore));
     if (contract) messages.push(contract.message);
     const notice = {
@@ -1716,7 +1767,7 @@ root.addEventListener('click', async (event) => {
       break;
     case 'toggle': {
       const client = state.clients.find((entry) => entry.id === target.dataset.clientId);
-      if (target.disabled || client?.isReadOnly || client?.state === 'notInstalled') break;
+      if (target.disabled || target.classList.contains('busy') || client?.isReadOnly || client?.state === 'notInstalled') break;
       const previousState = target.dataset.state ?? (target.dataset.enabled === 'true' ? 'enabled' : 'disabled');
       if (needsMatrixWriteConfirmation(state.settings, client)) {
         setState({
@@ -1799,6 +1850,20 @@ root.addEventListener('click', async (event) => {
       break;
     case 'acknowledge-restarts':
       applyState(await invoke('restarts.acknowledge', { clientID: null }));
+      break;
+    case 'restart-client':
+      setState({ sheet: { kind: 'confirmRestart', clientIDs: [target.dataset.clientId], busy: false, error: null } });
+      break;
+    case 'restart-clients': {
+      const pending = Object.entries(getState().pendingRestarts ?? {})
+        .filter(([, count]) => count > 0)
+        .map(([id]) => id);
+      const clientIDs = restartableClientIds(getState()).filter((id) => pending.includes(id));
+      setState({ sheet: { kind: 'confirmRestart', clientIDs, busy: false, error: null } });
+      break;
+    }
+    case 'confirm-restart':
+      await confirmRestart();
       break;
     case 'acknowledge-restart':
       applyState(await invoke('restarts.acknowledge', { clientID: target.dataset.clientId ?? null }));

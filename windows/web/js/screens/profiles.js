@@ -260,7 +260,9 @@ function applyPreview(state, profile, client) {
       el(
         'p',
         'profile-summary warning',
-        `${missing} profile server(s) are no longer present and will be reported as skipped.`,
+        missing === 1
+          ? '1 profile server is no longer present and will be reported as skipped.'
+          : `${missing} profile servers are no longer present and will be reported as skipped.`,
       ),
     );
   }

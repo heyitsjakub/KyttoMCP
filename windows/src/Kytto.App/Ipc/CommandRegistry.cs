@@ -370,6 +370,45 @@ internal static partial class CommandRegistry
             return model.ToStateDto();
         });
 
+        // Quitting and reopening a client takes seconds, so it runs off the UI thread and the
+        // page waits for the reply. The acknowledgements run back on the UI thread (issue #14).
+        router.Register<RestartPayload, RestartResultDto>("restarts.restart", async payload =>
+        {
+            var requested = (payload.ClientIDs ?? [])
+                .Distinct(StringComparer.Ordinal)
+                .Select(raw => ClientIds.FromRaw(raw)
+                    ?? throw new BadArgumentException($"Unknown client {raw}."))
+                .ToArray();
+
+            var home = model.Home;
+            var outcomes = await Task.Run(() => requested
+                .Select(client => (Client: client, Outcome: ClientRestarter.Restart(ClientRegistry.Descriptor(client), home)))
+                .ToArray());
+
+            var restarted = new List<string>();
+            var notRunning = new List<string>();
+            var failures = new List<RestartFailureDto>();
+            foreach (var (client, outcome) in outcomes)
+            {
+                switch (outcome.Kind)
+                {
+                    case RestartOutcomeKind.Restarted:
+                        restarted.Add(client.Raw());
+                        model.AcknowledgeRestart(client);
+                        break;
+                    case RestartOutcomeKind.NotRunning:
+                        notRunning.Add(client.Raw());
+                        model.AcknowledgeRestart(client);
+                        break;
+                    default:
+                        failures.Add(new RestartFailureDto(client.Raw(), outcome.Message ?? "The restart did not finish."));
+                        break;
+                }
+            }
+
+            return new RestartResultDto(restarted, notRunning, failures, model.ToStateDto());
+        });
+
         router.Register<AcknowledgePayload, StateDto>("restarts.dismiss", payload =>
         {
             ClientId? clientId = null;
@@ -642,6 +681,7 @@ internal static partial class CommandRegistry
                 "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking",
                 "doctor", "activity", "contract-guard", "context-optimizer", "drift",
                 "updates", "provenance", "package-safety", "agent-import", "library", "skills",
+                "client-restart",
                 // Only what the shell can actually do: see CommandRegistry.Remote.cs.
                 .. RemoteCapabilities,
                 "portable-setup",
@@ -836,5 +876,8 @@ internal sealed record RestoreBackupPayload(string BackupID, string ClientID);
 
 /// <param name="ClientID">Null acknowledges every client at once.</param>
 internal sealed record AcknowledgePayload(string? ClientID);
+
+/// <summary>The clients to restart now (issue #14).</summary>
+internal sealed record RestartPayload(IReadOnlyList<string>? ClientIDs);
 
 internal sealed record UpdateCheckPayload(bool Force = false);

@@ -88,7 +88,7 @@ export function pendingContractEvidence(state, server) {
         : 'Run a fresh health check to compare this server with the imported fingerprints.';
     const count = entry.toolCount === 1 ? '1 imported tool fingerprint' : `${entry.toolCount} imported tool fingerprints`;
     notes.push(
-      el('p', 'muted', `${count} await local review. ${status}`),
+      el('p', 'muted', `${count} ${entry.toolCount === 1 ? 'awaits' : 'await'} local review. ${status}`),
       el('p', 'field-hint', 'Imported contracts are reference material. Mark the current, locally checked contract as reviewed only after inspecting its tools.'),
     );
   }

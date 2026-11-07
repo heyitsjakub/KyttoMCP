@@ -81,8 +81,11 @@ export function toggle(state, server, client, value, flipped) {
   }
 
   if (state.busyCells.has(cellKey(server.id, client.id))) {
+    // Not `disabled`: a disabled control drops focus, and the write this cell is
+    // waiting on is the one that moves focus back to it (audit W6). The click
+    // handler ignores busy cells.
     button.classList.add('busy');
-    button.disabled = true;
+    button.setAttribute('aria-disabled', 'true');
   }
 
   // The write landed and the file on disk now says something else. The cell is
