@@ -97,7 +97,7 @@ Custom sources are read-only and are not an additional writable client. Want ano
 
 ## Install
 
-Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.3 for macOS ([v1.0.9.3](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.3)) and Beta 1.0.9.2 for Windows ([v1.0.9.2-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.2-windows)); Windows 1.0.9.3 is coming soon.
+Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.3 for macOS ([v1.0.9.3](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.3)) and Beta 1.0.9.3 for Windows ([v1.0.9.3-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.3-windows)).
 
 ### macOS
 
@@ -119,8 +119,8 @@ shasum -a 256 KyttoMCP-1.0.9.3.dmg
 # c92bd99bc4a8ca01a0682e476662b9e93b6759b4c7babe4a48218fcae65d5aff
 
 # Windows (PowerShell)
-Get-FileHash Kytto-Setup-win-x64-1.0.9.2.exe -Algorithm SHA256
-# fa24c7ff8d80a312a41e86959047f3d9c5bf3486712523485216a3f2d1243618
+Get-FileHash Kytto-Setup-win-x64-1.0.9.3.exe -Algorithm SHA256
+# 97a7a63d07e11aa5448c06a2c912ce432f265a1d24a5d744ae60f215d8a347fa
 ```
 
 ## Local by design
