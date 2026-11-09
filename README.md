@@ -16,6 +16,12 @@ and the Windows app lives in this repository. Read it, build it, or send a pull 
 
 ![KyttoMCP showing MCP servers and their status across Claude Desktop, Claude Code, Cursor, VS Code and Codex in one matrix](docs/screenshot.png)
 
+### A server changes what it tells your model — 36 seconds
+
+![Kytto on Windows: a health check of a test server passes, a terminal command changes the server's tool description, and the next health check opens a Contract Guard notice showing the description before and after](docs/contract-guard-demo.gif)
+
+A test server passes its health check. One command changes the description of its only tool, with the same server version and the same input schema, and the next health check shows the old and the new text side by side. Contract Guard flags the change for review; it does not block the server or edit a config. `drift-fixture` is a harmless server written for this demonstration, and the instruction in its description is a sample that does nothing. Recorded on Windows with Beta 1.0.9.3 and trimmed from a 59-second take with hard cuts only; one line of the matrix is covered because it showed a local path. [What else Kytto reads in a tool definition](#what-kytto-does).
+
 ### See it work — 72 seconds, no narration
 
 https://github.com/user-attachments/assets/e8e91309-8f4a-4ba5-9a1d-ac306b51d664
