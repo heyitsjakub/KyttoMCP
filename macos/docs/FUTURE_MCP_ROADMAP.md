@@ -1,10 +1,29 @@
 # Kytto MCP — roadmap
 
-Ideas that were deliberately deferred while the app focused on MCP Doctor, Live
-Activity, Contract Guard and Context Optimizer. These are candidates, not
-commitments — good places to contribute. Revalidate protocol, client and
-related-tool behavior before implementing any of them. Section numbers start at
-5 and stay stable because other documents cite them.
+The one place for what comes next: ideas for the next version, deferred
+candidates and known gaps. Everything here is a candidate, not a commitment —
+good places to contribute. Revalidate protocol, client and related-tool behavior
+before implementing any of it. What already shipped is in
+[`CHANGELOG.md`](../../CHANGELOG.md), not here.
+
+Section numbers start at 5 and stay stable because other documents cite them;
+new sections are appended at the end.
+
+## Next version — candidates
+
+In rough order of value. Each links to its section below.
+
+1. **Context cost: full catalog vs. what a session loads** (§16).
+2. **Project configs inside repositories**, read-only, in folders the user
+   chooses, scanned by the Tool Safety Scanner (§12).
+3. **Alert when a server's launch definition changes outside Kytto** (§7).
+4. **`kytto` command-line tool** to switch a profile or a server from a terminal
+   or hook ([claude-code#10447](https://github.com/anthropics/claude-code/issues/10447)).
+5. **Import from MCP Router**, which reportedly ended support on 2026-09-18
+   (claim from a competitor's site; verify first).
+6. Later: Linux ([#2](https://github.com/heyitsjakub/KyttoMCP/issues/2)),
+   Firewall rules (§5), cost limits (§6), Focused Inspector (§10),
+   organization-managed inventory (§13).
 
 ## 5. Local MCP Firewall
 
@@ -12,6 +31,10 @@ related-tool behavior before implementing any of them. Section numbers start at
 per-tool policy layer. Tool annotations are optional and untrusted, while prompt
 injection and tool poisoning can turn a broad permission into an unintended
 write or data transfer.
+
+**Already shipped:** per-tool switches (1.0.9.1), written to the client's own
+config where it supports them and enforced by Gateway mode where it does not.
+That is the first step toward this section.
 
 **Candidate scope:** Gateway rules with `allow`, `ask` and `block`, keyed by
 route, tool, client and profile. Approval timeouts default to deny. Rules inspect
@@ -39,8 +62,9 @@ limit. Enforcement belongs in Gateway below the model.
 rewrite MCP configuration. A backup alone does not explain what changed.
 
 **Candidate scope:** semantic server diff, timestamp, best-effort process/source
-attribution, conflict timeline and restore-one-server. Preserve the existing
-digest guard and never lock a client-owned file.
+attribution, conflict timeline and restore-one-server. Alert when a server's
+launch definition (command, arguments, environment) changes outside Kytto.
+Preserve the existing digest guard and never lock a client-owned file.
 
 **Dependencies:** extend the existing watcher and backup store; determine what
 attribution macOS and Windows can provide without elevated permissions.
@@ -51,10 +75,12 @@ attribution macOS and Windows can provide without elevated permissions.
 Users currently add wrapper processes to make remote servers work in stdio-only
 clients.
 
-**Candidate scope:** Streamable HTTP, clearly-labelled SSE compatibility,
-bearer/custom headers, OAuth login and refresh, discovery diagnostics, TLS/server
-identity checks and an optional local bridge for clients that only support
-stdio.
+**Already shipped:** Remote Doctor Streamable HTTP checks with native OAuth
+sign-in and refresh (1.0.8).
+
+**Candidate scope:** clearly-labelled SSE compatibility, bearer/custom headers,
+discovery diagnostics, TLS/server identity checks and an optional local bridge
+for clients that only support stdio.
 
 **Dependencies:** revalidate the current MCP authorization specification and
 each supported client's transport capabilities. Keep tokens in Keychain or the
@@ -64,6 +90,10 @@ Windows Credential Manager.
 
 **Problem:** A generic catalog is crowded and does not establish package safety.
 Users need to know what will run and what will change across their clients.
+
+**Already shipped:** the package safety check in MCP Doctor (look-alike names,
+OSV malware lookup, install scripts, archived and deprecated packages; 1.0.9.1
+and 1.0.9.2) — the first piece of this section.
 
 **Candidate scope:** official MCP Registry source, namespace ownership and
 version display, optional pinning, command preview, required-secret list,
@@ -94,10 +124,10 @@ the servers as a separate source and enforces read-only behavior in both native
 services and UI. Supporting writes or automatic client-family discovery remains
 deferred.
 
-**Observed need:** Some users run several fast-moving MCP
-clients and forks beyond Kytto's five built-in clients. Adding every product
-name to the fixed client registry would be brittle, and one compatible
-configuration format may cover several related clients.
+**Observed need:** Some users run several fast-moving MCP clients and forks
+beyond Kytto's eight built-in clients. Adding every product name to the fixed
+client registry would be brittle, and one compatible configuration format may
+cover several related clients.
 
 **Candidate scope:** Let the user register a named configuration source with an
 explicit file path, configuration format and scope. Start read-only: discover
@@ -116,20 +146,26 @@ the user's home directory or repositories for unknown configuration files.
 
 **Initial beta slice implemented:** Every source now carries a visible `Global`,
 `Profile` or `Workspace` identity and optional label. Custom paths must be chosen
-explicitly and remain read-only. Built-in project discovery, precedence and
-conflict resolution remain deferred.
+explicitly and remain read-only. Claude Code project scopes registered in its
+own config are discovered (1.0.4.1). Other built-in project discovery,
+precedence and conflict resolution remain deferred.
 
 **Observed need:** A server may be available globally, in one client profile or
 only inside a particular workspace. Flattening these sources into one client
-column can make Kytto overstate where a server is available. The v1 product
-design intentionally supports global/user-level configuration only.
+column can make Kytto overstate where a server is available. Repository configs
+are also an attack path: the strutil-core worm (November 2026, [Socket
+analysis](https://socket.dev/blog/shai-hulud-descendant-malicious-ruby-gem))
+commits `.cursor/mcp.json`, `.claude/settings.json`, `AGENTS.md`, `CLAUDE.md` and
+`.vscode/tasks.json` into repositories, and today Kytto only sees user-level
+configs.
 
-**Candidate scope:** Extend configuration-source identity with client, scope
-kind and a user-visible workspace/profile label. Add read-only discovery first,
-with clear `Global`, `Profile` and `Workspace` badges and filters. Workspace
-paths must be explicitly selected by the user; Kytto must not crawl arbitrary
-projects. If the same server appears at several scopes, show precedence and
-conflicts instead of silently merging definitions.
+**Candidate scope:** Project configs inside repositories (`.mcp.json`,
+`.cursor/mcp.json`, `.vscode/mcp.json`) in folders the user selects, read-only,
+scanned by the Tool Safety Scanner. Clear `Global`, `Profile` and `Workspace`
+badges and filters. Kytto must not crawl arbitrary projects. If the same server
+appears at several scopes, show precedence and conflicts instead of silently
+merging definitions. A server found only in a repository is never health-checked
+automatically, because a check starts it.
 
 **Dependencies:** A source-aware normalized model, deterministic precedence and
 deduplication rules, per-source watchers, and backups that always identify the
@@ -152,15 +188,6 @@ claiming that Kytto can edit organization policy.
 token storage and a clear boundary from the Remote MCP transport/OAuth work in
 section 8. Never scrape a signed-in web session or infer organization state from
 local configuration alone.
-
-## Suggested order for a future beta
-
-1. ~~Clarify built-in coverage as five supported local clients in the app UI.~~
-2. ~~Prototype explicit read-only workspace-scope discovery.~~
-3. ~~Prototype read-only custom sources for known configuration adapters.~~
-4. Enable writes only after source-aware preservation and backup tests pass.
-5. Keep organization/hosted discovery in research until a supported interface
-   and real user demand are both confirmed.
 
 ## 14. Beta-tester feedback backlog (done)
 
@@ -196,3 +223,42 @@ contract itself:
   implemented.
 - **Gateway.** The `kytto-mcp-proxy` helper and its credential lookup need a
   Windows build before Gateway mode can be offered there.
+
+## 16. Context cost: full catalog vs. what a session loads
+
+**Problem:** Kytto shows the estimated token cost of every tool's full
+definition, summed per server and per client for the servers that are switched
+on. That is the cost if every tool loads. Clients increasingly defer MCP tools
+behind tool search instead — Claude Code does by default (see the notes in
+`ClientRegistry.swift`) — so the full number can overstate what a session
+actually pays, and users cannot tell whether to switch tools off or let search
+handle it. Requested by a user on X on 2026-11-09: "show two
+numbers: the cost if every tool loads and the cost for what this session
+actually loaded". Overlaps with issue
+[#3](https://github.com/heyitsjakub/KyttoMCP/issues/3) (label deferred loading
+in the context estimate), which is still open.
+
+**Candidate scope:**
+
+- Per client, two numbers side by side: **if every tool loads** (today's
+  estimate) and **loaded up front** — for a client that defers tools, only what
+  it sends before a search (tool names or short stubs). Label which clients
+  defer and which load everything.
+- **Actually loaded in a session**, where Kytto can know it without guessing:
+  - Gateway mode already sees `tools/list` and every `tools/call` on its routes,
+    so Live Activity can count which tools a session used — metadata only, never
+    arguments or results.
+  - Client session logs (for example Claude Code transcripts) might record which
+    tools were pulled in through search. Research only: opt-in, read-only,
+    nothing stored, and dropped if the logs do not say it reliably.
+- Never present an estimate as a measurement; keep the `~` marker and say where
+  each number comes from.
+
+**Dependencies:** verify per client what is loaded before a search and whether
+that changes by model; Gateway request correlation from Live Activity; the same
+`cl100k_base` tokenizer for both numbers so they are comparable.
+
+## 17. Review follow-ups
+
+Smaller follow-ups from the 2026-10-24 review are tracked outside this
+document. The section number is kept so references stay stable.
