@@ -256,6 +256,13 @@ configuration** action. A firewall-enabled route fails closed when policy cannot
 be evaluated; an observability-only route may offer a clearly labelled direct
 fallback.
 
+A Gateway definition depends on the helper, the route record and the credential
+store, none of which the client's config can vouch for. Losing any of them must
+never leave a server that can be neither started nor edited: MCP Doctor names
+the cause, a moved app is repaired in place, and Restore Direct rebuilds the
+definition from the route when the stored original is gone
+([docs/gateway.md](docs/gateway.md)).
+
 ---
 
 ## 4. Client support

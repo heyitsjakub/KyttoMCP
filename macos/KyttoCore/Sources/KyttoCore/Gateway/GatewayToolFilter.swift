@@ -149,6 +149,21 @@ public final class GatewayToolFilter: @unchecked Sendable {
         }
     }
 
+    /// The hidden tools a client line tries to call, for the activity journal.
+    /// Names and request ids only; arguments are never looked at.
+    public func hiddenCalls(in line: Data) -> [(toolName: String, requestID: String?)] {
+        guard let parsed = try? JSONSerialization.jsonObject(with: line) else { return [] }
+        let objects = (parsed as? [Any])?.compactMap { $0 as? [String: Any] }
+            ?? (parsed as? [String: Any]).map { [$0] } ?? []
+        return objects.compactMap { object in
+            guard object["method"] as? String == "tools/call",
+                  let name = (object["params"] as? [String: Any])?["name"] as? String,
+                  !allows(name)
+            else { return nil }
+            return (name, GatewayJSONRPC.requestID(object["id"]))
+        }
+    }
+
     private func refusal(id: Any?, rawID: String, toolName: String) -> Data {
         // The id has to go back exactly as it arrived — a client that sent a
         // number and gets a string back cannot match its own request.

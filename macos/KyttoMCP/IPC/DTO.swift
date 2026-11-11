@@ -548,13 +548,47 @@ struct GatewayMigrationResultDTO: Encodable {
     let route: GatewayRouteDTO
     let backupID: String?
     let pathDisplay: String
+    /// Environment variables a rebuilt Direct definition is missing.
+    let missingEnvironmentKeys: [String]
     let state: StateDTO
 
     @MainActor
     init(_ result: GatewayMigrationResult, model: AppModel) {
+        missingEnvironmentKeys = result.missingEnvironmentKeys
         route = GatewayRouteDTO(result.route)
         backupID = result.backupID
         pathDisplay = result.pathDisplay
+        state = StateDTO(model)
+    }
+}
+
+struct GatewayRestoreAllDTO: Encodable {
+    struct Failure: Encodable {
+        let serverName: String
+        let clientID: String
+        let message: String
+    }
+
+    struct MissingEnvironment: Encodable {
+        let serverName: String
+        let clientID: String
+        let keys: [String]
+    }
+
+    let restoredCount: Int
+    let failures: [Failure]
+    let missingEnvironment: [MissingEnvironment]
+    let state: StateDTO
+
+    @MainActor
+    init(_ report: GatewayRestoreAllReport, model: AppModel) {
+        restoredCount = report.restored.count
+        failures = report.failures.map {
+            Failure(serverName: $0.route.serverName, clientID: $0.route.clientID.rawValue, message: $0.message)
+        }
+        missingEnvironment = report.missingEnvironment.map {
+            MissingEnvironment(serverName: $0.route.serverName, clientID: $0.route.clientID.rawValue, keys: $0.keys)
+        }
         state = StateDTO(model)
     }
 }
@@ -608,13 +642,25 @@ struct RestartResultDTO: Encodable {
         let message: String
     }
 
+    struct Verification: Encodable {
+        let clientID: String
+        let serverIDs: [String]
+    }
+
     let restarted: [String]
     let notRunning: [String]
     let failures: [Failure]
+    /// Per restarted client, the servers that changed and are switched on. The
+    /// page health-checks them so a restart is not reported as a success while
+    /// the definition it loaded does not start.
+    let verify: [Verification]
     let state: StateDTO
 
     @MainActor
     init(_ report: AppModel.ClientRestartReport, model: AppModel) {
+        verify = report.changedServers.map {
+            Verification(clientID: $0.clientID.rawValue, serverIDs: $0.serverIDs)
+        }
         restarted = report.restarted.map(\.rawValue)
         notRunning = report.notRunning.map(\.rawValue)
         failures = report.failures.map { Failure(clientID: $0.clientID.rawValue, message: $0.message) }
@@ -989,8 +1035,11 @@ struct DoctorFindingDTO: Encodable {
     let detail: String
     let remediation: String
     let action: String?
+    /// The Gateway route a route-level action applies to, when there is one.
+    let routeID: String?
 
     nonisolated init(_ finding: DoctorFinding) {
+        routeID = finding.routeID
         code = finding.code
         severity = finding.severity.rawValue
         title = finding.title
@@ -1142,8 +1191,15 @@ struct GatewayEventDTO: Encodable {
     let succeeded: Bool?
     let errorCode: Int?
     let exitCode: Int32?
+    /// True on a `session.ended` whose server stopped while the client was
+    /// still attached.
+    let unexpected: Bool?
+    /// On `session.failed`: `secret-unavailable` or `launch-failed`.
+    let reason: String?
 
     nonisolated init(_ event: GatewayEvent) {
+        unexpected = event.unexpected
+        reason = event.reason
         eventID = event.eventID
         sessionID = event.sessionID
         timestamp = event.timestamp.timeIntervalSince1970
@@ -1164,8 +1220,12 @@ struct GatewayActivityDTO: Encodable {
     let completedCalls: Int
     let failedCalls: Int
     let averageDurationMilliseconds: Int?
+    let refusedCalls: Int
+    let serverFailures: Int
 
     nonisolated init(_ summary: GatewayActivitySummary) {
+        refusedCalls = summary.refusedCalls
+        serverFailures = summary.serverFailures
         events = summary.events.map(GatewayEventDTO.init)
         totalSessions = summary.totalSessions
         completedCalls = summary.completedCalls
@@ -1179,16 +1239,41 @@ struct ProfileApplyFailureDTO: Encodable {
     let message: String
 }
 
+struct ProfileAppliedChangeDTO: Codable {
+    let serverID: String
+    let enabled: Bool
+}
+
+struct ProfileRevertResultDTO: Encodable {
+    let clientID: String
+    let revertedCount: Int
+    let failures: [ProfileApplyFailureDTO]
+    let state: StateDTO
+
+    @MainActor
+    init(_ result: ProfileRevertResult, model: AppModel) {
+        clientID = result.clientID.rawValue
+        revertedCount = result.revertedCount
+        failures = result.failures.map {
+            ProfileApplyFailureDTO(serverName: $0.serverName, message: $0.message)
+        }
+        state = StateDTO(model)
+    }
+}
+
 struct ProfileApplyResultDTO: Encodable {
     let profileName: String
     let clientID: String
     let enabledCount: Int
     let disabledCount: Int
     let failures: [ProfileApplyFailureDTO]
+    /// The switches made, for `profiles.revertApply`.
+    let applied: [ProfileAppliedChangeDTO]
     let state: StateDTO
 
     @MainActor
     init(_ result: ProfileApplyResult, model: AppModel) {
+        applied = result.applied.map { ProfileAppliedChangeDTO(serverID: $0.serverID, enabled: $0.enabled) }
         profileName = result.profileName
         clientID = result.clientID.rawValue
         enabledCount = result.enabledCount

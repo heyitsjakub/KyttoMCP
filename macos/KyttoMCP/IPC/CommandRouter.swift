@@ -131,7 +131,7 @@ extension CommandRouter: WKScriptMessageHandlerWithReply {
 ///
 /// Failures are data, not exceptions. The web layer renders an error state; it
 /// never sees a rejected promise it has to guess the meaning of.
-private enum Envelope {
+enum Envelope {
     struct Success<Data: Encodable>: Encodable {
         let ok = true
         let data: Data
@@ -166,6 +166,9 @@ private enum Envelope {
         case is DecodingError: return "badPayload"
         case is CommandError: return "badArgument"
         case is AppModel.AppError: return "appState"
+        // Its own code: the page reloads and offers a retry for this one, and
+        // must not have to recognise it by the wording of the message.
+        case ConfigWriteError.changedOnDisk: return "changedOnDisk"
         case is ConfigWriteError: return "configWrite"
         case is BackupError: return "backup"
         case is ToggleError: return "toggle"

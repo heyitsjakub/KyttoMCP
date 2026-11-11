@@ -115,6 +115,39 @@ public enum ContractGuard {
         return result
     }
 
+    /// Whether a saved baseline predates schema and annotation capture.
+    ///
+    /// Early versions stored each tool's name and description only. Such a
+    /// baseline has no tool with either field, and comparing its missing
+    /// values against a current contract reports every tool twice for nothing
+    /// (roadmap §18). A baseline that holds either field for at least one tool
+    /// was taken by a version that captures them, so a missing value there is
+    /// what the server really sent.
+    public static func isLegacyBaseline(_ baseline: [ToolSummary]) -> Bool {
+        !baseline.isEmpty && baseline.allSatisfy { $0.inputSchemaJSON == nil && $0.annotations == nil }
+    }
+
+    /// A legacy baseline with the fields it never recorded taken from the
+    /// current contract, so comparison starts from here.
+    ///
+    /// Name and description stay the baseline's own: those were reviewed, and a
+    /// change to them is still reported. Tools the current contract no longer
+    /// has are kept as they are, so their removal is reported too.
+    public static func upgradingLegacyBaseline(_ baseline: [ToolSummary], with current: [ToolSummary]) -> [ToolSummary] {
+        guard isLegacyBaseline(baseline) else { return baseline }
+        let now = Dictionary(current.map { ($0.name, $0) }, uniquingKeysWith: { _, last in last })
+        return baseline.map { tool in
+            guard let match = now[tool.name] else { return tool }
+            return ToolSummary(
+                name: tool.name,
+                description: tool.description,
+                inputSchemaJSON: match.inputSchemaJSON,
+                annotations: match.annotations,
+                tokenCount: tool.tokenCount
+            )
+        }
+    }
+
     static let excerptLimit = 800
 
     /// Bounded, comparable excerpts of a before/after pair.

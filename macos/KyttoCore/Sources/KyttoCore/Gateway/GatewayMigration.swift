@@ -18,6 +18,35 @@ public struct GatewayMigrationResult: Sendable {
     public let route: GatewayRoute
     public let backupID: String?
     public let pathDisplay: String
+    /// Environment variables a rebuilt Direct definition could not be given,
+    /// because their stored values were gone. Empty for an ordinary restore.
+    public let missingEnvironmentKeys: [String]
+
+    public init(route: GatewayRoute, backupID: String?, pathDisplay: String, missingEnvironmentKeys: [String] = []) {
+        self.route = route
+        self.backupID = backupID
+        self.pathDisplay = pathDisplay
+        self.missingEnvironmentKeys = missingEnvironmentKeys
+    }
+}
+
+/// Something that stops a Gateway definition in a client's config from
+/// starting, found by reading the config and the route store only. Nothing
+/// here opens the credential store, so it is safe to compute on every reload.
+public struct GatewayRouteDiagnosis: Equatable, Sendable {
+    public enum Problem: Equatable, Sendable {
+        /// The config names a helper that is not there — Kytto was moved,
+        /// renamed or deleted. `repairable` when this copy's helper can take over.
+        case helperMissing(path: String, repairable: Bool)
+        /// The config points at a route Kytto has no record of.
+        case unknownRoute
+    }
+
+    public let serverID: String
+    public let serverName: String
+    public let clientID: ClientID
+    public let routeID: String
+    public let problem: Problem
 }
 
 public enum GatewayMigrationError: Error, LocalizedError, Equatable {
@@ -181,10 +210,33 @@ public struct GatewayMigrationService: Sendable {
 
     public func restore(routeID: String) throws -> GatewayMigrationResult {
         let route = try routes.route(id: routeID)
-        guard let source = try secrets.value(for: route.directDefinitionSecretID) else {
-            throw GatewayRouteError.missingSecret("original definition")
-        }
         let target = try target(clientID: route.clientID)
+        // The stored original is the faithful way back. When it is gone — a
+        // cleared or replaced keychain — the route still knows the command and
+        // arguments, so Direct mode is rebuilt from those instead of leaving a
+        // server that can be neither started nor edited. Values that are gone
+        // too are named, so the user knows what to enter again.
+        var missingKeys: [String] = []
+        let source: String
+        if let original = try? secrets.value(for: route.directDefinitionSecretID) {
+            source = original
+        } else {
+            var environment: [EnvEntry] = []
+            for reference in route.environment {
+                if let value = try? secrets.value(for: reference.secretID) {
+                    environment.append(EnvEntry(key: reference.key, value: value))
+                } else {
+                    missingKeys.append(reference.key)
+                }
+            }
+            source = try definition(
+                target: target,
+                serverName: route.serverName,
+                command: route.command,
+                arguments: route.arguments,
+                environment: environment
+            )
+        }
         let receipt = try writeReplacement(source, target: target, routeID: route.id, serverName: route.serverName)
         ledger.record(receipt.digest, for: target.url)
 
@@ -195,7 +247,237 @@ public struct GatewayMigrationService: Sendable {
         try? secrets.delete(for: route.directDefinitionSecretID)
         for reference in route.environment { try? secrets.delete(for: reference.secretID) }
 
-        return GatewayMigrationResult(route: route, backupID: receipt.backupID, pathDisplay: receipt.pathDisplay)
+        return GatewayMigrationResult(
+            route: route,
+            backupID: receipt.backupID,
+            pathDisplay: receipt.pathDisplay,
+            missingEnvironmentKeys: missingKeys.sorted()
+        )
+    }
+
+    // MARK: - Keeping routes working
+
+    /// What stops each Gateway definition from starting, config by config.
+    ///
+    /// A client only ever reports "server failed". The causes Kytto can see
+    /// without starting anything are the two here: the helper the config names
+    /// is gone (the app was moved or deleted), or the route record is.
+    public func diagnose() -> [GatewayRouteDiagnosis] {
+        guard let known = try? routes.all() else { return [] }
+        let byID = Dictionary(known.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let currentHelperUsable = FileManager.default.isExecutableFile(atPath: helperURL.path)
+            && !Self.isUnstable(helperURL)
+        var result: [GatewayRouteDiagnosis] = []
+
+        for descriptor in descriptors {
+            guard let source = descriptor.editableServerMap, descriptor.serverSchema.shape == .mcpServers else { continue }
+            let url = resolver.resolveServerMap(source.file, for: descriptor.id)
+            guard let text = try? String(contentsOf: url, encoding: .utf8),
+                  let entries = try? gatewayEntries(in: text, clientID: descriptor.id)
+            else { continue }
+
+            for entry in entries {
+                guard let route = byID[entry.routeID], route.clientID == descriptor.id else {
+                    result.append(GatewayRouteDiagnosis(
+                        serverID: Server.identity(for: entry.serverName),
+                        serverName: entry.serverName,
+                        clientID: descriptor.id,
+                        routeID: entry.routeID,
+                        problem: .unknownRoute
+                    ))
+                    continue
+                }
+                guard !FileManager.default.isExecutableFile(atPath: entry.command) else { continue }
+                result.append(GatewayRouteDiagnosis(
+                    serverID: route.serverID,
+                    serverName: entry.serverName,
+                    clientID: descriptor.id,
+                    routeID: route.id,
+                    problem: .helperMissing(path: entry.command, repairable: currentHelperUsable)
+                ))
+            }
+        }
+        return result
+    }
+
+    /// Points a route's definition at this copy of the helper.
+    ///
+    /// For an app that was moved after Gateway mode was turned on: the config
+    /// still names the old location. Only the command path changes; the route,
+    /// its credentials and its tool mask stay as they are.
+    public func repair(routeID: String) throws -> GatewayMigrationResult {
+        let route = try routes.route(id: routeID)
+        guard FileManager.default.isExecutableFile(atPath: helperURL.path) else {
+            throw GatewayMigrationError.helperUnavailable(helperURL.path)
+        }
+        if Self.isUnstable(helperURL) {
+            throw GatewayMigrationError.helperLocationUnstable(helperURL.deletingLastPathComponent().path)
+        }
+        let target = try target(clientID: route.clientID)
+        let replacement = try gatewayDefinition(target: target, serverName: route.serverName, routeID: route.id)
+        let receipt = try writeReplacement(replacement, target: target, routeID: route.id, serverName: route.serverName)
+        ledger.record(receipt.digest, for: target.url)
+        let updated = (try? routes.update(id: route.id, gatewayCommand: helperURL.path)) ?? route
+        return GatewayMigrationResult(route: updated, backupID: receipt.backupID, pathDisplay: receipt.pathDisplay)
+    }
+
+    /// Carries a rotated secret into every route that was holding the old one.
+    ///
+    /// A route keeps its own copy of each value, and the original definition it
+    /// would restore. Rotating in the configs alone would leave a Gateway server
+    /// running on the revoked token, and bring it back on Restore Direct.
+    /// - Returns: the routes that changed, whose clients need a restart.
+    @discardableResult
+    public func rotateEnvironmentValue(key: String, from oldValue: String, to newValue: String) -> [GatewayRoute] {
+        guard !oldValue.isEmpty, oldValue != newValue, let all = try? routes.all() else { return [] }
+        var changed: [GatewayRoute] = []
+        for route in all {
+            var touched = false
+            for reference in route.environment where reference.key == key {
+                guard (try? secrets.value(for: reference.secretID)) == oldValue,
+                      (try? secrets.store(newValue, for: reference.secretID)) != nil
+                else { continue }
+                touched = true
+            }
+            guard touched else { continue }
+            changed.append(route)
+            // Best effort: a definition that cannot be rewritten is left alone,
+            // and Restore Direct then brings back the old value as it always did.
+            guard let format = descriptors.first(where: { $0.id == route.clientID })?.editableServerMap?.format,
+                  let original = try? secrets.value(for: route.directDefinitionSecretID),
+                  let rewritten = Self.replacingEnvironmentValue(key, from: oldValue, to: newValue, in: original, format: format),
+                  rewritten != original
+            else { continue }
+            try? secrets.store(rewritten, for: route.directDefinitionSecretID)
+        }
+        return changed
+    }
+
+    /// The same definition text with one environment value replaced, or nil if
+    /// it does not parse. Only a value that equals `oldValue` is touched.
+    static func replacingEnvironmentValue(
+        _ key: String,
+        from oldValue: String,
+        to newValue: String,
+        in definition: String,
+        format: ConfigFormat
+    ) -> String? {
+        switch format {
+        case .json:
+            guard let document = try? JSONDocument.parse(definition) else { return nil }
+            let edits = (document.root["env"]?.members ?? [])
+                .filter { $0.key == key && $0.value.stringValue == oldValue }
+                .map { (span: $0.value.span, replacement: JSONText.string(newValue)) }
+            return edits.isEmpty ? definition : document.replacing(edits)
+        case .toml:
+            guard let document = try? TOMLDocument.parse(definition) else { return nil }
+            var spans: [TOMLSpan] = []
+            for table in document.tables {
+                if table.path.last == "env" {
+                    spans += table.pairs.filter { $0.key == [key] && $0.value.stringValue == oldValue }.map(\.value.span)
+                }
+                for pair in table.pairs where pair.key.first == "env" {
+                    if pair.key == ["env", key], pair.value.stringValue == oldValue { spans.append(pair.value.span) }
+                    spans += (pair.value.inlinePairs ?? [])
+                        .filter { $0.key == [key] && $0.value.stringValue == oldValue }
+                        .map(\.value.span)
+                }
+            }
+            return spans.isEmpty ? definition : document.replacing(spans.map { ($0, TOMLText.string(newValue)) })
+        }
+    }
+
+    private static func isUnstable(_ helper: URL) -> Bool {
+        helper.path.contains("/AppTranslocation/") || helper.path.hasPrefix("/Volumes/")
+    }
+
+    /// The helper definition for a server already in Gateway mode, rendered the
+    /// way `enable` renders it, at this copy's helper path.
+    private func gatewayDefinition(target: Target, serverName: String, routeID: String) throws -> String {
+        switch target.source.format {
+        case .json:
+            return try definition(
+                target: target, serverName: serverName,
+                command: helperURL.path, arguments: ["--route", routeID], environment: []
+            )
+        case .toml:
+            let document = try TOMLDocument.parse(target.sourceText)
+            guard let name = document.serverNames(under: target.source.serversKey)
+                .first(where: { Server.identity(for: $0) == Server.identity(for: serverName) }),
+                  let table = document.table(at: [target.source.serversKey, name])
+            else { throw GatewayMigrationError.definitionMissing }
+            // Settings that tell Codex how to treat the entry stay, as in `enable`.
+            let clientSide = table.pairs.filter { Self.codexClientKeys.contains($0.key.first ?? "") }
+            return ([TOMLBuilder.serverBlock(
+                name: name, under: target.source.serversKey,
+                command: helperURL.path, args: ["--route", routeID], url: nil, env: [], enabled: nil
+            )] + clientSide.map { document.slice($0.span) }).joined(separator: "\n")
+        }
+    }
+
+    /// A stdio definition rendered from the model, in the target file's format.
+    private func definition(
+        target: Target,
+        serverName: String,
+        command: String,
+        arguments: [String],
+        environment: [EnvEntry]
+    ) throws -> String {
+        switch target.source.format {
+        case .json:
+            let document = try JSONDocument.parse(target.sourceText)
+            guard let map = document.value(at: [target.source.serversKey]),
+                  let member = map.members?.first(where: {
+                      Server.identity(for: $0.key) == Server.identity(for: serverName)
+                  })
+            else { throw GatewayMigrationError.definitionMissing }
+            return ServerDraft(name: member.key, command: command, args: arguments, env: environment)
+                .definition(
+                    baseIndent: document.lineIndent(at: member.value.span.start),
+                    unit: IndentStyle.detect(in: document.sourceText).text
+                )
+        case .toml:
+            let document = try TOMLDocument.parse(target.sourceText)
+            let name = document.serverNames(under: target.source.serversKey)
+                .first(where: { Server.identity(for: $0) == Server.identity(for: serverName) }) ?? serverName
+            let clientSide = document.table(at: [target.source.serversKey, name])?
+                .pairs.filter { Self.codexClientKeys.contains($0.key.first ?? "") } ?? []
+            return ([TOMLBuilder.serverBlock(
+                name: name, under: target.source.serversKey,
+                command: command, args: arguments, url: nil, env: environment, enabled: nil
+            )] + clientSide.map { document.slice($0.span) }).joined(separator: "\n")
+        }
+    }
+
+    /// Every Gateway definition in a config: its server, route and the helper
+    /// path it names.
+    private func gatewayEntries(
+        in text: String,
+        clientID: ClientID
+    ) throws -> [(serverName: String, routeID: String, command: String)] {
+        guard let descriptor = descriptors.first(where: { $0.id == clientID }),
+              let source = descriptor.editableServerMap
+        else { throw AuthoringError.noSourceForClient(clientID) }
+
+        switch source.format {
+        case .json:
+            let document = try JSONDocument.parse(text)
+            return document.value(at: [source.serversKey])?.members?.compactMap { member in
+                guard let command = member.value["command"]?.stringValue,
+                      let id = routeID(command: command, arguments: member.value["args"]?.elements?.compactMap(\.stringValue))
+                else { return nil }
+                return (member.key, id, command)
+            } ?? []
+        case .toml:
+            let document = try TOMLDocument.parse(text)
+            return document.serverNames(under: source.serversKey).compactMap { name in
+                let table = document.table(at: [source.serversKey, name])
+                guard let command = table?.value("command")?.stringValue,
+                      let id = routeID(command: command, arguments: table?.value("args")?.elements?.compactMap(\.stringValue))
+                else { return nil }
+                return (name, id, command)
+            }
+        }
     }
 
     /// Refuses a backup that would revive a helper route after its credentials

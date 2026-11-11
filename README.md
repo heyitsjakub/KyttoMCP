@@ -5,7 +5,7 @@
 Free and **open source** under the MIT License — the full source of both the macOS
 and the Windows app lives in this repository. Read it, build it, or send a pull request.
 
-[![Version](https://img.shields.io/badge/beta-1.0.9.3-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
+[![Version](https://img.shields.io/badge/beta-1.0.9.4-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 [![Open source](https://img.shields.io/badge/open%20source-yes-brightgreen)](#source-code)
@@ -84,7 +84,7 @@ Save local profiles such as Coding, Research or Minimal. Preview exactly what a 
 Every write checks whether the file changed outside Kytto, makes a timestamped backup, and writes atomically. Browse those backups in the app and restore an earlier configuration — the version being replaced is backed up too.
 
 **Optional Gateway mode**
-For supported stdio servers, preview a local Gateway route, move the direct definition and credentials into native storage, and restore Direct mode with one click. Live Activity shows sessions, tool calls, latency and failures as metadata only — arguments, results and payloads stay out of the log.
+For supported stdio servers, preview a local Gateway route, move the direct definition and credentials into native storage, and restore Direct mode with one click. Live Activity shows sessions, tool calls, latency and failures as metadata only — arguments, results and payloads stay out of the log. Since 1.0.9.4 on macOS, a Gateway server that fails says why: MCP Doctor names a missing helper, a lost route, an unreadable secret or a server that keeps stopping, repairs the route when Kytto was moved, and can restore Direct mode for everything before you remove Kytto.
 
 ## Supported clients
 
@@ -103,7 +103,7 @@ Custom sources are read-only and are not an additional writable client. Want ano
 
 ## Install
 
-Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.3 for macOS ([v1.0.9.3](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.3)) and Beta 1.0.9.3 for Windows ([v1.0.9.3-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.3-windows)).
+Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.4 for macOS ([v1.0.9.4](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.4)) and Beta 1.0.9.3 for Windows ([v1.0.9.3-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.3-windows)). Windows 1.0.9.4 follows in the next few days.
 
 ### macOS
 
@@ -121,8 +121,8 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.9.3.dmg
-# c92bd99bc4a8ca01a0682e476662b9e93b6759b4c7babe4a48218fcae65d5aff
+shasum -a 256 KyttoMCP-1.0.9.4.dmg
+# 2e82d046706014df41ab1399442d30bb00f79cfa305db28a6668821d2a69adb8
 
 # Windows (PowerShell)
 Get-FileHash Kytto-Setup-win-x64-1.0.9.3.exe -Algorithm SHA256

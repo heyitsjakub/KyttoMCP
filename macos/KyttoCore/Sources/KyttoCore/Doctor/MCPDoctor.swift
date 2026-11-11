@@ -13,6 +13,10 @@ public enum DoctorAction: String, Codable, Sendable {
     case pinPackageVersion
     /// Ask osv.dev and the package registry about the package (§7.10).
     case checkPackageSafety
+    /// Point a Gateway definition at this copy of the helper (app was moved).
+    case repairGatewayRoute
+    /// Put the server's own definition back in place of the Gateway one.
+    case restoreDirectMode
 }
 
 public struct DoctorFinding: Codable, Equatable, Sendable {
@@ -22,6 +26,9 @@ public struct DoctorFinding: Codable, Equatable, Sendable {
     public let detail: String
     public let remediation: String
     public let action: DoctorAction?
+    /// The Gateway route a route-level action applies to. A server can be in
+    /// Gateway mode in several clients, so the server id alone does not say.
+    public let routeID: String?
 
     public init(
         code: String,
@@ -29,8 +36,10 @@ public struct DoctorFinding: Codable, Equatable, Sendable {
         title: String,
         detail: String,
         remediation: String,
-        action: DoctorAction? = nil
+        action: DoctorAction? = nil,
+        routeID: String? = nil
     ) {
+        self.routeID = routeID
         self.code = code
         self.severity = severity
         self.title = title
@@ -72,7 +81,8 @@ public enum MCPDoctor {
     public static func reports(
         for servers: [Server],
         clients: [ClientID],
-        packageSafety: [String: PackageSafetyReport] = [:]
+        packageSafety: [String: PackageSafetyReport] = [:],
+        gateway: [String: [DoctorFinding]] = [:]
     ) -> [DoctorServerReport] {
         let collisions = collisionFindings(servers: servers, clients: clients)
         return servers
@@ -80,6 +90,7 @@ public enum MCPDoctor {
                 let report = analyze(server)
                 let extra = PackageSafety.findings(for: server, report: packageSafety[server.id])
                     + (collisions[server.id] ?? [])
+                    + (gateway[server.id] ?? [])
                 guard !extra.isEmpty else { return report }
                 return DoctorServerReport(
                     serverID: report.serverID,

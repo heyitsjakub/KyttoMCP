@@ -11,6 +11,17 @@ public enum GatewayEventKind: String, Codable, Sendable {
     case toolCallStarted = "tool.call.started"
     case toolCallCompleted = "tool.call.completed"
     case sessionEnded = "session.ended"
+    /// Kytto answered a `tools/call` itself because the route hides that tool.
+    case toolCallRefused = "tool.call.refused"
+    /// The helper was started by a client but could not start the server.
+    case sessionFailed = "session.failed"
+}
+
+/// Why the helper could not start a session. A fixed vocabulary rather than
+/// the error text, which can name a path or a variable.
+public enum GatewayFailureReason: String, Codable, Sendable {
+    case secretUnavailable = "secret-unavailable"
+    case launchFailed = "launch-failed"
 }
 
 /// Privacy-safe metadata from one proxied MCP exchange.
@@ -31,6 +42,12 @@ public struct GatewayEvent: Codable, Equatable, Sendable {
     public let succeeded: Bool?
     public let errorCode: Int?
     public let exitCode: Int32?
+    /// On `session.ended`: true when the server stopped while its client was
+    /// still connected — a crash or an exit nobody asked for. Nil in journals
+    /// written before this was recorded.
+    public let unexpected: Bool?
+    /// On `session.failed`: a `GatewayFailureReason` raw value.
+    public let reason: String?
 
     public init(
         eventID: String = UUID().uuidString.lowercased(),
@@ -44,8 +61,12 @@ public struct GatewayEvent: Codable, Equatable, Sendable {
         durationMilliseconds: Int? = nil,
         succeeded: Bool? = nil,
         errorCode: Int? = nil,
-        exitCode: Int32? = nil
+        exitCode: Int32? = nil,
+        unexpected: Bool? = nil,
+        reason: String? = nil
     ) {
+        self.unexpected = unexpected
+        self.reason = reason
         self.eventID = eventID
         self.sessionID = sessionID
         self.timestamp = timestamp
@@ -195,7 +216,25 @@ public final class GatewayMessageObserver: @unchecked Sendable {
         }
     }
 
-    public func finish(exitCode: Int32) {
+    /// A call Kytto refused on a narrowed route. It never reached the server,
+    /// so there is no completion to wait for.
+    public func recordRefusal(toolName: String, requestID: String?) {
+        sink.record(event(kind: .toolCallRefused, toolName: toolName, requestID: requestID, succeeded: false))
+    }
+
+    /// The helper could not start the server at all.
+    public func fail(reason: GatewayFailureReason) {
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
+        }
+        finished = true
+        lock.unlock()
+        sink.record(event(kind: .sessionFailed, reason: reason.rawValue))
+    }
+
+    public func finish(exitCode: Int32, unexpected: Bool? = nil) {
         lock.lock()
         guard !finished else {
             lock.unlock()
@@ -204,7 +243,7 @@ public final class GatewayMessageObserver: @unchecked Sendable {
         finished = true
         pendingCalls.removeAll()
         lock.unlock()
-        sink.record(event(kind: .sessionEnded, exitCode: exitCode))
+        sink.record(event(kind: .sessionEnded, exitCode: exitCode, unexpected: unexpected))
     }
 
     private func consumeLines(from buffer: inout Data, direction: GatewayDirection) {
@@ -265,7 +304,9 @@ public final class GatewayMessageObserver: @unchecked Sendable {
         durationMilliseconds: Int? = nil,
         succeeded: Bool? = nil,
         errorCode: Int? = nil,
-        exitCode: Int32? = nil
+        exitCode: Int32? = nil,
+        unexpected: Bool? = nil,
+        reason: String? = nil
     ) -> GatewayEvent {
         GatewayEvent(
             sessionID: sessionID,
@@ -277,7 +318,9 @@ public final class GatewayMessageObserver: @unchecked Sendable {
             durationMilliseconds: durationMilliseconds,
             succeeded: succeeded,
             errorCode: errorCode,
-            exitCode: exitCode
+            exitCode: exitCode,
+            unexpected: unexpected,
+            reason: reason
         )
     }
 

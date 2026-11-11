@@ -53,7 +53,11 @@ public struct MetadataStore: Sendable {
             let baseline = entry.contractTools ?? entry.health.flatMap {
                 $0.status == .passed ? $0.tools : nil
             }
-            if let baseline {
+            if var baseline {
+                // A baseline from before schemas and annotations were recorded
+                // adopts them from this check instead of reporting each tool
+                // as changed (roadmap §18).
+                baseline = ContractGuard.upgradingLegacyBaseline(baseline, with: health.tools)
                 // Every check is measured against the contract the user last
                 // reviewed, so changes add up until they are acknowledged. Only
                 // `acknowledgeContract` moves the baseline (§7.10); a check that

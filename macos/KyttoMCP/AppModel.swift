@@ -55,6 +55,10 @@ final class AppModel {
     private let packageSafetyLookup = PackageSafetyLookup()
     /// Package checks the user asked for this session, by server id (§7.10).
     private var packageSafety: [String: PackageSafetyReport] = [:]
+    /// Doctor findings about Gateway routes, by server id. Worked out when the
+    /// configs are re-read and when the activity journal is, not on every
+    /// state reply: it reads client configs and the journal's tail.
+    private var gatewayFindings: [String: [DoctorFinding]] = [:]
     private struct CheckedProvenance: Sendable {
         let kind: MCPProvenanceKind
         let packageName: String
@@ -335,6 +339,7 @@ final class AppModel {
         let previousDismissed = dismissedRestartClients
         cached = output.result
         reconcileRestartState(using: output.result)
+        refreshGatewayFindings()
         let changed = previous != output.result
             || pendingRestarts != previousRestarts
             || dismissedRestartClients != previousDismissed
@@ -818,6 +823,9 @@ final class AppModel {
     }
 
     func rotateSecret(id: String, to newValue: String, storeInSecretStore: Bool) throws -> SecretsService.RotationResult {
+        // Read before the rotation replaces it: a Gateway route keeps its own
+        // copy of the value and is found by comparing against the old one.
+        let oldValue = secretsService.reveal(secretID: id, servers: current().servers)
         let result = try secretsService.rotate(
             secretID: id,
             to: newValue,
@@ -826,6 +834,12 @@ final class AppModel {
         )
         for clientID in Set(result.updated.map(\.clientID)) {
             pendingRestarts[clientID, default: 0] += 1
+        }
+        if let oldValue {
+            let routes = gatewayMigration.rotateEnvironmentValue(key: result.key, from: oldValue, to: newValue)
+            for clientID in Set(routes.map(\.clientID)) {
+                pendingRestarts[clientID, default: 0] += 1
+            }
         }
         reload()
         return result
@@ -1035,7 +1049,12 @@ final class AppModel {
 
     func doctorReports() -> [DoctorServerReport] {
         let result = current()
-        return MCPDoctor.reports(for: result.servers, clients: result.clients.map(\.id), packageSafety: packageSafety)
+        return MCPDoctor.reports(
+            for: result.servers,
+            clients: result.clients.map(\.id),
+            packageSafety: packageSafety,
+            gateway: gatewayFindings
+        )
     }
 
     func contractAlerts() -> [ContractAlert] {
@@ -1185,7 +1204,9 @@ final class AppModel {
     }
 
     func activity(limit: Int = 500) -> GatewayActivitySummary {
-        gatewayActivity.summary(limit: limit)
+        let summary = gatewayActivity.summary(limit: limit)
+        refreshGatewayFindings(events: summary.events)
+        return summary
     }
 
     // MARK: - Profiles
@@ -1237,6 +1258,56 @@ final class AppModel {
         pendingRestarts[result.route.clientID, default: 0] += 1
         reload()
         return result
+    }
+
+    /// Points a route at this copy of the helper, after Kytto was moved.
+    func repairGatewayRoute(routeID: String) throws -> GatewayMigrationResult {
+        let result = try gatewayMigration.repair(routeID: routeID)
+        pendingRestarts[result.route.clientID, default: 0] += 1
+        reload()
+        return result
+    }
+
+    /// Restores Direct mode for every route — what to do before removing
+    /// Kytto, since the helper the configs point at goes with the app.
+    ///
+    /// Routes are independent, so one that cannot be restored (its config
+    /// changed on disk, say) does not stop the others; it is reported.
+    func restoreAllDirect() -> GatewayRestoreAllReport {
+        var report = GatewayRestoreAllReport()
+        for route in routes() {
+            do {
+                let result = try gatewayMigration.restore(routeID: route.id)
+                pendingRestarts[route.clientID, default: 0] += 1
+                report.restored.append(route)
+                if !result.missingEnvironmentKeys.isEmpty {
+                    report.missingEnvironment.append((route, result.missingEnvironmentKeys))
+                }
+            } catch {
+                report.failures.append((route, error.localizedDescription))
+            }
+        }
+        reload()
+        return report
+    }
+
+    /// Re-derives the Gateway findings Doctor shows. Reads configs and, unless
+    /// the caller already has them, the journal's tail; never the keychain.
+    private func refreshGatewayFindings(events: [GatewayEvent]? = nil) {
+        let known = routes()
+        let diagnoses = gatewayMigration.diagnose()
+        // Without a route or a Gateway definition there is nothing to explain,
+        // and no reason to read the journal.
+        guard !known.isEmpty || !diagnoses.isEmpty else {
+            gatewayFindings = [:]
+            return
+        }
+        // The journal outlives a route. Once a server is back in Direct mode,
+        // what its Gateway sessions did is history, not something to act on.
+        let live = (events ?? gatewayActivity.summary().events).filter { event in
+            known.contains { $0.serverID == event.serverID && $0.clientID.rawValue == event.clientID }
+        }
+        gatewayFindings = GatewayDoctor.findings(diagnoses: diagnoses, events: live, routes: known)
     }
 
     /// Narrows what one route exposes to its client (§7.11).
@@ -1360,6 +1431,7 @@ final class AppModel {
         var enabled = 0
         var disabled = 0
         var failures: [ProfileApplyFailure] = []
+        var applied: [ProfileAppliedChange] = []
 
         for missingID in desired.subtracting(servers.map(\.id)).sorted() {
             failures.append(ProfileApplyFailure(
@@ -1375,6 +1447,7 @@ final class AppModel {
                 try requireDirect(serverID: change.server.id, clientID: clientID)
                 let result = try toggles.setEnabled(change.enabled, server: change.server, in: clientID)
                 if change.enabled { enabled += 1 } else { disabled += 1 }
+                applied.append(ProfileAppliedChange(serverID: change.server.id, enabled: change.enabled))
                 if result.requiresRestart {
                     pendingRestarts[clientID, default: 0] += 1
                 }
@@ -1392,8 +1465,46 @@ final class AppModel {
             clientID: clientID,
             enabledCount: enabled,
             disabledCount: disabled,
-            failures: failures
+            failures: failures,
+            applied: applied
         )
+    }
+
+    /// Puts back the switches a profile apply made, newest first.
+    ///
+    /// A profile is applied one server at a time, so a failure part-way leaves
+    /// the client between two profiles. This is the way back to where it
+    /// started: each switch is reversed through the same guarded write, and a
+    /// server that was removed to switch it off comes back byte for byte from
+    /// the park store. A switch that has since been changed again is left.
+    func revertProfileApply(_ changes: [ProfileAppliedChange], in clientID: ClientID) -> ProfileRevertResult {
+        var reverted = 0
+        var failures: [ProfileApplyFailure] = []
+        for change in changes.reversed() {
+            guard let server = current().servers.first(where: { $0.id == change.serverID }) else {
+                failures.append(ProfileApplyFailure(
+                    serverName: change.serverID,
+                    message: "This server is no longer present in any client."
+                ))
+                continue
+            }
+            // Only undo what the apply did: if it is no longer in the state the
+            // apply left it in, someone changed it since and it is theirs.
+            guard (server.enabledIn[clientID] == .enabled) == change.enabled else { continue }
+            do {
+                try requireDirect(serverID: server.id, clientID: clientID)
+                let result = try toggles.setEnabled(!change.enabled, server: server, in: clientID)
+                reverted += 1
+                if result.requiresRestart { pendingRestarts[clientID, default: 0] += 1 }
+                reload()
+            } catch {
+                failures.append(ProfileApplyFailure(
+                    serverName: server.name,
+                    message: (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+                ))
+            }
+        }
+        return ProfileRevertResult(clientID: clientID, revertedCount: reverted, failures: failures)
     }
 
     // MARK: - Writing
@@ -1623,6 +1734,33 @@ final class AppModel {
         var restarted: [ClientID] = []
         var notRunning: [ClientID] = []
         var failures: [(clientID: ClientID, message: String)] = []
+        /// For each client that was restarted: the servers whose definition
+        /// or state had changed, and are on. The page checks these, so a
+        /// restart that loaded a broken definition is not reported as done.
+        var changedServers: [(clientID: ClientID, serverIDs: [String])] = []
+    }
+
+    /// The servers a client's pending restart is about, and that it will now
+    /// try to start: changed since the last acknowledged state, switched on,
+    /// and of a transport a health check can run.
+    private func serversAwaitingRestart(in clientID: ClientID) -> [String] {
+        let result = current()
+        let now = restartSnapshots(from: result)[clientID, default: [:]]
+        let baseline = restartBaselines[clientID, default: [:]]
+        let routes = routes()
+        var ids: Set<String> = []
+        for key in Set(now.keys).union(baseline.keys) where now[key] != baseline[key] {
+            if key.hasPrefix("__gateway.") {
+                let routeID = String(key.dropFirst("__gateway.".count))
+                if let route = routes.first(where: { $0.id == routeID }) { ids.insert(route.serverID) }
+            } else {
+                ids.insert(key)
+            }
+        }
+        return result.servers
+            .filter { ids.contains($0.id) && $0.enabledIn[clientID] == .enabled && $0.transport != .sse }
+            .map(\.id)
+            .sorted()
     }
 
     /// Quits and reopens each client's app, one after another, and clears a
@@ -1637,9 +1775,13 @@ final class AppModel {
                 report.failures.append((id, "Kytto cannot restart this client for you. Restart it yourself, then choose I restarted."))
                 continue
             }
+            // Before the acknowledgement below resets what "changed" means.
+            let changed = serversAwaitingRestart(in: id)
             do {
                 switch try await ClientRestarter.restart(descriptor) {
-                case .restarted: report.restarted.append(id)
+                case .restarted:
+                    report.restarted.append(id)
+                    if !changed.isEmpty { report.changedServers.append((id, changed)) }
                 case .notRunning: report.notRunning.append(id)
                 }
                 acknowledgeRestart(clientID: id)
@@ -1800,6 +1942,13 @@ struct DoctorArgumentChange: Sendable {
     let replacement: String
 }
 
+struct GatewayRestoreAllReport {
+    var restored: [GatewayRoute] = []
+    var failures: [(route: GatewayRoute, message: String)] = []
+    /// Routes whose Direct definition was rebuilt without some values.
+    var missingEnvironment: [(route: GatewayRoute, keys: [String])] = []
+}
+
 struct ProfileApplyFailure: Sendable {
     let serverName: String
     let message: String
@@ -1810,6 +1959,20 @@ struct ProfileApplyResult: Sendable {
     let clientID: ClientID
     let enabledCount: Int
     let disabledCount: Int
+    let failures: [ProfileApplyFailure]
+    /// The switches that were actually made, in order, so they can be undone.
+    let applied: [ProfileAppliedChange]
+}
+
+/// One switch a profile apply made: the server and the state it was put in.
+struct ProfileAppliedChange: Sendable {
+    let serverID: String
+    let enabled: Bool
+}
+
+struct ProfileRevertResult: Sendable {
+    let clientID: ClientID
+    let revertedCount: Int
     let failures: [ProfileApplyFailure]
 }
 

@@ -21,7 +21,8 @@ In rough order of value. Each links to its section below.
    or hook ([claude-code#10447](https://github.com/anthropics/claude-code/issues/10447)).
 5. **Import from MCP Router**, which reportedly ended support on 2026-09-18
    (claim from a competitor's site; verify first).
-6. Later: Linux ([#2](https://github.com/heyitsjakub/KyttoMCP/issues/2)),
+6. **Contract Guard: separate compatibility and security labels** (§18).
+7. Later: Linux ([#2](https://github.com/heyitsjakub/KyttoMCP/issues/2)),
    Firewall rules (§5), cost limits (§6), Focused Inspector (§10),
    organization-managed inventory (§13).
 
@@ -262,3 +263,30 @@ that changes by model; Gateway request correlation from Live Activity; the same
 
 Smaller follow-ups from the 2026-10-24 review are tracked outside this
 document. The section number is kept so references stay stable.
+
+## 18. Contract Guard: baselines and labels
+
+**Done:** a baseline saved before schemas and annotations were recorded no
+longer reports every tool as changed; it adopts the missing fields from the
+next check (see `CHANGELOG.md`). Check that the Windows port has the same fix.
+
+**Still open:** every input schema change is reported as Breaking. That label
+speaks about compatibility, while the reason to look is often security (a new
+optional field is compatible but can still ask an agent for local data).
+Consider separate compatibility and security labels.
+
+## 19. Failure handling — what is still thin
+
+The reliability pass (see `CHANGELOG.md`) covered a moved app, lost route
+material, a rotated secret, a server that stops mid-session, a restart into a
+broken definition and a partly applied profile. Known remainders:
+
+- **Gateway findings need the journal.** A server that fails only inside a
+  client that does not go through Gateway mode is still invisible to Kytto.
+- **Restart now checks from outside.** Kytto starts the changed servers itself;
+  it cannot see whether the client connected to them. Client log parsing would
+  be the only way, and is deliberately not done.
+- **Undo for a profile is per switch**, not a file restore, so a config edited
+  by something else in between is refused by the digest guard like any write.
+- **Retry after "changed on disk"** is offered for a switch in the matrix. Other
+  writes offer Refresh only.

@@ -98,4 +98,80 @@ struct ContractFieldDiffTests {
         let changedShort = "{\"\(longKey)\":0,\"short\":2}"
         #expect(try #require(diff(unchangedLong, changedShort)?.details).map(\.path) == ["inputSchema/short"])
     }
+
+    // MARK: - Baselines saved before schemas were recorded (roadmap §18)
+
+    private func health(_ tools: [ToolSummary], at seconds: TimeInterval) -> HealthResult {
+        HealthResult(
+            status: .passed,
+            checkedAt: Date(timeIntervalSince1970: seconds),
+            toolCount: tools.count,
+            tools: tools,
+            message: nil,
+            stderr: "",
+            durationSeconds: 0.1,
+            serverName: "s",
+            serverVersion: "1"
+        )
+    }
+
+    @Test func aLegacyBaselineReportsOnlyRealChanges() throws {
+        let home = try FakeHome()
+        defer { home.cleanUp() }
+        let store = MetadataStore(paths: KyttoPaths(home: home.root))
+        let schema = #"{"type":"object","properties":{"path":{"type":"string"}}}"#
+        let hints = ToolAnnotations(readOnlyHint: true, destructiveHint: nil, idempotentHint: nil, openWorldHint: nil)
+
+        try store.record(
+            health: health([ToolSummary(name: "read", description: "Reads"), ToolSummary(name: "gone", description: "x")], at: 1),
+            tokenWeight: nil, for: "xcode"
+        )
+        try store.record(
+            health: health([
+                ToolSummary(name: "read", description: "Reads", inputSchemaJSON: schema, annotations: hints),
+                ToolSummary(name: "new", description: "New", inputSchemaJSON: schema),
+            ], at: 2),
+            tokenWeight: nil, for: "xcode"
+        )
+
+        let entry = try #require(store.metadata(for: "xcode"))
+        #expect(entry.contractChanges?.map(\.kind) == [.toolRemoved, .toolAdded])
+        // The baseline now holds what it was missing, so the next change shows.
+        #expect(entry.contractTools?.first { $0.name == "read" }?.inputSchemaJSON == schema)
+
+        try store.record(
+            health: health([
+                ToolSummary(name: "read", description: "Reads", inputSchemaJSON: #"{"type":"object"}"#, annotations: nil),
+                ToolSummary(name: "new", description: "New", inputSchemaJSON: schema),
+            ], at: 3),
+            tokenWeight: nil, for: "xcode"
+        )
+        let kinds = try #require(store.metadata(for: "xcode")?.contractChanges).filter { $0.toolName == "read" }.map(\.kind)
+        #expect(kinds == [.inputSchemaChanged, .annotationsChanged])
+    }
+
+    @Test func aFullBaselineStillReportsDroppedOrGainedFields() {
+        let hints = ToolAnnotations(readOnlyHint: true, destructiveHint: nil, idempotentHint: nil, openWorldHint: nil)
+        let full = [
+            ToolSummary(name: "a", description: nil, inputSchemaJSON: "{}", annotations: hints),
+            ToolSummary(name: "b", description: nil, inputSchemaJSON: "{}"),
+        ]
+        #expect(ContractGuard.isLegacyBaseline(full) == false)
+        #expect(ContractGuard.upgradingLegacyBaseline(full, with: []) == full)
+        let now = [
+            ToolSummary(name: "a", description: nil),
+            ToolSummary(name: "b", description: nil, inputSchemaJSON: "{}", annotations: hints),
+        ]
+        let kinds = ContractGuard.changes(from: full, to: now).map { "\($0.toolName):\($0.kind.rawValue)" }
+        #expect(kinds == ["a:inputSchemaChanged", "a:annotationsChanged", "b:annotationsChanged"])
+    }
+
+    @Test func aLegacyBaselineKeepsItsReviewedDescription() {
+        let upgraded = ContractGuard.upgradingLegacyBaseline(
+            [ToolSummary(name: "read", description: "Reads a file")],
+            with: [ToolSummary(name: "read", description: "Reads a file and sends it", inputSchemaJSON: "{}")]
+        )
+        #expect(upgraded.first?.description == "Reads a file")
+        #expect(upgraded.first?.inputSchemaJSON == "{}")
+    }
 }

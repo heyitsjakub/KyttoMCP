@@ -127,6 +127,12 @@ enum CommandRegistry {
             GatewayMigrationResultDTO(try model.restoreDirect(routeID: payload.routeID), model: model)
         }
 
+        router.register("gateway.repair") { (payload: GatewayRoutePayload) -> GatewayMigrationResultDTO in
+            GatewayMigrationResultDTO(try model.repairGatewayRoute(routeID: payload.routeID), model: model)
+        }
+
+        router.register("gateway.restoreAll") { GatewayRestoreAllDTO(model.restoreAllDirect(), model: model) }
+
         router.register("gateway.setExposedTools") { (payload: ExposedToolsPayload) -> StateDTO in
             try model.setExposedTools(routeID: payload.routeID, toolNames: payload.toolNames)
             return StateDTO(model)
@@ -205,6 +211,14 @@ enum CommandRegistry {
                 throw CommandError.badArgument("Unknown client \(payload.clientID).")
             }
             return ProfileApplyResultDTO(try model.applyProfile(id: payload.profileID, to: clientID), model: model)
+        }
+
+        router.register("profiles.revertApply") { (payload: RevertProfileApplyPayload) -> ProfileRevertResultDTO in
+            guard let clientID = ClientID(rawValue: payload.clientID) else {
+                throw CommandError.badArgument("Unknown client \(payload.clientID).")
+            }
+            let changes = payload.changes.map { ProfileAppliedChange(serverID: $0.serverID, enabled: $0.enabled) }
+            return ProfileRevertResultDTO(model.revertProfileApply(changes, in: clientID), model: model)
         }
 
         // A platform-neutral intent. The macOS shell owns the pasteboard; a
@@ -561,7 +575,7 @@ enum CommandRegistry {
             build: info?["CFBundleVersion"] as? String ?? "0",
             // The UI enables features by asking for a capability, never by
             // guessing from the platform (§3.2). M4 adds `secrets`, M5 `health`.
-            capabilities: ["config.read", "config.write", "backups", "authoring", "catalog", "health", "health.http", "health.oauth", "portable-setup", "provenance", "package-safety", "secrets", "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking", "doctor", "activity", "contract-guard", "context-optimizer", "drift", "updates", "library", "agent-import", "skills", "client-restart"],
+            capabilities: ["config.read", "config.write", "backups", "authoring", "catalog", "health", "health.http", "health.oauth", "portable-setup", "provenance", "package-safety", "secrets", "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking", "gateway.repair", "doctor", "activity", "contract-guard", "context-optimizer", "drift", "updates", "library", "agent-import", "skills", "client-restart"],
             platformDisplayName: "macOS",
             secretStoreDisplayName: "Keychain"
         )
@@ -632,6 +646,11 @@ struct EnableGatewayPayload: Decodable {
     let serverID: String
     let clientID: String
     let routeID: String
+}
+
+struct RevertProfileApplyPayload: Decodable {
+    let clientID: String
+    let changes: [ProfileAppliedChangeDTO]
 }
 
 struct GatewayRoutePayload: Decodable {

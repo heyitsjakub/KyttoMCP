@@ -56,9 +56,11 @@ private func relay(
 ) {
     Thread.detachNewThread {
         defer {
+            // First, before the server's input is closed: a server that exits
+            // the moment it sees EOF must already count as let go.
+            afterEOF?()
             if closeDestinationAtEOF { destination.close() }
             finished?.signal()
-            afterEOF?()
         }
         do {
             while let data = try source.read(upToCount: 64 * 1024), !data.isEmpty {
@@ -88,6 +90,8 @@ private func relayMessages(
     Thread.detachNewThread {
         var framer = GatewayLineFramer()
         defer {
+            // First, before the server's input is closed (see `relay`).
+            afterEOF?()
             // A trailing partial message still belongs to the other side, and
             // still goes through the filter: servers that read line by line
             // act on a final line without its newline too.
@@ -96,7 +100,6 @@ private func relayMessages(
             }
             if closeDestinationAtEOF { destination.close() }
             finished?.signal()
-            afterEOF?()
         }
         do {
             while let data = try source.read(upToCount: 64 * 1024), !data.isEmpty {
@@ -114,6 +117,29 @@ private func relayMessages(
     }
 }
 
+/// Whether the client has let go — closed its end or signalled the helper.
+/// A server that stops before that did so on its own.
+private final class ClientPresence: @unchecked Sendable {
+    private let lock = NSLock()
+    private var gone = false
+
+    func markGone() {
+        lock.lock()
+        gone = true
+        lock.unlock()
+    }
+
+    var isGone: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return gone
+    }
+}
+
+/// Set once the route is known, so a failure after that point can still be
+/// written to the journal: the client only shows "server failed".
+private var startingObserver: GatewayMessageObserver?
+
 do {
     let invocation = try GatewayInvocation.parse(Array(CommandLine.arguments.dropFirst()))
     let command: String
@@ -127,10 +153,24 @@ do {
     if let routeID = invocation.routeID {
         let paths = KyttoPaths(home: FileManager.default.homeDirectoryForCurrentUser)
         let routeStore = invocation.routesURL.map(GatewayRouteStore.init(url:)) ?? GatewayRouteStore(paths: paths)
-        let launch = try routeStore.resolve(
-            id: routeID,
-            secrets: KeychainSecretStore(service: "app.kytto.gateway")
+        let known = try routeStore.route(id: routeID)
+        let journal = invocation.eventLogURL ?? paths.gatewayEvents
+        startingObserver = GatewayMessageObserver(
+            serverID: known.serverID,
+            clientID: known.clientID.rawValue,
+            sink: (try? JSONLinesGatewayEventSink(url: journal)) ?? NullGatewayEventSink()
         )
+        let launch: GatewayLaunch
+        do {
+            launch = try routeStore.resolve(
+                id: routeID,
+                secrets: KeychainSecretStore(service: "app.kytto.gateway")
+            )
+        } catch {
+            startingObserver?.fail(reason: .secretUnavailable)
+            startingObserver = nil
+            throw error
+        }
         command = launch.route.command
         arguments = launch.route.arguments
         extraEnvironment = launch.environment
@@ -158,6 +198,8 @@ do {
         clientID: clientID,
         sink: sink
     )
+    // From here the session's own observer reports a failed launch.
+    startingObserver = observer
 
     let shell = ShellEnvironment.current
     let executable = try ManagedExecutable.resolve(command, path: shell.path)
@@ -167,7 +209,9 @@ do {
         arguments: arguments,
         environment: shell.environment(adding: extraEnvironment)
     )
+    startingObserver = nil
     observer.start()
+    let client = ClientPresence()
 
     let terminationQueue = DispatchQueue(label: "app.kytto.gateway.signals")
     /// SIGTERM to the upstream's group, then SIGKILL for anything that ignored it.
@@ -184,6 +228,7 @@ do {
         signal(watchedSignal, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: watchedSignal, queue: terminationQueue)
         source.setEventHandler {
+            client.markGone()
             shutDownUpstream(0)
         }
         source.resume()
@@ -192,7 +237,10 @@ do {
     // The client closing its end (a crash, a force quit) is the only notice the
     // helper gets. The upstream's stdin is closed with it; a server with live
     // handles that does not exit on that gets a grace period, then the signals.
-    let clientGone: @Sendable () -> Void = { shutDownUpstream(5) }
+    let clientGone: @Sendable () -> Void = {
+        client.markGone()
+        shutDownUpstream(5)
+    }
 
     let outputFinished = DispatchSemaphore(value: 0)
     let errorFinished = DispatchSemaphore(value: 0)
@@ -214,6 +262,11 @@ do {
                 case .forward:
                     return line
                 case .refuse(let response):
+                    // Journalled so a refusal is visible in Live Activity:
+                    // without it a blocked call looks like nothing happened.
+                    for call in filter.hiddenCalls(in: line) {
+                        observer.recordRefusal(toolName: call.toolName, requestID: call.requestID)
+                    }
                     toClient.writeLine(response)
                     return nil
                 }
@@ -254,14 +307,18 @@ do {
     )
 
     let exitCode = process.waitUntilExit()
+    // Read before anything else can close the client's end: a server that is
+    // gone while its client is still attached stopped on its own.
+    let stoppedOnItsOwn = !client.isGone
     // Whatever the upstream started outlives it unless its group is told too.
     process.terminateGroup()
     _ = outputFinished.wait(timeout: .now() + 1)
     _ = errorFinished.wait(timeout: .now() + 1)
-    observer.finish(exitCode: exitCode)
+    observer.finish(exitCode: exitCode, unexpected: stoppedOnItsOwn)
     for source in signalSources { source.cancel() }
     exit(exitCode)
 } catch {
+    startingObserver?.fail(reason: .launchFailed)
     let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
     FileHandle.standardError.write(Data("Kytto gateway: \(message)\n\n\(usage)\n".utf8))
     exit(64)

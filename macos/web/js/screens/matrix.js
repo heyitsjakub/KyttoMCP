@@ -41,7 +41,7 @@ import {
 import { renderServerForm } from './serverForm.js';
 import { renderToolMask, renderToolSwitch } from './toolMask.js';
 import { renderSidebar, sidebarResizeHandle } from './sidebar.js';
-import { renderDoctor, renderDoctorFix } from './doctor.js';
+import { renderDoctor, renderDoctorFix, renderGatewayRestoreAll } from './doctor.js';
 import { renderActivity } from './activity.js';
 import { renderLibrary } from './library.js';
 import { renderSkills } from './skills.js';
@@ -343,6 +343,8 @@ function sheetBody(state) {
       return renderGatewayPreview(state);
     case 'gatewayRestore':
       return renderGatewayRestore(state);
+    case 'gatewayRestoreAll':
+      return renderGatewayRestoreAll(state);
     case 'toolMask':
       return renderToolMask(state);
     case 'toolSwitch':
@@ -759,14 +761,19 @@ function notice(current, leaving = false) {
   const fresh = appeared('notice', `${current.kind}:${current.message}`);
   const bar = el('div', `notice ${current.kind}${fresh && !leaving ? ' is-entering' : ''}${leaving ? ' is-leaving' : ''}`);
   bar.append(el('span', 'notice-message', current.message));
-  if (current.action) {
-    const action = el('button', 'button subtle', current.action.label);
-    action.dataset.action = current.action.action;
-    action.dataset.serverId = current.action.serverId;
-    action.dataset.clientId = current.action.clientId;
-    action.dataset.previousState = current.action.previousState;
-    if (current.action.backupId) action.dataset.backupId = current.action.backupId;
-    if (current.action.disabledTools) action.dataset.disabledTools = current.action.disabledTools;
+  // At most two: the way forward and the way back. More would be a menu.
+  for (const spec of [current.action, current.secondaryAction]) {
+    if (!spec) continue;
+    const action = el('button', 'button subtle', spec.label);
+    action.dataset.action = spec.action;
+    action.dataset.serverId = spec.serverId;
+    action.dataset.clientId = spec.clientId;
+    action.dataset.previousState = spec.previousState;
+    if (spec.backupId) action.dataset.backupId = spec.backupId;
+    if (spec.disabledTools) action.dataset.disabledTools = spec.disabledTools;
+    if (spec.enable) action.dataset.enable = spec.enable;
+    if (spec.profileId) action.dataset.profileId = spec.profileId;
+    if (spec.changes) action.dataset.changes = spec.changes;
     bar.append(action);
   }
   if (current.kind === 'error') bar.append(bugReportLink());

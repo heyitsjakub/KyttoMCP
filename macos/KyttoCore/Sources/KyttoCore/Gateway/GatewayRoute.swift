@@ -69,6 +69,23 @@ public struct GatewayRoute: Codable, Equatable, Identifiable, Sendable {
         self.exposedTools = exposedTools.map { Array(Set($0)).sorted() }
     }
 
+    /// The same route, started through a helper at another path.
+    public func launched(by gatewayCommand: String) -> GatewayRoute {
+        GatewayRoute(
+            id: id,
+            serverID: serverID,
+            serverName: serverName,
+            clientID: clientID,
+            gatewayCommand: gatewayCommand,
+            command: command,
+            arguments: arguments,
+            environment: environment,
+            directDefinitionSecretID: directDefinitionSecretID,
+            createdAt: createdAt,
+            exposedTools: exposedTools
+        )
+    }
+
     /// The same route, exposing a different set of tools. Nil clears masking.
     public func exposing(_ tools: [String]?) -> GatewayRoute {
         GatewayRoute(
@@ -183,6 +200,17 @@ public struct GatewayRouteStore: Sendable {
             throw GatewayRouteError.unknownRoute(id)
         }
         let updated = routes[index].exposing(exposedTools)
+        routes[index] = updated
+        try save(routes)
+        return updated
+    }
+
+    public func update(id: String, gatewayCommand: String) throws -> GatewayRoute {
+        var routes = try all()
+        guard let index = routes.firstIndex(where: { $0.id == id }) else {
+            throw GatewayRouteError.unknownRoute(id)
+        }
+        let updated = routes[index].launched(by: gatewayCommand)
         routes[index] = updated
         try save(routes)
         return updated

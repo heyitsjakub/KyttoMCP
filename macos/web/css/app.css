@@ -4035,6 +4035,9 @@ body[data-stubbed='true'] .statusbar::after {
   flex: 1;
 }
 
+.doctor-gateway { margin-top: 12px; }
+.doctor-gateway > p { margin: 0; padding: 12px 13px; }
+
 .doctor-finding {
   padding: 12px 13px;
   border-left: 3px solid var(--hairline);
@@ -4072,7 +4075,7 @@ body[data-stubbed='true'] .statusbar::after {
 
 .activity-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin-bottom: 12px;
 }
 

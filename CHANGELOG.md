@@ -9,6 +9,42 @@ without a backup.
 
 ## [Unreleased]
 
+## [1.0.9.4] — 2026-11-11
+
+macOS only. A release about what happens when something Kytto depends on fails:
+a config changes underneath it, a client restarts into a broken definition, a
+profile applies only in part, or the pieces Gateway mode rests on go missing.
+Each of those now says what happened and offers a way back. The Windows build of
+1.0.9.4 follows in the next few days; until then Windows stays on 1.0.9.3.
+
+**Download**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.9.4.dmg` | 6.2 MB | `2e82d046706014df41ab1399442d30bb00f79cfa305db28a6668821d2a69adb8` |
+| Windows x64 | Coming in the next few days | | |
+
+The macOS build is ad-hoc signed rather than notarized. Verify the SHA-256
+checksum before bypassing Gatekeeper.
+
+### Added (macOS)
+
+- **Gateway mode explains a failed server.** A client shows only "server failed" when Kytto's helper cannot start a server. MCP Doctor now says why: the helper is missing because Kytto was moved or replaced, the route no longer exists, a stored secret could not be read, or the server keeps stopping on its own.
+- **Repair route.** When Kytto has been moved after Gateway mode was turned on, Doctor offers to point the definition at the current copy. Only the helper path changes, with the usual backup.
+- **Restore Direct mode for all**, in MCP Doctor. Do this before removing Kytto: the helper the configs point at goes with the app, and those servers would stop starting.
+- **Live Activity shows refused calls and server failures.** A call Kytto refused because the route hides that tool is listed by tool name. A server that stopped while its client was still connected, and one that never started, are marked and counted.
+- **Restart now checks what it restarted.** After a client reopens, Kytto health-checks the servers that changed in it and adds the result to the notice, so a restart into a definition that does not start is no longer reported as done.
+- **Undo and Try again for profiles.** A profile that applied only in part says which servers were skipped and why, and offers to finish it or to put back the changes it made. A fully applied profile can be undone the same way.
+
+### Fixed (macOS)
+
+- Contract Guard no longer reports every tool as changed when the saved contract comes from an earlier Kytto version that did not record input schemas and annotations. It fills them in from the current check and reports only real changes. One server showed 67 changes where 5 were real.
+- Rotating a secret now also updates Gateway routes that hold the old value, and the definition Restore Direct puts back. Before, a server in Gateway mode kept running on the old token, and restoring Direct mode brought it back.
+- Restore Direct mode no longer fails when the stored original definition is gone from the keychain. Kytto rebuilds the definition from the route and names any value it could not recover, instead of leaving a server that can be neither started nor edited.
+- "Changed on disk" is recognised by an error code instead of the wording of the message. The notice has a Refresh button, and a refused switch offers Try again against the reloaded file.
+- Live Activity no longer goes blank right after the activity journal reaches 5 MB and starts a new file.
+- A server that exits the moment its client disconnects is no longer at risk of being recorded as having stopped on its own.
+
 ## [1.0.9.3] — 2026-11-07
 
 Restart now: Kytto can quit and reopen the apps that only read their MCP

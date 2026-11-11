@@ -26,7 +26,16 @@ user. The preview records:
 - session start and end,
 - route, client and session identifiers,
 - `tools/call` name and JSON-RPC request id,
-- completion latency, success and JSON-RPC error code.
+- completion latency, success and JSON-RPC error code,
+- a `tools/call` the helper refused because the route hides that tool
+  (`tool.call.refused`, by name and request id),
+- whether a session ended because the server stopped while its client was still
+  attached (`session.ended` with `unexpected: true`),
+- a session the helper could not start at all (`session.failed` with a reason
+  from a fixed vocabulary: `secret-unavailable` or `launch-failed`).
+
+The last three exist because a client reports each of them the same way — the
+server "failed" — and Kytto is the only place that knows which it was.
 
 It never records tool arguments, results, environment values or stderr. Losing
 the event log must not interrupt an observability-only session.
@@ -48,6 +57,26 @@ Before enabling, the app shows the redacted Direct definition and exact Gateway
 replacement. Enabling and restoring both use the ordinary digest guard, backup,
 syntax validation and atomic splice pipeline. Restore puts back the original
 definition byte for byte and deletes the route credentials.
+
+## When something the route depends on goes away
+
+A Gateway definition depends on three things outside the client's config: the
+helper binary, the route record and the credential store. Each can disappear
+without the config changing, so each has a way back:
+
+| What went away | How Kytto notices | Way back |
+|---|---|---|
+| The helper (Kytto moved, renamed, deleted) | On every reload, the path each Gateway definition names is checked. Doctor: `gateway-helper-missing` | **Repair route** rewrites only the helper path, through the guarded write. Before removing Kytto: **Restore Direct mode for all** |
+| The route record | A definition whose route id is not in the store. Doctor: `gateway-route-unknown` | Restore a backup, or edit the server |
+| A stored environment value | The helper journals `session.failed` / `secret-unavailable`. Doctor offers Restore Direct | Restore rebuilds what it can and names the missing variables |
+| The stored original definition | Found at restore time | Direct mode is rebuilt from the route's command and arguments instead of refusing |
+| The server process, mid-session | `session.ended` with `unexpected: true`. Doctor: `gateway-server-stopped` | Health check, then restart the client |
+
+Diagnosis reads configs, the route file and the journal only. It never opens the
+credential store, so it can run on every reload without a keychain prompt.
+
+Rotating a secret in the Secrets screen also updates every route holding the old
+value, and the original definition stored for Restore Direct.
 
 ## Safety invariants
 

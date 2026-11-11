@@ -27,6 +27,7 @@
  *   updateError: string | null,
  *   provenanceBusyServerID: string | null,
  *   packageSafetyBusyServerID: string | null,
+ *   gatewayRepairBusyRouteID: string | null,
  *   acknowledgingContract: string | null,
  *   restoringBackupId: string | null,
  *   openTools: Set<string>,
@@ -75,6 +76,7 @@ const state = {
   updateError: null,
   provenanceBusyServerID: null,
   packageSafetyBusyServerID: null,
+  gatewayRepairBusyRouteID: null,
   // The server whose contract alert is being marked as reviewed.
   acknowledgingContract: null,
   // The backup being reverted. Every Revert waits for it: two reverts racing on

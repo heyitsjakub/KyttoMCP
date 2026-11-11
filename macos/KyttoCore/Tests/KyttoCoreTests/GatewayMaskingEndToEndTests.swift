@@ -172,4 +172,102 @@ struct GatewayMaskingEndToEndTests {
         let resources = try #require(replies.first { ($0["id"] as? NSNumber)?.intValue == 3 })
         #expect(((resources["result"] as? [String: Any])?["resources"] as? [[String: Any]])?.count == 1)
     }
+
+    // MARK: - What the journal says about a session
+
+    /// Runs the helper against an arbitrary upstream and returns its journal.
+    /// With `closingInput` false the client stays attached until the helper
+    /// exits by itself, which is what a crashed server looks like.
+    private func journal(
+        command: String,
+        arguments: [String],
+        exposedTools: [String]? = nil,
+        sending lines: [String] = [],
+        closingInput: Bool = true
+    ) throws -> [GatewayEvent] {
+        let directory = URL(filePath: NSTemporaryDirectory())
+            .appending(path: "kytto-e2e-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let routesURL = directory.appending(path: "routes.json")
+        let eventsURL = directory.appending(path: "events.jsonl")
+        let routeID = UUID().uuidString.lowercased()
+        try GatewayRouteStore(url: routesURL).insert(GatewayRoute(
+            id: routeID,
+            serverID: "fixture",
+            serverName: "fixture",
+            clientID: .cursor,
+            gatewayCommand: try helperURL.path,
+            command: command,
+            arguments: arguments,
+            environment: [],
+            directDefinitionSecretID: "gateway-definition::\(routeID)",
+            exposedTools: exposedTools
+        ))
+
+        let process = Process()
+        process.executableURL = try helperURL
+        process.arguments = ["--route", routeID, "--routes", routesURL.path, "--event-log", eventsURL.path]
+        let input = Pipe()
+        let output = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = Pipe()
+        try process.run()
+        for line in lines {
+            input.fileHandleForWriting.write(Data((line + "\n").utf8))
+        }
+        if closingInput { try? input.fileHandleForWriting.close() }
+        _ = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        try? input.fileHandleForWriting.close()
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return ((try? String(contentsOf: eventsURL, encoding: .utf8)) ?? "")
+            .split(separator: "\n")
+            .compactMap { try? decoder.decode(GatewayEvent.self, from: Data($0.utf8)) }
+    }
+
+    @Test("a refused call is journalled by tool name, without its arguments")
+    func refusalIsJournalled() throws {
+        let events = try journal(
+            command: "python3",
+            arguments: [try fixtureServer, "ok"],
+            exposedTools: ["read_file"],
+            sending: handshake + [
+                #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"write_file","arguments":{"path":"private-argument"}}}"#,
+            ]
+        )
+        let refused = try #require(events.first { $0.kind == .toolCallRefused })
+        #expect(refused.toolName == "write_file")
+        #expect(refused.requestID == "2")
+        // Refused here, so the server never started or completed it.
+        #expect(!events.contains { $0.kind == .toolCallStarted || $0.kind == .toolCallCompleted })
+        let encoded = String(decoding: try JSONEncoder().encode(events), as: UTF8.self)
+        #expect(!encoded.contains("private-argument"))
+    }
+
+    @Test("a server that stops while its client is attached is marked unexpected")
+    func crashIsJournalled() throws {
+        let events = try journal(command: "/bin/sh", arguments: ["-c", "exit 3"], closingInput: false)
+        let ended = try #require(events.first { $0.kind == .sessionEnded })
+        #expect(ended.exitCode == 3)
+        #expect(ended.unexpected == true)
+    }
+
+    @Test("a session the client closed is not a crash")
+    func clientCloseIsExpected() throws {
+        let events = try journal(command: "python3", arguments: [try fixtureServer, "ok"], sending: handshake)
+        let ended = try #require(events.first { $0.kind == .sessionEnded })
+        #expect(ended.unexpected == false)
+    }
+
+    @Test("a server that cannot be started leaves a failed session, not silence")
+    func launchFailureIsJournalled() throws {
+        let events = try journal(command: "kytto-no-such-command-\(UUID().uuidString)", arguments: [])
+        #expect(events.map(\.kind) == [.sessionFailed])
+        #expect(events.first?.reason == GatewayFailureReason.launchFailed.rawValue)
+    }
 }

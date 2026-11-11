@@ -298,6 +298,59 @@ struct KyttoMCPTests {
         #expect(after.toDisable.isEmpty)
     }
 
+    @Test("a profile apply can be undone, and only what it changed is put back")
+    @MainActor
+    func profileApplyIsReversible() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appending(path: "KyttoMCPTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let config = home.appending(path: ".cursor/mcp.json")
+        try FileManager.default.createDirectory(
+            at: config.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let original = Data(#"""
+        {
+          "mcpServers": {
+            // kept by hand
+            "alpha": { "command": "alpha" },
+            "beta":  { "command": "beta", "env": { "TOKEN": "t" } },
+            "gamma": { "command": "gamma" }
+          }
+        }
+        """#.utf8)
+        try original.write(to: config)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let model = AppModel(home: home)
+        let profile = try model.createProfile(name: "Focused", serverIDs: ["alpha"])
+        let result = try model.applyProfile(id: profile.id, to: .cursor)
+        #expect(result.applied.map(\.serverID).sorted() == ["beta", "gamma"])
+        #expect(result.applied.allSatisfy { !$0.enabled })
+        #expect(try Data(contentsOf: config) != original)
+
+        // Someone switches gamma back on before the undo: that one is theirs.
+        _ = try model.setEnabled(true, serverID: "gamma", clientID: .cursor)
+
+        let reverted = model.revertProfileApply(result.applied, in: .cursor)
+        #expect(reverted.failures.isEmpty)
+        #expect(reverted.revertedCount == 1)
+        let servers = model.current().servers
+        #expect(servers.allSatisfy { $0.enabledIn[.cursor] == .enabled })
+        // The parked definition comes back with the bytes it had, wherever in
+        // the map it lands.
+        let restored = try JSONDocument.parse(String(decoding: Data(contentsOf: config), as: UTF8.self))
+        let beta = try #require(restored.value(at: ["mcpServers", "beta"]))
+        #expect(restored.slice(beta.span) == #"{ "command": "beta", "env": { "TOKEN": "t" } }"#)
+        #expect(restored.sourceText.contains("// kept by hand"))
+    }
+
+    @Test("a config that changed on disk is reported by code, not by wording")
+    @MainActor
+    func changedOnDiskHasItsOwnCode() {
+        #expect(Envelope.code(for: ConfigWriteError.changedOnDisk(pathDisplay: "~/x")) == "changedOnDisk")
+        #expect(Envelope.code(for: ConfigWriteError.unreadable(pathDisplay: "~/x", reason: "r")) == "configWrite")
+    }
+
     @Test("check all records every result and reloads discovery only once")
     @MainActor
     func checkAllBatchesDiscovery() async throws {
@@ -329,7 +382,9 @@ struct KyttoMCPTests {
         }
 
         #expect(progress == ["1/2:alpha", "2/2:beta"])
-        #expect(reloads == 1)
+        // One reload for the whole run, plus the two edges of the run itself,
+        // which the menu bar item listens for (it is rebuilt on state changes).
+        #expect(reloads == 3)
         #expect(model.current().servers.allSatisfy { $0.health?.status == .failed })
     }
 

@@ -527,13 +527,34 @@ async function applyProfile(profileId, clientId) {
     const refreshWarning = await refreshAfterMutation({ backups: true });
     const changed = result.enabledCount + result.disabledCount;
     const skipped = result.failures.length;
+    // A profile is applied one server at a time, so a failure leaves the client
+    // between two profiles. The notice says why, and offers both ways out:
+    // finish it, or go back to where it started.
+    const reason = skipped === 1 ? ` (${firstLine(result.failures[0].message).replace(/\.$/, '')})` : '';
+    const skippedNames = `${skipped} server${skipped === 1 ? '' : 's'} skipped — ${result.failures.map((failure) => failure.serverName).join(', ')}${reason}.`;
+    const applied = result.applied ?? [];
     const notice = {
       kind: skipped > 0 ? 'warning' : 'info',
       message: skipped > 0
-        ? `Applied “${result.profileName}” with ${changed} change${changed === 1 ? '' : 's'}; ${skipped} server${skipped === 1 ? ' was' : 's were'} skipped: ${result.failures.map((failure) => failure.serverName).join(', ')}.`
+        ? changed > 0
+          ? `Applied “${result.profileName}” only in part: ${changed} change${changed === 1 ? '' : 's'} made, ${skippedNames}`
+          : `“${result.profileName}” was not applied: ${skippedNames}`
         : changed > 0
           ? `Applied “${result.profileName}”: ${result.enabledCount} enabled, ${result.disabledCount} switched off.`
           : `This client already matched “${result.profileName}”.`,
+      ...(skipped > 0
+        ? { action: { label: 'Try again', action: 'retry-profile-apply', profileId, clientId } }
+        : {}),
+      ...(applied.length > 0
+        ? {
+            secondaryAction: {
+              label: skipped > 0 ? 'Undo the changes' : 'Undo',
+              action: 'revert-profile-apply',
+              clientId,
+              changes: JSON.stringify(applied),
+            },
+          }
+        : {}),
     };
     setState({
       sheet: null,
@@ -541,6 +562,66 @@ async function applyProfile(profileId, clientId) {
     });
   } catch (error) {
     closeSheetAfterFailure(request, error);
+  }
+}
+
+/// Applying is idempotent — only what still differs is switched — so trying
+/// again after a partial apply finishes it without touching what worked.
+async function retryProfileApply(profileId, clientId) {
+  setState({ notice: null });
+  await refresh();
+  try {
+    const result = await invoke('profiles.apply', { profileID: profileId, clientID: clientId });
+    applyState(result.state);
+    const refreshWarning = await refreshAfterMutation({ backups: true });
+    const skipped = result.failures.length;
+    setState({
+      notice: withRefreshWarning(
+        skipped > 0
+          ? {
+              kind: 'warning',
+              message: `“${result.profileName}” is still not fully applied: ${result.failures.map((failure) => `${failure.serverName} (${firstLine(failure.message)})`).join('; ')}.`,
+            }
+          : { kind: 'info', message: `“${result.profileName}” is now fully applied.` },
+        refreshWarning,
+      ),
+    });
+  } catch (error) {
+    reportFailure(error);
+  }
+}
+
+async function revertProfileApply(clientId, changesJSON) {
+  let changes;
+  try {
+    changes = JSON.parse(changesJSON);
+  } catch {
+    return;
+  }
+  setState({ notice: null });
+  try {
+    const result = await invoke('profiles.revertApply', { clientID: clientId, changes });
+    applyState(result.state);
+    const refreshWarning = await refreshAfterMutation({ backups: true });
+    const failed = result.failures.length;
+    setState({
+      notice: withRefreshWarning(
+        failed > 0
+          ? {
+              kind: 'warning',
+              message: `Put back ${result.revertedCount} of ${changes.length} changes. Not undone: ${result.failures.map((failure) => `${failure.serverName} (${firstLine(failure.message)})`).join('; ')}.`,
+            }
+          : {
+              kind: 'info',
+              message: result.revertedCount > 0
+                ? `Undid the profile: ${result.revertedCount} server${result.revertedCount === 1 ? '' : 's'} put back as ${result.revertedCount === 1 ? 'it was' : 'they were'}.`
+                : 'Those servers were already changed again, so nothing was undone.',
+            },
+        refreshWarning,
+      ),
+    });
+  } catch (error) {
+    reportFailure(error);
   }
 }
 
@@ -591,12 +672,74 @@ async function restoreGateway(routeId) {
     setState({
       sheet: null,
       notice: withRefreshWarning(
+        restoredNotice(result),
+        refreshWarning,
+      ),
+    });
+  } catch (error) {
+    failSheetRequest(request, error);
+  }
+}
+
+/// A restore that had to rebuild the definition says which values are missing:
+/// the server is back in Direct mode but will not authenticate until they are
+/// entered again.
+function restoredNotice(result) {
+  const missing = result.missingEnvironmentKeys ?? [];
+  if (missing.length === 0) {
+    return {
+      kind: 'info',
+      message: `Restored Direct mode for “${result.route.serverName}”. Restart the client to load the original definition.`,
+    };
+  }
+  return {
+    kind: 'warning',
+    message: `Restored Direct mode for “${result.route.serverName}”, but the stored original could not be read, so Kytto rebuilt it without ${missing.join(', ')}. Edit the server and enter ${missing.length === 1 ? 'that value' : 'those values'} again.`,
+  };
+}
+
+async function repairGatewayRoute(routeId) {
+  if (getState().gatewayRepairBusyRouteID) return;
+  setState({ gatewayRepairBusyRouteID: routeId });
+  try {
+    const result = await invoke('gateway.repair', { routeID: routeId });
+    applyState(result.state);
+    const refreshWarning = await refreshAfterMutation({ backups: true });
+    setState({
+      notice: withRefreshWarning(
         {
           kind: 'info',
-          message: `Restored Direct mode for “${result.route.serverName}”. Restart the client to load the original definition.`,
+          message: `Repaired the Gateway route for “${result.route.serverName}”. Restart the client to start it through this copy of Kytto.`,
         },
         refreshWarning,
       ),
+    });
+  } catch (error) {
+    reportFailure(error);
+  } finally {
+    setState({ gatewayRepairBusyRouteID: null });
+  }
+}
+
+async function restoreAllGateway() {
+  if (getState().sheet?.busy) return;
+  const request = beginSheetRequest();
+  try {
+    const result = await invoke('gateway.restoreAll');
+    applyState(result.state);
+    const refreshWarning = await refreshAfterMutation({ backups: true });
+    const parts = [`Restored Direct mode for ${result.restoredCount} ${result.restoredCount === 1 ? 'server' : 'servers'}.`];
+    for (const entry of result.missingEnvironment) {
+      parts.push(`“${entry.serverName}” was rebuilt without ${entry.keys.join(', ')} — edit it and enter ${entry.keys.length === 1 ? 'that value' : 'those values'} again.`);
+    }
+    for (const failure of result.failures) {
+      parts.push(`“${failure.serverName}” was not restored: ${failure.message}`);
+    }
+    const clean = result.failures.length === 0 && result.missingEnvironment.length === 0;
+    if (clean) parts.push('Restart the clients to load the original definitions.');
+    setState({
+      sheet: null,
+      notice: withRefreshWarning({ kind: clean ? 'info' : 'warning', message: parts.join(' ') }, refreshWarning),
     });
   } catch (error) {
     failSheetRequest(request, error);
@@ -869,15 +1012,30 @@ function closeSheetAfterFailure(request, error) {
   return changedOnDisk;
 }
 
-/** Turns a write failure into something the user can act on. */
-function reportFailure(error) {
-  const changedOnDisk = /changed on disk/i.test(error.message ?? '');
+/**
+ * Whether a write was refused because the config changed underneath Kytto.
+ * Decided by the error's code. The wording is only a fallback for a shell that
+ * does not send the code yet, so rephrasing the message cannot turn this
+ * recoverable case into a plain error.
+ */
+function isChangedOnDisk(error) {
+  return error.code === 'changedOnDisk' || /changed on disk/i.test(error.message ?? '');
+}
+
+/**
+ * Turns a write failure into something the user can act on.
+ * @param {{ label: string, action: string }} [retry] what the notice offers
+ *   when the file changed on disk; by default, a refresh.
+ */
+function reportFailure(error, retry = null) {
+  const changedOnDisk = isChangedOnDisk(error);
   setState({
     notice: {
       kind: changedOnDisk ? 'warning' : 'error',
       message: changedOnDisk
-        ? `${error.message} Kytto did not write anything. Refresh to load the current version, then try again.`
+        ? `${error.message} Kytto did not write anything.${retry ? ' The current version is loaded now.' : ' Refresh to load the current version, then try again.'}`
         : error.message,
+      ...(changedOnDisk ? { action: retry ?? { label: 'Refresh', action: 'refresh-after-conflict' } } : {}),
     },
   });
   return changedOnDisk;
@@ -955,10 +1113,37 @@ async function toggleCell(serverId, clientId, currentlyEnabled, { undoing = fals
       setState({ notice: withRefreshWarning(getState().notice, refreshWarning) });
     }
   } catch (error) {
-    if (reportFailure(error)) await refresh();
+    // The file changed underneath: load what is there now, and offer the same
+    // switch again against it rather than leaving the user to find the cell.
+    const retry = {
+      label: 'Try again',
+      action: 'retry-toggle',
+      serverId,
+      clientId,
+      enable: String(!currentlyEnabled),
+    };
+    if (reportFailure(error, undoing ? null : retry)) await refresh();
   } finally {
     setCellBusy(serverId, clientId, false);
   }
+}
+
+/// Repeats a switch that was refused because the config changed on disk. The
+/// re-read may have made it unnecessary — the other edit could be this one.
+async function retryToggle(serverId, clientId, enable) {
+  const state = getState();
+  const server = state.servers.find((entry) => entry.id === serverId);
+  if (!server) {
+    setState({ notice: { kind: 'warning', message: 'That server is no longer in any configuration, so there is nothing to switch.' } });
+    return;
+  }
+  const enabledNow = server.enabledIn[clientId] === 'enabled';
+  if (enabledNow === enable) {
+    const client = state.clients.find((entry) => entry.id === clientId)?.displayName ?? clientId;
+    setState({ notice: { kind: 'info', message: `“${server.name}” is already ${enable ? 'on' : 'off'} in ${client}, so nothing was changed.` } });
+    return;
+  }
+  await toggleCell(serverId, clientId, enabledNow);
 }
 
 /// The page asks for settings; what a settings window is stays native (§3.2).
@@ -1026,9 +1211,64 @@ async function confirmRestart() {
     const result = await invoke('restarts.restart', { clientIDs: current.clientIds });
     applyState(result.state);
     setState({ sheet: null, notice: restartNotice(result) });
+    await verifyAfterRestart(result);
   } catch (error) {
     failSheetRequest(request, error);
   }
+}
+
+/**
+ * A restart only proves the app came back. Whether the definition it loaded
+ * actually starts is a separate question, and the client answers it somewhere
+ * the user is not looking — so Kytto checks the servers that changed and says
+ * so in the same notice. Kytto starts them itself; it cannot see inside the
+ * client.
+ */
+async function verifyAfterRestart(result) {
+  const serverIds = [...new Set((result.verify ?? []).flatMap((entry) => entry.serverIDs))];
+  if (serverIds.length === 0 || getState().healthProgress) return;
+  const base = restartNotice(result);
+  const failed = [];
+  const waiting = [];
+  let checked = 0;
+  for (const serverId of serverIds) {
+    if (getState().checking.has(serverId)) continue;
+    setChecking(serverId, true);
+    try {
+      const reply = await invoke('health.check', { serverID: serverId });
+      applyState(reply.state);
+      checked += 1;
+      const name = getState().servers.find((entry) => entry.id === serverId)?.name ?? serverId;
+      if (reply.health.status === 'failed') failed.push({ serverId, name });
+      else if (reply.health.status === 'needsAuthorization') waiting.push(name);
+    } catch {
+      // A check that could not run says nothing about the server either way.
+    } finally {
+      setChecking(serverId, false);
+    }
+  }
+  if (checked === 0) return;
+
+  const quoted = (names) => names.map((name) => `“${name}”`).join(', ');
+  const parts = [base.message];
+  const passed = checked - failed.length - waiting.length;
+  if (failed.length === 0) {
+    if (passed > 0) {
+      parts.push(`Kytto checked the ${passed === 1 ? 'server that changed, and it starts' : `${passed} servers that changed, and they start`}.`);
+    }
+  } else {
+    parts.push(`${quoted(failed.map((entry) => entry.name))} did not start when Kytto checked ${failed.length === 1 ? 'it' : 'them'} after the restart, so the client is probably showing ${failed.length === 1 ? 'it' : 'them'} as failed.`);
+  }
+  if (waiting.length > 0) parts.push(`${quoted(waiting)} ${waiting.length === 1 ? 'is' : 'are'} waiting for a sign-in.`);
+  setState({
+    notice: {
+      kind: failed.length > 0 ? 'warning' : base.kind,
+      message: parts.join(' '),
+      ...(failed.length > 0
+        ? { action: { label: failed.length === 1 ? 'Open server' : `Open “${failed[0].name}”`, action: 'open-server', serverId: failed[0].serverId } }
+        : {}),
+    },
+  });
 }
 
 function restartNotice(result) {
@@ -1610,6 +1850,22 @@ root.addEventListener('click', async (event) => {
         target.dataset.enabled === 'true',
       );
       break;
+    case 'refresh-after-conflict':
+      setState({ notice: null });
+      await refresh();
+      if (!getState().notice) {
+        setState({ notice: { kind: 'info', message: 'Loaded the current configuration. Make your change again.' } });
+      }
+      break;
+    case 'retry-profile-apply':
+      await retryProfileApply(target.dataset.profileId, target.dataset.clientId);
+      break;
+    case 'revert-profile-apply':
+      await revertProfileApply(target.dataset.clientId, target.dataset.changes);
+      break;
+    case 'retry-toggle':
+      await retryToggle(target.dataset.serverId, target.dataset.clientId, target.dataset.enable === 'true');
+      break;
     case 'undo-toggle':
       await undoToggle({
         serverId: target.dataset.serverId,
@@ -1947,6 +2203,15 @@ root.addEventListener('click', async (event) => {
       break;
     case 'confirm-restore-gateway':
       await restoreGateway(target.dataset.routeId);
+      break;
+    case 'repair-gateway':
+      await repairGatewayRoute(target.dataset.routeId);
+      break;
+    case 'restore-all-gateway':
+      setState({ sheet: { kind: 'gatewayRestoreAll', busy: false, error: null } });
+      break;
+    case 'confirm-restore-all-gateway':
+      await restoreAllGateway();
       break;
     case 'choose-tools':
       openToolMask(target.dataset.routeId);
