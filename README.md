@@ -122,7 +122,7 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 ```sh
 # macOS
 shasum -a 256 KyttoMCP-1.0.9.4.dmg
-# 2e82d046706014df41ab1399442d30bb00f79cfa305db28a6668821d2a69adb8
+# 50cf4964a73ffed47c890114a6906ee091c5ca961bd4f076cb98645e8642bbb5
 
 # Windows (PowerShell)
 Get-FileHash Kytto-Setup-win-x64-1.0.9.3.exe -Algorithm SHA256

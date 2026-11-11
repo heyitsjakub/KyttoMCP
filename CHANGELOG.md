@@ -21,7 +21,7 @@ Each of those now says what happened and offers a way back. The Windows build of
 
 | Platform | File | Size | SHA-256 |
 |---|---|---:|---|
-| macOS (universal) | `KyttoMCP-1.0.9.4.dmg` | 6.2 MB | `2e82d046706014df41ab1399442d30bb00f79cfa305db28a6668821d2a69adb8` |
+| macOS (universal) | `KyttoMCP-1.0.9.4.dmg` | 6.2 MB | `50cf4964a73ffed47c890114a6906ee091c5ca961bd4f076cb98645e8642bbb5` |
 | Windows x64 | Coming in the next few days | | |
 
 The macOS build is ad-hoc signed rather than notarized. Verify the SHA-256
@@ -44,6 +44,7 @@ checksum before bypassing Gatekeeper.
 - "Changed on disk" is recognised by an error code instead of the wording of the message. The notice has a Refresh button, and a refused switch offers Try again against the reloaded file.
 - Live Activity no longer goes blank right after the activity journal reaches 5 MB and starts a new file.
 - A server that exits the moment its client disconnects is no longer at risk of being recorded as having stopped on its own.
+- On a client's screen, the server list no longer has a vertical line cutting through the row separators next to the switches, and the token figure no longer sits against it.
 
 ## [1.0.9.3] — 2026-11-07
 
