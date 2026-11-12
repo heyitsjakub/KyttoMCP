@@ -84,7 +84,7 @@ Save local profiles such as Coding, Research or Minimal. Preview exactly what a 
 Every write checks whether the file changed outside Kytto, makes a timestamped backup, and writes atomically. Browse those backups in the app and restore an earlier configuration — the version being replaced is backed up too.
 
 **Optional Gateway mode**
-For supported stdio servers, preview a local Gateway route, move the direct definition and credentials into native storage, and restore Direct mode with one click. Live Activity shows sessions, tool calls, latency and failures as metadata only — arguments, results and payloads stay out of the log. Since 1.0.9.4 on macOS, a Gateway server that fails says why: MCP Doctor names a missing helper, a lost route, an unreadable secret or a server that keeps stopping, repairs the route when Kytto was moved, and can restore Direct mode for everything before you remove Kytto.
+For supported stdio servers, preview a local Gateway route, move the direct definition and credentials into native storage, and restore Direct mode with one click. Live Activity shows sessions, tool calls, latency and failures as metadata only — arguments, results and payloads stay out of the log. Since 1.0.9.4, a Gateway server that fails says why: MCP Doctor names a missing helper, a lost route, an unreadable secret or a server that keeps stopping, repairs the route when Kytto was moved, and can restore Direct mode for everything before you remove Kytto.
 
 ## Supported clients
 
@@ -103,7 +103,7 @@ Custom sources are read-only and are not an additional writable client. Want ano
 
 ## Install
 
-Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.4 for macOS ([v1.0.9.4](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.4)) and Beta 1.0.9.3 for Windows ([v1.0.9.3-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.3-windows)). Windows 1.0.9.4 follows in the next few days.
+Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.4 for macOS ([v1.0.9.4](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.4)) and Beta 1.0.9.4 for Windows ([v1.0.9.4-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.4-windows)).
 
 ### macOS
 
@@ -125,8 +125,8 @@ shasum -a 256 KyttoMCP-1.0.9.4.dmg
 # 50cf4964a73ffed47c890114a6906ee091c5ca961bd4f076cb98645e8642bbb5
 
 # Windows (PowerShell)
-Get-FileHash Kytto-Setup-win-x64-1.0.9.3.exe -Algorithm SHA256
-# 97a7a63d07e11aa5448c06a2c912ce432f265a1d24a5d744ae60f215d8a347fa
+Get-FileHash Kytto-Setup-win-x64-1.0.9.4.exe -Algorithm SHA256
+# e95fbe04cdd525e0191eac4fd42988c1880f6f325bfc9f11878238a580d19511
 ```
 
 ## Local by design
