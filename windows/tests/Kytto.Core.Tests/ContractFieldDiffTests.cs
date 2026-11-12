@@ -517,4 +517,80 @@ public class ContractFieldDiffTests
         Assert.Equal("inputSchema/properties/p/a", field.Path);
         Assert.Equal("\"x/y\"", field.Before);
     }
+
+    // Baselines saved before schemas and annotations were recorded.
+
+    private static HealthResult Passed(IReadOnlyList<ToolSummary> tools, int seconds) => new(
+        HealthStatus.Passed, DateTimeOffset.FromUnixTimeSeconds(seconds), tools.Count, tools, null, null, 0.1, "s", "1");
+
+    [Fact]
+    public void ALegacyBaselineReportsOnlyRealChanges()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "kytto-legacy-baseline-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new MetadataStore(new Kytto.Core.Settings.KyttoPaths(root));
+            const string Schema = """{"type":"object","properties":{"path":{"type":"string"}}}""";
+            var hints = new ToolAnnotations(ReadOnlyHint: true);
+
+            store.Record("xcode", Passed([new ToolSummary("read", "Reads"), new ToolSummary("gone", "x")], 1), null);
+            store.Record("xcode", Passed(
+            [
+                new ToolSummary("read", "Reads", Schema, hints),
+                new ToolSummary("new", "New", Schema),
+            ], 2), null);
+
+            var entry = store.For("xcode")!;
+            Assert.Equal(
+                [ContractChangeKind.ToolRemoved, ContractChangeKind.ToolAdded],
+                entry.ContractChanges!.Select(change => change.Kind));
+            // The baseline now holds what it was missing, so the next change shows.
+            Assert.Equal(Schema, entry.ContractTools!.Single(tool => tool.Name == "read").InputSchemaJSON);
+
+            store.Record("xcode", Passed(
+            [
+                new ToolSummary("read", "Reads", """{"type":"object"}"""),
+                new ToolSummary("new", "New", Schema),
+            ], 3), null);
+            Assert.Equal(
+                [ContractChangeKind.InputSchemaChanged, ContractChangeKind.AnnotationsChanged],
+                store.For("xcode")!.ContractChanges!.Where(change => change.ToolName == "read").Select(change => change.Kind));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AFullBaselineStillReportsDroppedOrGainedFields()
+    {
+        var hints = new ToolAnnotations(ReadOnlyHint: true);
+        IReadOnlyList<ToolSummary> full =
+        [
+            new ToolSummary("a", null, "{}", hints),
+            new ToolSummary("b", null, "{}"),
+        ];
+        Assert.False(ContractGuard.IsLegacyBaseline(full));
+        Assert.Same(full, ContractGuard.UpgradingLegacyBaseline(full, []));
+
+        var kinds = ContractGuard.Changes(full,
+            [
+                new ToolSummary("a", null),
+                new ToolSummary("b", null, "{}", hints),
+            ])
+            .Select(change => $"{change.ToolName}:{change.Kind}");
+        Assert.Equal(["a:InputSchemaChanged", "a:AnnotationsChanged", "b:AnnotationsChanged"], kinds);
+    }
+
+    [Fact]
+    public void ALegacyBaselineKeepsItsReviewedDescription()
+    {
+        var upgraded = ContractGuard.UpgradingLegacyBaseline(
+            [new ToolSummary("read", "Reads a file")],
+            [new ToolSummary("read", "Reads a file and sends it", "{}")]);
+
+        Assert.Equal("Reads a file", upgraded[0].Description);
+        Assert.Equal("{}", upgraded[0].InputSchemaJSON);
+    }
 }

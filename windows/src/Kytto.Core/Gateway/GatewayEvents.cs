@@ -14,6 +14,20 @@ public enum GatewayEventKind
     [JsonStringEnumMemberName("tool.call.started")] ToolCallStarted,
     [JsonStringEnumMemberName("tool.call.completed")] ToolCallCompleted,
     [JsonStringEnumMemberName("session.ended")] SessionEnded,
+    /// <summary>Kytto answered a <c>tools/call</c> itself because the route hides that tool.</summary>
+    [JsonStringEnumMemberName("tool.call.refused")] ToolCallRefused,
+    /// <summary>The helper was started by a client but could not start the server.</summary>
+    [JsonStringEnumMemberName("session.failed")] SessionFailed,
+}
+
+/// <summary>Why the helper could not start a session.</summary>
+/// <remarks>
+/// A fixed vocabulary rather than the error text, which can name a path or a variable.
+/// </remarks>
+public static class GatewayFailureReason
+{
+    public const string SecretUnavailable = "secret-unavailable";
+    public const string LaunchFailed = "launch-failed";
 }
 
 public sealed record GatewayEvent(
@@ -28,7 +42,15 @@ public sealed record GatewayEvent(
     int? DurationMilliseconds = null,
     bool? Succeeded = null,
     int? ErrorCode = null,
-    int? ExitCode = null);
+    int? ExitCode = null,
+    /// <summary>
+    /// On <c>session.ended</c>: true when the server stopped while its client was still
+    /// connected — a crash or an exit nobody asked for. Null in journals written before
+    /// this was recorded.
+    /// </summary>
+    bool? Unexpected = null,
+    /// <summary>On <c>session.failed</c>: a <see cref="GatewayFailureReason"/> value.</summary>
+    string? Reason = null);
 
 public interface IGatewayEventSink { void Record(GatewayEvent item); }
 
@@ -159,7 +181,23 @@ public sealed class GatewayMessageObserver
         }
     }
 
-    public void Finish(int exitCode)
+    /// <summary>A call Kytto refused on a narrowed route.</summary>
+    /// <remarks>It never reached the server, so there is no completion to wait for.</remarks>
+    public void RecordRefusal(string toolName, string? requestId) =>
+        _sink.Record(Event(GatewayEventKind.ToolCallRefused, toolName, requestId, succeeded: false));
+
+    /// <summary>The helper could not start the server at all.</summary>
+    public void Fail(string reason)
+    {
+        lock (_lock)
+        {
+            if (_finished) return;
+            _finished = true;
+        }
+        _sink.Record(Event(GatewayEventKind.SessionFailed, reason: reason));
+    }
+
+    public void Finish(int exitCode, bool? unexpected = null)
     {
         lock (_lock)
         {
@@ -167,7 +205,7 @@ public sealed class GatewayMessageObserver
             _finished = true;
             _pending.Clear();
         }
-        _sink.Record(Event(GatewayEventKind.SessionEnded, exitCode: exitCode));
+        _sink.Record(Event(GatewayEventKind.SessionEnded, exitCode: exitCode, unexpected: unexpected));
     }
 
     private void ConsumeLines(List<byte> buffer, GatewayDirection direction)
@@ -242,7 +280,9 @@ public sealed class GatewayMessageObserver
         int? durationMilliseconds = null,
         bool? succeeded = null,
         int? errorCode = null,
-        int? exitCode = null) => new(
+        int? exitCode = null,
+        bool? unexpected = null,
+        string? reason = null) => new(
             Guid.NewGuid().ToString("D").ToLowerInvariant(),
             _sessionId,
             DateTimeOffset.UtcNow,
@@ -254,7 +294,9 @@ public sealed class GatewayMessageObserver
             durationMilliseconds,
             succeeded,
             errorCode,
-            exitCode);
+            exitCode,
+            unexpected,
+            reason);
 
     private static string? StringAt(JsonElement element, string key) =>
         element.ValueKind == JsonValueKind.Object &&

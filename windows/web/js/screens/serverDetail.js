@@ -961,7 +961,7 @@ export function renderGatewayRestore(state) {
     el(
       'p',
       'muted',
-      'Kytto will put back the exact original server definition, including its environment values, and remove this route. The current gateway config is backed up first.',
+      'Kytto will put back the original server definition, including its environment values, and remove this route. The current gateway config is backed up first. If the stored original can no longer be read, Kytto rebuilds the definition and tells you which values to enter again.',
     ),
   ];
   if (state.sheet.error) body.push(el('p', 'failure-message', state.sheet.error));

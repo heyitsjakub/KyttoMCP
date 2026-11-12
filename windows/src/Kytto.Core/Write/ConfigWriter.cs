@@ -68,9 +68,15 @@ public sealed class AtomicConfigFileWriter : IConfigFileWriter
 
 public sealed class ConfigWriteException(string message) : Exception(message)
 {
+    /// <summary>
+    /// The write was refused because the file's digest no longer matches what Kytto
+    /// last read. Recoverable by reading it again, so it travels with its own code.
+    /// </summary>
+    public bool IsChangedOnDisk { get; private init; }
+
     /// <summary>Someone else changed the file since Kytto last read it.</summary>
     public static ConfigWriteException ChangedOnDisk(string pathDisplay) =>
-        new($"{pathDisplay} changed on disk since Kytto last read it.");
+        new($"{pathDisplay} changed on disk since Kytto last read it.") { IsChangedOnDisk = true };
 
     public static ConfigWriteException Unreadable(string pathDisplay, string reason) =>
         new($"Could not read {pathDisplay}: {reason}");

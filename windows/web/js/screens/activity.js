@@ -27,6 +27,8 @@ export function renderActivity(state) {
     stat(activity.completedCalls, 'completed calls'),
     stat(activity.failedCalls, 'failed calls', activity.failedCalls > 0 ? 'bad' : null),
     stat(activity.averageDurationMilliseconds == null ? '—' : `${activity.averageDurationMilliseconds} ms`, 'average latency'),
+    stat(activity.refusedCalls ?? 0, 'refused calls'),
+    stat(activity.serverFailures ?? 0, 'server failures', activity.serverFailures > 0 ? 'bad' : null),
   );
   panel.append(stats);
 
@@ -47,11 +49,30 @@ function stat(value, label, className = null) {
   return item;
 }
 
+/** A session that ended badly: the server stopped by itself, or never started. */
+function isServerFailure(event) {
+  return event.kind === 'session.failed' || (event.kind === 'session.ended' && event.unexpected === true);
+}
+
+const FAILURE_REASONS = {
+  'secret-unavailable': 'a stored secret could not be read',
+  'launch-failed': 'the server command could not be started',
+};
+
+/** What happened, in words, for the events whose kind alone does not say it. */
+function eventTitle(event) {
+  if (event.kind === 'tool.call.refused') return `${event.toolName ?? 'tool'} — refused by Kytto`;
+  if (event.kind === 'session.failed') return 'server did not start';
+  if (event.kind === 'session.ended' && event.unexpected === true) return 'server stopped on its own';
+  return event.toolName ?? event.kind.replaceAll('.', ' ');
+}
+
 function eventRow(state, event) {
-  const row = el('article', `activity-event${event.succeeded === false ? ' failed' : ''}`);
+  const failed = event.succeeded === false || isServerFailure(event);
+  const row = el('article', `activity-event${failed ? ' failed' : ''}`);
   const server = state.servers.find((item) => item.id === event.serverID)?.name ?? event.serverID;
   const client = state.clients.find((item) => item.id === event.clientID)?.displayName ?? event.clientID;
-  const title = event.toolName ?? event.kind.replaceAll('.', ' ');
+  const title = eventTitle(event);
   row.append(el('time', 'muted', new Date(event.timestamp * 1000).toLocaleTimeString()));
   const copy = el('div');
   copy.append(el('strong', 'mono', title));
@@ -59,6 +80,8 @@ function eventRow(state, event) {
   if (event.durationMilliseconds != null) details.push(`${event.durationMilliseconds} ms`);
   if (event.errorCode != null) details.push(`error ${event.errorCode}`);
   if (event.exitCode != null) details.push(`exit ${event.exitCode}`);
+  if (event.kind === 'tool.call.refused') details.push('hidden on this route');
+  if (event.reason) details.push(FAILURE_REASONS[event.reason] ?? event.reason);
   copy.append(el('p', 'muted', details.join(' · ')));
   row.append(copy);
   return row;
@@ -75,6 +98,8 @@ export function activityReport(state) {
     `Completed calls: ${activity.completedCalls}`,
     `Failed calls: ${activity.failedCalls}`,
     `Average latency: ${activity.averageDurationMilliseconds ?? 'unknown'} ms`,
+    `Refused calls: ${activity.refusedCalls ?? 0}`,
+    `Server failures: ${activity.serverFailures ?? 0}`,
     '',
   ];
   for (const event of activity.events.slice(0, 100)) {
@@ -88,6 +113,8 @@ export function activityReport(state) {
       event.succeeded == null ? null : `success=${event.succeeded}`,
       event.errorCode == null ? null : `error=${event.errorCode}`,
       event.exitCode == null ? null : `exit=${event.exitCode}`,
+      event.unexpected === true ? 'unexpected=true' : null,
+      event.reason ? `reason=${event.reason}` : null,
     ].filter(Boolean).join(' '));
   }
   return lines.join('\n');

@@ -53,6 +53,21 @@ internal sealed partial class AppModel : IDisposable
     private readonly ProvenanceChecker _provenanceChecker;
     private readonly PackageSafetyLookup _packageSafetyLookup = new();
     private readonly Dictionary<string, PackageSafetyReport> _packageSafety = [];
+
+    /// <summary>Doctor findings about Gateway routes, by server id.</summary>
+    /// <remarks>
+    /// Worked out when the configs are re-read and when the activity journal is, not on
+    /// every state reply: it reads client configs and the journal's tail.
+    /// </remarks>
+    private IReadOnlyDictionary<string, IReadOnlyList<DoctorFinding>> _gatewayFindings =
+        new Dictionary<string, IReadOnlyList<DoctorFinding>>();
+
+    /// <summary>Route secrets rotated this session, by route id.</summary>
+    /// <remarks>
+    /// A rotated value lives in Credential Manager only — the client's config does not
+    /// change — but the helper reads it at launch, so it is a restart to do all the same.
+    /// </remarks>
+    private readonly Dictionary<string, int> _rotatedRouteSecrets = new(StringComparer.Ordinal);
     private readonly McpLibraryScanner _libraryScanner = new();
     private readonly Dictionary<string, LibrarySession> _librarySessions = [];
     private readonly SkillsInventory _skillsInventory = new();
@@ -138,6 +153,7 @@ internal sealed partial class AppModel : IDisposable
             _restartBaselines[client] = snapshot;
             _restartObserved[client] = new Dictionary<string, string>(snapshot, StringComparer.Ordinal);
         }
+        RefreshGatewayFindings();
     }
 
     internal BackupStore Backups { get; }
@@ -423,8 +439,12 @@ internal sealed partial class AppModel : IDisposable
         IReadOnlyList<GatewayRoute> routes) =>
         ToolBudget.Evaluate(client.Id, client.ToolLimit, result.Servers, routes);
 
-    internal GatewayActivitySummary Activity(int limit = 500) =>
-        _gatewayActivity.Summary(limit);
+    internal GatewayActivitySummary Activity(int limit = 500)
+    {
+        var summary = _gatewayActivity.Summary(limit);
+        RefreshGatewayFindings(summary.Events);
+        return summary;
+    }
 
     // MARK: - MCP Doctor and Contract Guard (§7.10)
 
@@ -434,7 +454,8 @@ internal sealed partial class AppModel : IDisposable
             .Select(client => client.Id.BuiltIn)
             .OfType<ClientId>()
             .ToArray(),
-        _packageSafety);
+        _packageSafety,
+        _gatewayFindings);
 
     /// <summary>
     /// Asks osv.dev (and, for npm, the registry) about one server's package. Only on the
@@ -646,8 +667,83 @@ internal sealed partial class AppModel : IDisposable
     internal GatewayMigrationResult RestoreDirect(string routeId)
     {
         var result = GatewayMigration().Restore(routeId);
+        _rotatedRouteSecrets.Remove(routeId);
         Reload();
         return result;
+    }
+
+    /// <summary>Points a route at this copy of the helper, after Kytto was moved.</summary>
+    internal GatewayMigrationResult RepairGatewayRoute(string routeId)
+    {
+        var result = GatewayMigration().Repair(routeId);
+        Reload();
+        return result;
+    }
+
+    /// <summary>Restores Direct mode for every route.</summary>
+    /// <remarks>
+    /// What to do before removing Kytto, since the helper the configs point at goes with
+    /// it. Routes are independent, so one that cannot be restored (its config changed on
+    /// disk, say) does not stop the others; it is reported.
+    /// </remarks>
+    internal GatewayRestoreAllReport RestoreAllDirect()
+    {
+        var report = new GatewayRestoreAllReport();
+        var migration = GatewayMigration();
+        foreach (var route in _gatewayRoutes.All())
+        {
+            try
+            {
+                var result = migration.Restore(route.Id);
+                _rotatedRouteSecrets.Remove(route.Id);
+                report.Restored.Add(route);
+                if (result.MissingEnvironmentKeys.Count > 0)
+                {
+                    report.MissingEnvironment.Add((route, result.MissingEnvironmentKeys));
+                }
+            }
+            catch (Exception error) when (
+                error is GatewayMigrationException or GatewayRouteException or ConfigWriteException or
+                         AuthoringException or SecretsException or IOException or UnauthorizedAccessException or
+                         Kytto.Core.Json.JsonParseException or Kytto.Core.Toml.TomlParseException)
+            {
+                report.Failures.Add((route, error.Message));
+            }
+        }
+        Reload();
+        return report;
+    }
+
+    /// <summary>Re-derives the Gateway findings Doctor shows.</summary>
+    /// <remarks>
+    /// Reads configs and, unless the caller already has them, the journal's tail; never
+    /// Credential Manager. Best effort: a finding that cannot be worked out is not a
+    /// reason for a reload to fail.
+    /// </remarks>
+    private void RefreshGatewayFindings(IReadOnlyList<GatewayEvent>? events = null)
+    {
+        try
+        {
+            var known = _gatewayRoutes.All();
+            var diagnoses = GatewayMigration().Diagnose();
+            // Without a route or a Gateway definition there is nothing to explain, and
+            // no reason to read the journal.
+            if (known.Count == 0 && diagnoses.Count == 0)
+            {
+                _gatewayFindings = new Dictionary<string, IReadOnlyList<DoctorFinding>>();
+                return;
+            }
+            // The journal outlives a route. Once a server is back in Direct mode, what
+            // its Gateway sessions did is history, not something to act on.
+            var live = (events ?? _gatewayActivity.Summary().Events)
+                .Where(item => known.Any(route => route.ServerID == item.ServerID && route.ClientID.Raw() == item.ClientID))
+                .ToArray();
+            _gatewayFindings = GatewayDoctor.Findings(diagnoses, live, known);
+        }
+        catch (Exception error) when (error is GatewayRouteException or IOException or UnauthorizedAccessException)
+        {
+            Log.Failure("gateway findings", error);
+        }
     }
 
     /// <summary>Narrows or widens what one route exposes (§7.11).</summary>
@@ -719,6 +815,7 @@ internal sealed partial class AppModel : IDisposable
             }
             _current = Discover(pending);
             RefreshRestartState();
+            RefreshGatewayFindings();
             return _current;
         }
     }
@@ -1042,6 +1139,7 @@ internal sealed partial class AppModel : IDisposable
         var enabledCount = 0;
         var disabledCount = 0;
         var requiresRestart = false;
+        var applied = new List<ProfileAppliedChange>();
         foreach (var change in changes)
         {
             try
@@ -1049,6 +1147,7 @@ internal sealed partial class AppModel : IDisposable
                 var result = SetEnabled(change.Wanted, change.Id, clientId);
                 if (change.Wanted) enabledCount++;
                 else disabledCount++;
+                applied.Add(new ProfileAppliedChange(change.Id, change.Wanted));
                 requiresRestart |= result.RequiresRestart;
             }
             catch (Exception error) when (
@@ -1066,7 +1165,50 @@ internal sealed partial class AppModel : IDisposable
             enabledCount,
             disabledCount,
             requiresRestart,
-            failures);
+            failures)
+        {
+            Applied = applied,
+        };
+    }
+
+    /// <summary>Puts back the switches a profile apply made, newest first.</summary>
+    /// <remarks>
+    /// A profile is applied one server at a time, so a failure part-way leaves the
+    /// client between two profiles. This is the way back to where it started: each
+    /// switch is reversed through the same guarded write, and a server that was removed
+    /// to switch it off comes back byte for byte from the park store. A switch that has
+    /// since been changed again is left alone.
+    /// </remarks>
+    internal ProfileRevertResult RevertProfileApply(IReadOnlyList<ProfileAppliedChange> changes, ClientId clientId)
+    {
+        Reload();
+        var reverted = 0;
+        var failures = new List<ProfileApplyFailure>();
+        foreach (var change in changes.Reverse())
+        {
+            var server = _current.Servers.FirstOrDefault(candidate => candidate.Id == change.ServerID);
+            if (server is null)
+            {
+                failures.Add(new ProfileApplyFailure(change.ServerID, "This server is no longer present in any client."));
+                continue;
+            }
+            // Only undo what the apply did: if it is no longer in the state the apply
+            // left it in, someone changed it since and it is theirs.
+            var enabledNow = server.EnabledIn.GetValueOrDefault(clientId, Enablement.Absent) == Enablement.Enabled;
+            if (enabledNow != change.Enabled) continue;
+            try
+            {
+                SetEnabled(!change.Enabled, server.Id, clientId);
+                reverted++;
+            }
+            catch (Exception error) when (
+                error is ToggleException or ConfigWriteException or GatewayManagedException or
+                         IOException or UnauthorizedAccessException)
+            {
+                failures.Add(new ProfileApplyFailure(server.Name, error.Message));
+            }
+        }
+        return new ProfileRevertResult(clientId, reverted, failures);
     }
 
     // MARK: - Health (§7.3, §7.4)
@@ -1169,7 +1311,19 @@ internal sealed partial class AppModel : IDisposable
     internal SecretsService.RotationResult RotateSecret(string secretId, string newValue, bool alsoStore)
     {
         var service = SecretsService();
+        // Read before the rotation replaces it: a Gateway route keeps its own copy of
+        // the value and is found by comparing against the old one.
+        string? oldValue;
+        try { oldValue = service.Reveal(secretId, _current.Servers); }
+        catch (SecretsException) { oldValue = null; }
         var result = service.Rotate(secretId, newValue, _current.Servers, alsoStore);
+        if (oldValue is not null)
+        {
+            foreach (var route in GatewayMigration().RotateEnvironmentValue(result.Key, oldValue, newValue))
+            {
+                _rotatedRouteSecrets[route.Id] = _rotatedRouteSecrets.GetValueOrDefault(route.Id) + 1;
+            }
+        }
         Reload();
         return result;
     }
@@ -1354,8 +1508,58 @@ internal sealed partial class AppModel : IDisposable
                 (route.ExposedTools is null
                     ? "*"
                     : string.Join('\u0002', route.ExposedTools.Order(StringComparer.Ordinal)));
+            if (_rotatedRouteSecrets.GetValueOrDefault(route.Id) is > 0 and var rotations)
+            {
+                snapshot[$"@gateway-secret:{route.Id}"] = route.ServerID + "\u0001" +
+                    rotations.ToString(CultureInfo.InvariantCulture);
+            }
         }
         return snapshot;
+    }
+
+    /// <summary>
+    /// The servers a client's pending restart is about, and that it will now try to
+    /// start: changed since the last acknowledged state, switched on, and of a
+    /// transport a health check can run.
+    /// </summary>
+    /// <remarks>
+    /// Read before the restart is acknowledged, which resets what "changed" means. The
+    /// page checks these, so a restart that loaded a broken definition is not reported
+    /// as done.
+    /// </remarks>
+    internal IReadOnlyList<string> ServersAwaitingRestart(ClientId client)
+    {
+        var routes = _gatewayRoutes.All();
+        var now = RestartSnapshot(client, routes);
+        var baseline = _restartBaselines.GetValueOrDefault(client) ?? [];
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var key in now.Keys.Concat(baseline.Keys).Distinct(StringComparer.Ordinal))
+        {
+            var current = now.GetValueOrDefault(key);
+            var before = baseline.GetValueOrDefault(key);
+            if (current == before) continue;
+            if (key.StartsWith("@tools:", StringComparison.Ordinal))
+            {
+                ids.Add(key["@tools:".Length..]);
+            }
+            else if (key.StartsWith('@'))
+            {
+                // A route entry: its server id leads the value, whichever side has it.
+                var value = current ?? before ?? "";
+                ids.Add(value.Split('\u0001')[0]);
+            }
+            else
+            {
+                ids.Add(key);
+            }
+        }
+        return _current.Servers
+            .Where(server => ids.Contains(server.Id) &&
+                             server.EnabledIn.GetValueOrDefault(client, Enablement.Absent) == Enablement.Enabled &&
+                             server.Transport != Transport.Sse)
+            .Select(server => server.Id)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static int ChangedEntries(
@@ -1416,6 +1620,16 @@ internal sealed partial class AppModel : IDisposable
         _provenanceChecker.Dispose();
         _packageSafetyLookup.Dispose();
     }
+}
+
+internal sealed class GatewayRestoreAllReport
+{
+    public List<GatewayRoute> Restored { get; } = [];
+
+    public List<(GatewayRoute Route, string Message)> Failures { get; } = [];
+
+    /// <summary>Routes whose Direct definition was rebuilt without some values.</summary>
+    public List<(GatewayRoute Route, IReadOnlyList<string> Keys)> MissingEnvironment { get; } = [];
 }
 
 internal sealed class GatewayManagedException() : InvalidOperationException(

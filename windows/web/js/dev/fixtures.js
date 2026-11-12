@@ -277,6 +277,7 @@ const world = {
   // narrowed. Both halves are states that occur: the route is how anyone
   // reaches the tool picker, and an existing allow list is what the badge and
   // the pre-ticked boxes have to be able to show (§7.11).
+  repairedRoutes: [],
   gatewayRoutes: [
     {
       id: '9f1c2ad4-3e5b-4c77-9f6e-2b8a1d0c4e33',
@@ -1009,6 +1010,19 @@ const snapshot = () => ({
           remediation: 'The client shows the model one flat list of tools, so a name claimed twice is resolved by the client rather than by you. Switch one of them off in this client, or keep them in separate profiles.',
           action: null,
         },
+        // Kytto was moved after Gateway mode was turned on: the client only says
+        // "failed", and this is the one place that says why.
+        ...world.gatewayRoutes
+          .filter((route) => route.serverID === 'filesystem' && !world.repairedRoutes.includes(route.id))
+          .map((route) => ({
+            code: 'gateway-helper-missing',
+            severity: 'error',
+            title: 'Gateway helper is missing in Codex',
+            detail: 'Codex starts this server through Kytto’s helper at C:\\Users\\example\\Downloads\\Kytto\\kytto-mcp-proxy.exe, and nothing is there. Kytto was probably moved, reinstalled in another folder or removed after Gateway mode was turned on, so Codex cannot start the server.',
+            remediation: 'Repair points the definition at this copy of Kytto. Nothing else in the config changes.',
+            action: 'repairGatewayRoute',
+            routeID: route.id,
+          })),
       ],
     },
   ],
@@ -1269,20 +1283,49 @@ const HANDLERS = {
     const desired = new Set(profile.serverIDs);
     let enabledCount = 0;
     let disabledCount = 0;
+    const failures = [];
+    const applied = [];
     for (const entry of world.servers) {
       const shouldEnable = desired.has(entry.id);
       const isEnabled = entry.enabledIn[clientID] === 'enabled';
-      if (shouldEnable && !isEnabled) {
-        entry.enabledIn[clientID] = 'enabled';
-        enabledCount += 1;
-        recordWrite(clientID);
-      } else if (!shouldEnable && isEnabled) {
-        entry.enabledIn[clientID] = 'disabled';
-        disabledCount += 1;
-        recordWrite(clientID);
+      if (shouldEnable === isEnabled) continue;
+      // The partial apply that really occurs: a server in Gateway mode is refused,
+      // and everything before and after it is still switched.
+      if (world.gatewayRoutes.some((route) => route.serverID === entry.id && route.clientID === clientID)) {
+        failures.push({
+          serverName: entry.name,
+          message: 'This server is using Gateway mode. Restore Direct mode before editing, disabling or removing it.',
+        });
+        continue;
       }
+      entry.enabledIn[clientID] = shouldEnable ? 'enabled' : 'disabled';
+      if (shouldEnable) enabledCount += 1;
+      else disabledCount += 1;
+      applied.push({ serverID: entry.id, enabled: shouldEnable });
+      recordWrite(clientID);
     }
-    return { profileName: profile.name, clientID, enabledCount, disabledCount, failures: [], state: snapshot() };
+    return {
+      profileName: profile.name,
+      clientID,
+      enabledCount,
+      disabledCount,
+      requiresRestart: applied.length > 0,
+      failures,
+      applied,
+      state: snapshot(),
+    };
+  },
+
+  'profiles.revertApply': ({ clientID, changes }) => {
+    let revertedCount = 0;
+    for (const change of [...changes].reverse()) {
+      const entry = world.servers.find((server) => server.id === change.serverID);
+      if (!entry || (entry.enabledIn[clientID] === 'enabled') !== change.enabled) continue;
+      entry.enabledIn[clientID] = change.enabled ? 'disabled' : 'enabled';
+      revertedCount += 1;
+      recordWrite(clientID);
+    }
+    return { clientID, revertedCount, failures: [], state: snapshot() };
   },
 
   'gateway.preview': ({ serverID, clientID }) => {
@@ -1337,7 +1380,22 @@ const HANDLERS = {
     if (!route) throw Object.assign(new Error('No such gateway route'), { code: 'unknownRoute' });
     world.gatewayRoutes = world.gatewayRoutes.filter((entry) => entry.id !== routeID);
     recordWrite(route.clientID);
-    return { route, backupID: world.backups[0].id, pathDisplay: PATHS[route.clientID], state: snapshot() };
+    return { route, backupID: world.backups[0].id, pathDisplay: PATHS[route.clientID], missingEnvironmentKeys: [], state: snapshot() };
+  },
+
+  'gateway.repair': ({ routeID }) => {
+    const route = world.gatewayRoutes.find((entry) => entry.id === routeID);
+    if (!route) throw Object.assign(new Error('No such gateway route'), { code: 'unknownRoute' });
+    world.repairedRoutes.push(routeID);
+    recordWrite(route.clientID);
+    return { route, backupID: world.backups[0].id, pathDisplay: PATHS[route.clientID], missingEnvironmentKeys: [], state: snapshot() };
+  },
+
+  'gateway.restoreAll': () => {
+    const restored = world.gatewayRoutes;
+    world.gatewayRoutes = [];
+    for (const route of restored) recordWrite(route.clientID);
+    return { restoredCount: restored.length, failures: [], missingEnvironment: [], state: snapshot() };
   },
 
   'gateway.setExposedTools': ({ routeID, toolNames }) => {
@@ -1416,7 +1474,12 @@ const HANDLERS = {
     completedCalls: 3,
     failedCalls: 1,
     averageDurationMilliseconds: 428,
+    refusedCalls: 1,
+    serverFailures: 2,
     events: [
+      { eventID: 'event-0a', sessionID: 'session-3', timestamp: Date.now() / 1000 - 2, kind: 'session.ended', serverID: 'github', clientID: 'claudeCode', toolName: null, durationMilliseconds: null, succeeded: null, errorCode: null, exitCode: 1, unexpected: true, reason: null },
+      { eventID: 'event-0b', sessionID: 'session-2', timestamp: Date.now() / 1000 - 3, kind: 'tool.call.refused', serverID: 'filesystem', clientID: 'codex', toolName: 'write_file', durationMilliseconds: null, succeeded: false, errorCode: null, exitCode: null, unexpected: null, reason: null },
+      { eventID: 'event-0c', sessionID: 'session-4', timestamp: Date.now() / 1000 - 4, kind: 'session.failed', serverID: 'github', clientID: 'cursor', toolName: null, durationMilliseconds: null, succeeded: null, errorCode: null, exitCode: null, unexpected: null, reason: 'secret-unavailable' },
       { eventID: 'event-1', sessionID: 'session-2', timestamp: Date.now() / 1000, kind: 'tool.call.completed', serverID: 'github', clientID: 'claudeCode', toolName: 'create_issue', durationMilliseconds: 812, succeeded: false, errorCode: -32001, exitCode: null },
       { eventID: 'event-2', sessionID: 'session-1', timestamp: Date.now() / 1000 - 8, kind: 'tool.call.completed', serverID: 'filesystem', clientID: 'codex', toolName: 'read_file', durationMilliseconds: 44, succeeded: true, errorCode: null, exitCode: null },
       { eventID: 'event-3', sessionID: 'session-1', timestamp: Date.now() / 1000 - 9, kind: 'tool.call.started', serverID: 'filesystem', clientID: 'codex', toolName: 'read_file', durationMilliseconds: null, succeeded: null, errorCode: null, exitCode: null },
@@ -1812,13 +1875,22 @@ const HANDLERS = {
     const restarted = [];
     const notRunning = [];
     const failures = [];
+    const verify = [];
     for (const id of clientIDs) {
       if (id === 'claudeDesktop') restarted.push(id);
       else if (id === 'vsCode') notRunning.push(id);
       else failures.push({ clientID: id, message: 'Restart it yourself, then choose I restarted.' });
     }
+    // A restarted client's changed servers, for the page to check after the restart.
+    for (const id of restarted) {
+      const changed = world.servers
+        .filter((server) => server.enabledIn[id] === 'enabled' && server.transport !== 'sse')
+        .slice(0, 2)
+        .map((server) => server.id);
+      if (changed.length > 0) verify.push({ clientID: id, serverIDs: changed });
+    }
     for (const id of [...restarted, ...notRunning]) delete world.pendingRestarts[id];
-    return { restarted, notRunning, failures, state: snapshot() };
+    return { restarted, notRunning, failures, verify, state: snapshot() };
   },
 
   // Hides the notice and keeps the count; a later write to the client shows it

@@ -104,6 +104,39 @@ public static class ContractGuard
         return changes;
     }
 
+    /// <summary>Whether a saved baseline predates schema and annotation capture.</summary>
+    /// <remarks>
+    /// Early versions stored each tool's name and description only. Such a baseline
+    /// has no tool with either field, and comparing its missing values against a
+    /// current contract reports every tool twice for nothing. A baseline that holds
+    /// either field for at least one tool was taken by a version that captures them,
+    /// so a missing value there is what the server really sent.
+    /// </remarks>
+    public static bool IsLegacyBaseline(IReadOnlyList<ToolSummary> baseline) =>
+        baseline.Count > 0 && baseline.All(tool => tool.InputSchemaJSON is null && tool.Annotations is null);
+
+    /// <summary>
+    /// A legacy baseline with the fields it never recorded taken from the current
+    /// contract, so comparison starts from here.
+    /// </summary>
+    /// <remarks>
+    /// Name and description stay the baseline's own: those were reviewed, and a change
+    /// to them is still reported. Tools the current contract no longer has are kept as
+    /// they are, so their removal is reported too.
+    /// </remarks>
+    public static IReadOnlyList<ToolSummary> UpgradingLegacyBaseline(
+        IReadOnlyList<ToolSummary> baseline,
+        IReadOnlyList<ToolSummary> current)
+    {
+        if (!IsLegacyBaseline(baseline)) return baseline;
+        var now = ByName(current);
+        return baseline
+            .Select(tool => now.TryGetValue(tool.Name, out var match)
+                ? tool with { InputSchemaJSON = match.InputSchemaJSON, Annotations = match.Annotations }
+                : tool)
+            .ToList();
+    }
+
     /// <summary>How much field-level detail one comparison may hold in all (§7.10).</summary>
     /// <remarks>
     /// Each change is bounded on its own, but a server that lists ten thousand tools and

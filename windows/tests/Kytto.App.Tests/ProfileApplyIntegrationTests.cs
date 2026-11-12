@@ -104,6 +104,55 @@ public sealed class ProfileApplyIntegrationTests : IDisposable
         Assert.Contains("\"external\": true", File.ReadAllText(config), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A profile applied one server at a time can be undone, and only what it changed is
+    /// put back: a switch someone flipped again since is theirs.
+    /// </summary>
+    [Fact]
+    public void AProfileApplyIsReversibleAndOnlyWhatItChangedIsPutBack()
+    {
+        var config = Path.Combine(_home, ".cursor", "mcp.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(config)!);
+        const string Original = """
+            {
+              "mcpServers": {
+                // kept by hand
+                "alpha": { "command": "alpha" },
+                "beta":  { "command": "beta", "env": { "TOKEN": "t" } },
+                "gamma": { "command": "gamma" }
+              }
+            }
+            """;
+        File.WriteAllText(config, Original);
+
+        using var model = new AppModel(
+            new KyttoPaths(Path.Combine(_home, "KyttoData")),
+            _home,
+            new AllInstalledApps(),
+            new InMemorySecretStore(),
+            watchConfigs: false);
+        var profile = Assert.Single(model.CreateProfile("Focused", ["alpha"]));
+
+        var result = model.ApplyProfile(profile.Id, ClientId.Cursor);
+        Assert.Equal(["beta", "gamma"], result.Applied.Select(change => change.ServerID).Order());
+        Assert.All(result.Applied, change => Assert.False(change.Enabled));
+        Assert.NotEqual(Original, File.ReadAllText(config));
+
+        // Someone switches gamma back on before the undo: that one is theirs.
+        model.SetEnabled(true, "gamma", ClientId.Cursor);
+
+        var reverted = model.RevertProfileApply(result.Applied, ClientId.Cursor);
+        Assert.Empty(reverted.Failures);
+        Assert.Equal(1, reverted.RevertedCount);
+        Assert.All(model.Current().Servers, server =>
+            Assert.Equal(Kytto.Core.Model.Enablement.Enabled, server.EnabledIn[ClientId.Cursor]));
+        // The parked definition comes back with the bytes it had, wherever in the map
+        // it lands.
+        var text = File.ReadAllText(config);
+        Assert.Contains("""{ "command": "beta", "env": { "TOKEN": "t" } }""", text, StringComparison.Ordinal);
+        Assert.Contains("// kept by hand", text, StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         try

@@ -49,6 +49,12 @@ Envelope:
 Failures are data. `invoke()` turns them into an `IPCError`; the UI renders an
 error state rather than guessing at a rejected promise.
 
+A write refused because the file's digest no longer matches what Kytto last read
+fails with the code `changedOnDisk`, from every command that writes. It is the one
+failure the page recovers from — it offers Refresh, or Try again for a matrix
+switch — so it branches on that code and never on the wording of the message. Every
+other config-write failure keeps `configWrite`.
+
 Native to web, from `CommandRouter.emit`:
 
 ```js
@@ -89,6 +95,9 @@ reopen a desktop client (issue #14): "Restart now" is offered only for clients w
 
 `package-safety` is advertised where `doctor.checkPackageSafety` can reach osv.dev
 and the npm registry; the UI shows the "Check package safety" button only with it.
+
+`gateway.repair` is advertised where `gateway.repair` and `gateway.restoreAll` exist:
+MCP Doctor's Repair route and Restore Direct mode for all.
 
 `health.http` and `health.oauth` are advertised only where the native path exists:
 the first means `health.check` and `health.checkAll` inspect Streamable HTTP
@@ -369,7 +378,14 @@ notice visible again, and an exact inverse removes the pending count.
 definitions and environment values do not cross IPC.
 
 `doctorReports` contains actionable configuration/health findings and opaque
-action names (`runHealthCheck`, `pinResolvedCommand`, `pinPackageVersion`).
+action names (`runHealthCheck`, `pinResolvedCommand`, `pinPackageVersion`,
+`checkPackageSafety`, `repairGatewayRoute`, `restoreDirectMode`). A finding about a
+Gateway route also carries its opaque `routeID` (null otherwise), because one
+server can be in Gateway mode in several clients. Those findings — codes
+`gateway-helper-missing`, `gateway-route-unknown`, `gateway-secret-unavailable`,
+`gateway-launch-failed` and `gateway-server-stopped` — are worked out from client
+configs, the route file and the last 24 hours of the activity journal, never from
+Credential Manager, and only for servers that still have a route.
 `contractAlerts` contains tool names and model-facing contract
 change summaries. Neither contains environment values or tool-call payloads.
 
@@ -530,6 +546,20 @@ including session ids, client/server ids, tool names, duration, success/error
 codes and process exit codes. Arguments, results, raw protocol messages and
 environment values are intentionally absent.
 
+Beside the session and tool-call events, three describe what a client would
+otherwise show only as "server failed":
+
+- `tool.call.refused` — Kytto answered a call itself because the route hides
+  that tool. Counted in `refusedCalls`.
+- `session.ended` with `unexpected: true` — the server stopped while its client
+  was still attached. `unexpected: false` when the client let go first; null in
+  journals written before 1.0.9.4.
+- `session.failed` with `reason` `secret-unavailable` or `launch-failed` — the
+  helper could not start the server. A fixed vocabulary, never the error text.
+
+The last two are counted together in `serverFailures`. When the journal has just
+been rotated at 5 MB, the view is filled from the previous file as well.
+
 ### `discovery.refresh` → `StateDTO`
 
 No payload. Re-reads every config from disk, off the main thread, and replies
@@ -568,7 +598,7 @@ Errors worth handling by code:
 
 | Message contains | Meaning |
 |---|---|
-| `changed on disk` | Someone else edited the file. Nothing was written. Refresh, then retry. |
+| `changed on disk` | Someone else edited the file. Nothing was written. Refresh, then retry. Sent with the error code `changedOnDisk` by every command that writes; branch on the code, not on this wording. |
 | `cannot be copied` | A Claude Desktop extension is an installed bundle, not a portable definition. |
 | `installed plugin` | A Claude Code or Codex plugin provides this server. Its definition is in a cache the client rewrites, so there is nothing here to toggle — turn the plugin off in the client that installed it. |
 | `install the plugin there` | The same server asked for in a client that did not install the plugin (the message also says `installed plugin`; test for this one first). Plugins are never copied across clients. |
@@ -671,6 +701,20 @@ opened) or `failures` (`{ clientID, message }`, which keeps its notice). Restart
 not-running clients are acknowledged as `restarts.acknowledge` would. The reply carries the
 full `state` as well. A client whose app is not running is never opened. The native side
 runs the quit off the UI thread and the page waits, showing the sheet as busy.
+
+```json
+{ "restarted": ["claudeDesktop"], "notRunning": [], "failures": [],
+  "verify": [{ "clientID": "claudeDesktop", "serverIDs": ["github"] }],
+  "state": { … } }
+```
+
+`verify` lists, for each client that was actually restarted, the servers whose
+definition or state had changed since the last acknowledged restart and that are
+switched on there (not legacy SSE). It is worked out before the acknowledgement
+resets that baseline. A restart proves only that the app came back, so the page
+runs `health.check` on these and adds the outcome to the same notice. Kytto starts
+the servers itself; it cannot see inside the client. Empty when nothing checkable
+changed.
 
 ### `restarts.dismiss` → `StateDTO`
 
@@ -1253,12 +1297,32 @@ backup, external-change guard and atomic writer as `servers.setEnabled`.
 { "profileName": "Coding", "clientID": "cursor",
   "enabledCount": 2, "disabledCount": 3, "requiresRestart": true,
   "failures": [{ "serverName": "bundled", "message": "…" }],
+  "applied": [{ "serverID": "github", "enabled": true }],
   "state": { … } }
 ```
 
 Application is best-effort across independent server entries. A server Kytto
 cannot safely change is returned in `failures`; successful changes are retained
-and reflected in `state`.
+and reflected in `state`. `applied` lists the switches that were made, in order.
+Applying is idempotent, so calling it again after a partial apply only attempts
+what still differs.
+
+### `profiles.revertApply` → `ProfileRevertResultDTO`
+
+```json
+{ "clientID": "cursor", "changes": [{ "serverID": "github", "enabled": true }] }
+```
+
+Undoes a profile apply: `changes` is the `applied` list it returned. Each switch
+is reversed, newest first, through the same guarded write as `servers.setEnabled`;
+a server that was removed to switch it off comes back byte for byte. A server that
+is no longer in the state the apply left it in was changed since and is skipped
+without counting as a failure.
+
+```json
+{ "clientID": "cursor", "revertedCount": 1,
+  "failures": [{ "serverName": "x", "message": "…" }], "state": { … } }
+```
 
 ### `clipboard.writeText` → `{}`
 
@@ -1529,6 +1593,38 @@ Restore verifies that the client still points at this route, puts back the exact
 Direct definition through the guarded backup pipeline, then removes the route
 and its credential entries. While a route is active, ordinary edit, delete,
 disable and remove commands are refused; restore Direct mode first.
+
+Restore normally puts back the stored original. When that is gone from Credential
+Manager, Direct mode is rebuilt from the route's command, arguments and whichever
+environment values can still be read; `missingEnvironmentKeys` names the ones that
+could not, so the UI can ask for them again. It is empty otherwise, and on every
+other command that replies with this shape.
+
+### `gateway.repair` → `GatewayMigrationResultDTO`
+
+```json
+{ "routeID": "opaque UUID" }
+```
+
+For a Kytto that was moved or reinstalled in another folder after Gateway mode was
+turned on. Rewrites only the helper path in that route's definition, through the
+guarded backup pipeline, checks the definition still points at this route, and
+records the new path on the route. Refused when this copy's helper is missing or
+is a temporary copy extracted from a ZIP. Offered by the `gateway-helper-missing`
+Doctor finding, whose `routeID` carries the id. Capability `gateway.repair`.
+
+### `gateway.restoreAll` → `GatewayRestoreAllDTO`
+
+No payload. Restores Direct mode for every route, one after another — what to do
+before uninstalling or moving Kytto, since the helper the configs point at goes
+with it. Routes are independent: one that fails does not stop the rest.
+
+```json
+{ "restoredCount": 2,
+  "failures": [{ "serverName": "github", "clientID": "cursor", "message": "…" }],
+  "missingEnvironment": [{ "serverName": "x", "clientID": "codex", "keys": ["TOKEN"] }],
+  "state": { … } }
+```
 
 ### `gateway.setExposedTools` → `StateDTO`
 

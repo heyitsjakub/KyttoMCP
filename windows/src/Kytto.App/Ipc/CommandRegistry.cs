@@ -224,6 +224,24 @@ internal static partial class CommandRegistry
         router.Register<GatewayRoutePayload, GatewayMigrationResultDto>("gateway.restore", payload =>
             GatewayResult(model.RestoreDirect(payload.RouteID), model));
 
+        // Kytto was moved or reinstalled elsewhere after Gateway mode was turned on:
+        // only the helper path in that route's definition changes.
+        router.Register<GatewayRoutePayload, GatewayMigrationResultDto>("gateway.repair", payload =>
+            GatewayResult(model.RepairGatewayRoute(payload.RouteID), model));
+
+        // What to do before removing Kytto: the helper the configs point at goes with it.
+        router.Register("gateway.restoreAll", () =>
+        {
+            var report = model.RestoreAllDirect();
+            return new GatewayRestoreAllDto(
+                report.Restored.Count,
+                report.Failures.Select(failure => new GatewayRestoreAllFailureDto(
+                    failure.Route.ServerName, failure.Route.ClientID.Raw(), failure.Message)).ToArray(),
+                report.MissingEnvironment.Select(entry => new GatewayMissingEnvironmentDto(
+                    entry.Route.ServerName, entry.Route.ClientID.Raw(), entry.Keys)).ToArray(),
+                model.ToStateDto());
+        });
+
         router.Register<ExposedToolsPayload, StateDto>("gateway.setExposedTools", payload =>
         {
             model.SetExposedTools(payload.RouteID, payload.ToolNames);
@@ -315,6 +333,27 @@ internal static partial class CommandRegistry
                 result.RequiresRestart,
                 result.Failures.Select(failure =>
                     new ProfileFailureDto(failure.ServerName, failure.Message)).ToArray(),
+                result.Applied.Select(change => new ProfileAppliedChangeDto(change.ServerID, change.Enabled)).ToArray(),
+                model.ToStateDto());
+        });
+
+        // Undoes a profile apply, newest switch first, through the same guarded write as
+        // servers.setEnabled. `changes` is the `applied` list the apply returned.
+        router.Register<RevertProfileApplyPayload, ProfileRevertResultDto>("profiles.revertApply", payload =>
+        {
+            var clientId = ClientIds.FromRaw(payload.ClientID)
+                ?? throw new BadArgumentException($"Unknown client {payload.ClientID}.");
+            var changes = (payload.Changes ?? [])
+                .Select(change => new ProfileAppliedChange(
+                    change.ServerID ?? throw new BadArgumentException("A change is missing its server."),
+                    change.Enabled))
+                .ToArray();
+            var result = model.RevertProfileApply(changes, clientId);
+            return new ProfileRevertResultDto(
+                result.ClientID.Raw(),
+                result.RevertedCount,
+                result.Failures.Select(failure =>
+                    new ProfileFailureDto(failure.ServerName, failure.Message)).ToArray(),
                 model.ToStateDto());
         });
 
@@ -380,6 +419,8 @@ internal static partial class CommandRegistry
                     ?? throw new BadArgumentException($"Unknown client {raw}."))
                 .ToArray();
 
+            // Before the acknowledgements below reset what "changed" means.
+            var changed = requested.ToDictionary(client => client, model.ServersAwaitingRestart);
             var home = model.Home;
             var outcomes = await Task.Run(() => requested
                 .Select(client => (Client: client, Outcome: ClientRestarter.Restart(ClientRegistry.Descriptor(client), home)))
@@ -388,12 +429,14 @@ internal static partial class CommandRegistry
             var restarted = new List<string>();
             var notRunning = new List<string>();
             var failures = new List<RestartFailureDto>();
+            var verify = new List<RestartVerificationDto>();
             foreach (var (client, outcome) in outcomes)
             {
                 switch (outcome.Kind)
                 {
                     case RestartOutcomeKind.Restarted:
                         restarted.Add(client.Raw());
+                        if (changed[client].Count > 0) verify.Add(new RestartVerificationDto(client.Raw(), changed[client]));
                         model.AcknowledgeRestart(client);
                         break;
                     case RestartOutcomeKind.NotRunning:
@@ -406,7 +449,7 @@ internal static partial class CommandRegistry
                 }
             }
 
-            return new RestartResultDto(restarted, notRunning, failures, model.ToStateDto());
+            return new RestartResultDto(restarted, notRunning, failures, verify, model.ToStateDto());
         });
 
         router.Register<AcknowledgePayload, StateDto>("restarts.dismiss", payload =>
@@ -678,7 +721,7 @@ internal static partial class CommandRegistry
             [
                 "config.read", "config.write", "backups",
                 "authoring", "catalog", "secrets", "health",
-                "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking",
+                "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking", "gateway.repair",
                 "doctor", "activity", "contract-guard", "context-optimizer", "drift",
                 "updates", "provenance", "package-safety", "agent-import", "library", "skills",
                 "client-restart",
@@ -705,6 +748,7 @@ internal static partial class CommandRegistry
             result.Route.ToDto(),
             result.BackupID,
             result.PathDisplay,
+            result.MissingEnvironmentKeys,
             model.ToStateDto());
 
     private static IReadOnlyList<ClientId> WritableClientIDs(IReadOnlyList<string> raw)
@@ -861,6 +905,10 @@ internal sealed record UpdateProfilePayload(
 internal sealed record ProfileIdPayload(string ProfileID);
 
 internal sealed record ApplyProfilePayload(string ProfileID, string ClientID);
+
+internal sealed record ProfileAppliedChangePayload(string? ServerID, bool Enabled);
+
+internal sealed record RevertProfileApplyPayload(string ClientID, IReadOnlyList<ProfileAppliedChangePayload>? Changes);
 
 internal sealed record ClipboardPayload(string Text);
 

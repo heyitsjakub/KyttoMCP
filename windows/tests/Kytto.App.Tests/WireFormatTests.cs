@@ -320,13 +320,67 @@ public class WireFormatTests
     {
         var encoded = Encode(new GatewayEventDto(
             "event", "session", 1785534295.1, "tool.call.completed", "github", "cursor",
-            "create_issue", 120, false, -32001, null));
+            "create_issue", 120, false, -32001, null, null, null));
 
         Assert.Equal(
             ["eventID", "sessionID", "timestamp", "kind", "serverID", "clientID",
-             "toolName", "durationMilliseconds", "succeeded", "errorCode", "exitCode"],
+             "toolName", "durationMilliseconds", "succeeded", "errorCode", "exitCode",
+             "unexpected", "reason"],
             KeysOf(encoded));
         Assert.DoesNotContain("requestID", KeysOf(encoded), StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// What a client shows only as "server failed": refused calls and server failures
+    /// are counted, and a failed start says why in a fixed vocabulary (docs/ipc.md).
+    /// </summary>
+    [Fact]
+    public void ActivityCountsRefusalsAndServerFailures()
+    {
+        var events = new[]
+        {
+            new Kytto.Core.Gateway.GatewayEvent("1", "s1", DateTimeOffset.UnixEpoch,
+                Kytto.Core.Gateway.GatewayEventKind.ToolCallRefused, "github", "cursor", "write_file", "7", Succeeded: false),
+            new Kytto.Core.Gateway.GatewayEvent("2", "s2", DateTimeOffset.UnixEpoch,
+                Kytto.Core.Gateway.GatewayEventKind.SessionFailed, "github", "cursor",
+                Reason: Kytto.Core.Gateway.GatewayFailureReason.SecretUnavailable),
+            new Kytto.Core.Gateway.GatewayEvent("3", "s3", DateTimeOffset.UnixEpoch,
+                Kytto.Core.Gateway.GatewayEventKind.SessionEnded, "github", "cursor", ExitCode: 1, Unexpected: true),
+            new Kytto.Core.Gateway.GatewayEvent("4", "s4", DateTimeOffset.UnixEpoch,
+                Kytto.Core.Gateway.GatewayEventKind.SessionEnded, "github", "cursor", ExitCode: 0, Unexpected: false),
+        };
+        var dto = Kytto.Core.Gateway.GatewayActivitySummary.From(events).ToDto();
+
+        Assert.Equal(1, dto.RefusedCalls);
+        Assert.Equal(2, dto.ServerFailures);
+        Assert.Equal(
+            ["tool.call.refused", "session.failed", "session.ended", "session.ended"],
+            dto.Events.Select(item => item.Kind));
+        Assert.Equal("secret-unavailable", dto.Events[1].Reason);
+        Assert.Equal(
+            ["events", "totalSessions", "completedCalls", "failedCalls", "averageDurationMilliseconds",
+             "refusedCalls", "serverFailures"],
+            KeysOf(Encode(dto)));
+    }
+
+    [Fact]
+    public void RecoveryRepliesKeepTheirMacShape()
+    {
+        Assert.Equal(
+            ["code", "severity", "title", "detail", "remediation", "action", "routeID"],
+            KeysOf(Encode(new DoctorFindingDto("gateway-helper-missing", "error", "t", "d", "r", "repairGatewayRoute", "route"))));
+        Assert.Equal(
+            ["clientID", "serverIDs"],
+            KeysOf(Encode(new RestartVerificationDto("claudeDesktop", ["github"]))));
+        Assert.Equal(
+            ["serverID", "enabled"],
+            KeysOf(Encode(new ProfileAppliedChangeDto("github", true))));
+        Assert.Equal(
+            ["serverName", "clientID", "keys"],
+            KeysOf(Encode(new GatewayMissingEnvironmentDto("github", "codex", ["TOKEN"]))));
+        Assert.Equal(
+            ["serverName", "clientID", "message"],
+            KeysOf(Encode(new GatewayRestoreAllFailureDto("github", "cursor", "m"))));
     }
 
     [Fact]

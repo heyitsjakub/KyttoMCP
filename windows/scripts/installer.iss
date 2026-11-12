@@ -77,3 +77,24 @@ Name: "{autodesktop}\Kytto"; Filename: "{app}\Kytto.exe"; WorkingDir: "{app}"; T
 
 [Run]
 Filename: "{app}\Kytto.exe"; Description: "Launch Kytto"; Flags: nowait postinstall skipifsilent
+
+[Code]
+// A server in Gateway mode is started through kytto-mcp-proxy.exe in this folder, so
+// removing Kytto leaves it unable to start and its client shows only "failed". The
+// way out is in the app (MCP Doctor, Restore Direct mode for all), so say so before
+// anything is removed. Suppressible: a silent uninstall goes ahead.
+function InitializeUninstall(): Boolean;
+var
+  Routes: AnsiString;
+begin
+  Result := True;
+  if LoadStringFromFile(ExpandConstant('{userappdata}\Kytto\gateway-routes.json'), Routes) and
+     (Pos('"id"', Routes) > 0) then
+    Result := SuppressibleMsgBox(
+      'Some MCP servers still start through Kytto''s Gateway helper. After Kytto is removed, ' +
+      'their clients will not be able to start them.' + #13#10#13#10 +
+      'To keep them working, choose No, open Kytto, and in MCP Doctor choose ' +
+      '"Restore Direct mode for all". Then uninstall again.' + #13#10#13#10 +
+      'Uninstall anyway?',
+      mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDYES) = IDYES;
+end;

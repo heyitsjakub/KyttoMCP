@@ -94,6 +94,9 @@ internal static class Envelope
         IpcException ipc => ipc.Code,
         JsonException => "badPayload",
         GatewayManagedException or NoDriftException or PackagePinStateException => "appState",
+        // Its own code: the page reloads and offers a retry for this one, and must
+        // not have to recognise it by the wording of the message.
+        ConfigWriteException { IsChangedOnDisk: true } => "changedOnDisk",
         ConfigWriteException or ConfigTransactionException => "configWrite",
         BackupException => "backup",
         ToggleException => "toggle",

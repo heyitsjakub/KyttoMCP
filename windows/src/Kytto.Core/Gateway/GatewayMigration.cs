@@ -22,7 +22,43 @@ public sealed record GatewayMigrationPreview(
 public sealed record GatewayMigrationResult(
     GatewayRoute Route,
     string? BackupID,
-    string PathDisplay);
+    string PathDisplay)
+{
+    /// <summary>
+    /// Environment variables a rebuilt Direct definition could not be given, because
+    /// their stored values were gone. Empty for an ordinary restore.
+    /// </summary>
+    public IReadOnlyList<string> MissingEnvironmentKeys { get; init; } = [];
+}
+
+/// <summary>
+/// Something that stops a Gateway definition in a client's config from starting,
+/// found by reading the config and the route store only.
+/// </summary>
+/// <remarks>
+/// Nothing here opens the credential store, so it is safe to compute on every reload.
+/// </remarks>
+public sealed record GatewayRouteDiagnosis(
+    string ServerID,
+    string ServerName,
+    ClientId ClientID,
+    string RouteID,
+    GatewayRouteProblem Problem,
+    /// <summary>For <see cref="GatewayRouteProblem.HelperMissing"/>: the path the config names.</summary>
+    string? HelperPath = null,
+    /// <summary>
+    /// For <see cref="GatewayRouteProblem.HelperMissing"/>: whether this copy's helper
+    /// can take over.
+    /// </summary>
+    bool Repairable = false);
+
+public enum GatewayRouteProblem
+{
+    /// <summary>The config names a helper that is not there — Kytto was moved, reinstalled elsewhere or deleted.</summary>
+    HelperMissing,
+    /// <summary>The config points at a route Kytto has no record of.</summary>
+    UnknownRoute,
+}
 
 public sealed class GatewayMigrationException(string message) : Exception(message)
 {
@@ -188,9 +224,24 @@ public sealed class GatewayMigrationService
     public GatewayMigrationResult Restore(string routeId)
     {
         var route = _routes.Route(routeId);
-        var source = _secrets.Value(route.DirectDefinitionSecretID)
-            ?? throw GatewayRouteException.MissingSecret("original definition");
         var target = TargetFor(route.ClientID);
+        // The stored original is the faithful way back. When it is gone — Credential
+        // Manager cleared, or the profile moved to another machine — the route still
+        // knows the command and arguments, so Direct mode is rebuilt from those instead
+        // of leaving a server that can be neither started nor edited. Values that are
+        // gone too are named, so the user knows what to enter again.
+        var missingKeys = new List<string>();
+        var source = TryValue(route.DirectDefinitionSecretID);
+        if (source is null)
+        {
+            var environment = new List<EnvEntry>();
+            foreach (var reference in route.Environment)
+            {
+                if (TryValue(reference.SecretID) is { } value) environment.Add(new EnvEntry(reference.Key, value));
+                else missingKeys.Add(reference.Key);
+            }
+            source = Definition(target, route.ServerName, route.Command, route.Arguments, environment);
+        }
         var receipt = WriteReplacement(source, target, route.Id, route.ServerName);
         _ledger.Record(target.Path, receipt.Digest);
 
@@ -200,7 +251,283 @@ public sealed class GatewayMigrationService
         TryDelete(route.DirectDefinitionSecretID);
         foreach (var reference in route.Environment) TryDelete(reference.SecretID);
 
-        return new GatewayMigrationResult(route, receipt.BackupID, receipt.PathDisplay);
+        return new GatewayMigrationResult(route, receipt.BackupID, receipt.PathDisplay)
+        {
+            MissingEnvironmentKeys = missingKeys.Order(StringComparer.Ordinal).ToArray(),
+        };
+    }
+
+    // Keeping routes working
+
+    /// <summary>What stops each Gateway definition from starting, config by config.</summary>
+    /// <remarks>
+    /// A client only ever reports "server failed". The causes Kytto can see without
+    /// starting anything are the two here: the helper the config names is gone (Kytto
+    /// was moved, reinstalled elsewhere or removed), or the route record is.
+    /// </remarks>
+    public IReadOnlyList<GatewayRouteDiagnosis> Diagnose()
+    {
+        IReadOnlyList<GatewayRoute> known;
+        try { known = _routes.All(); }
+        catch (GatewayRouteException) { return []; }
+        var byId = new Dictionary<string, GatewayRoute>(StringComparer.Ordinal);
+        foreach (var route in known) byId.TryAdd(route.Id, route);
+        var currentHelperUsable = File.Exists(_helperPath) && !IsTemporaryZipExtraction(_helperPath);
+        var result = new List<GatewayRouteDiagnosis>();
+
+        foreach (var descriptor in _descriptors)
+        {
+            if (descriptor.EditableServerMap is not { } source ||
+                descriptor.ServerSchema.Shape != ServerSchema.EntryShape.McpServers) continue;
+            var path = _resolver.ResolveServerMap(source.File, descriptor.Id);
+            IReadOnlyList<(string ServerName, string RouteID, string Command)> entries;
+            try
+            {
+                if (!File.Exists(path)) continue;
+                entries = GatewayEntries(File.ReadAllText(path), descriptor.Id);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+                JsonParseException or TomlParseException or AuthoringException)
+            {
+                continue;
+            }
+
+            foreach (var entry in entries)
+            {
+                if (!byId.TryGetValue(entry.RouteID, out var route) || route.ClientID != descriptor.Id)
+                {
+                    result.Add(new GatewayRouteDiagnosis(
+                        Server.Identity(entry.ServerName),
+                        entry.ServerName,
+                        descriptor.Id,
+                        entry.RouteID,
+                        GatewayRouteProblem.UnknownRoute));
+                    continue;
+                }
+                // A bare name is found through PATH by the client; only a path Kytto
+                // wrote can be checked from here.
+                if (!Path.IsPathFullyQualified(entry.Command) || File.Exists(entry.Command)) continue;
+                result.Add(new GatewayRouteDiagnosis(
+                    route.ServerID,
+                    entry.ServerName,
+                    descriptor.Id,
+                    route.Id,
+                    GatewayRouteProblem.HelperMissing,
+                    entry.Command,
+                    currentHelperUsable));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>Points a route's definition at this copy of the helper.</summary>
+    /// <remarks>
+    /// For a Kytto that was moved or reinstalled in another folder after Gateway mode was
+    /// turned on: the config still names the old location. Only the command path
+    /// changes; the route, its credentials and its tool mask stay as they are.
+    /// </remarks>
+    public GatewayMigrationResult Repair(string routeId)
+    {
+        var route = _routes.Route(routeId);
+        if (!File.Exists(_helperPath)) throw GatewayMigrationException.HelperUnavailable(_helperPath);
+        if (IsTemporaryZipExtraction(_helperPath))
+        {
+            throw GatewayMigrationException.HelperLocationUnstable(Path.GetDirectoryName(_helperPath) ?? _helperPath);
+        }
+        var target = TargetFor(route.ClientID);
+        var replacement = GatewayDefinition(target, route.ServerName, route.Id);
+        var receipt = WriteReplacement(replacement, target, route.Id, route.ServerName);
+        _ledger.Record(target.Path, receipt.Digest);
+        GatewayRoute updated;
+        try { updated = _routes.UpdateGatewayCommand(route.Id, _helperPath); }
+        catch (GatewayRouteException) { updated = route; }
+        return new GatewayMigrationResult(updated, receipt.BackupID, receipt.PathDisplay);
+    }
+
+    /// <summary>Carries a rotated secret into every route that was holding the old one.</summary>
+    /// <remarks>
+    /// A route keeps its own copy of each value, and the original definition it would
+    /// restore. Rotating in the configs alone would leave a Gateway server running on
+    /// the revoked token, and bring it back on Restore Direct.
+    /// </remarks>
+    /// <returns>The routes that changed, whose clients need a restart.</returns>
+    public IReadOnlyList<GatewayRoute> RotateEnvironmentValue(string key, string oldValue, string newValue)
+    {
+        if (oldValue.Length == 0 || oldValue == newValue) return [];
+        IReadOnlyList<GatewayRoute> all;
+        try { all = _routes.All(); }
+        catch (GatewayRouteException) { return []; }
+
+        var changed = new List<GatewayRoute>();
+        foreach (var route in all)
+        {
+            var touched = false;
+            foreach (var reference in route.Environment.Where(reference => reference.Key == key))
+            {
+                if (TryValue(reference.SecretID) != oldValue) continue;
+                try
+                {
+                    _secrets.Store(newValue, reference.SecretID);
+                    touched = true;
+                }
+                catch (SecretsException) { }
+            }
+            if (!touched) continue;
+            changed.Add(route);
+
+            // Best effort: a definition that cannot be rewritten is left alone, and
+            // Restore Direct then brings back the old value as it always did.
+            var format = _descriptors.FirstOrDefault(candidate => candidate.Id == route.ClientID)?.EditableServerMap?.Format;
+            if (format is null || TryValue(route.DirectDefinitionSecretID) is not { } original) continue;
+            if (ReplacingEnvironmentValue(key, oldValue, newValue, original, format.Value) is not { } rewritten ||
+                rewritten == original) continue;
+            try { _secrets.Store(rewritten, route.DirectDefinitionSecretID); }
+            catch (SecretsException) { }
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// The same definition text with one environment value replaced, or null if it
+    /// does not parse. Only a value that equals <paramref name="oldValue"/> is touched.
+    /// </summary>
+    internal static string? ReplacingEnvironmentValue(
+        string key,
+        string oldValue,
+        string newValue,
+        string definition,
+        ConfigFormat format)
+    {
+        if (format == ConfigFormat.Json)
+        {
+            JsonDocument document;
+            try { document = JsonDocument.Parse(definition); }
+            catch (JsonParseException) { return null; }
+            var edits = (document.Root["env"]?.Members ?? [])
+                .Where(member => member.Key == key && member.Value.StringValue == oldValue)
+                .Select(member => (member.Value.Span, JsonText.String(newValue)))
+                .ToArray();
+            return edits.Length == 0 ? definition : document.Replacing(edits);
+        }
+
+        TomlDocument toml;
+        try { toml = TomlDocument.Parse(definition); }
+        catch (TomlParseException) { return null; }
+        var spans = new List<TomlSpan>();
+        foreach (var table in toml.Tables)
+        {
+            if (table.Path.LastOrDefault() == "env")
+            {
+                spans.AddRange(table.Pairs
+                    .Where(pair => pair.Name == key && pair.Value.StringValue == oldValue)
+                    .Select(pair => pair.Value.Span));
+            }
+            foreach (var pair in table.Pairs.Where(pair => pair.Key[0] == "env"))
+            {
+                if (pair.Key.Count == 2 && pair.Key[1] == key && pair.Value.StringValue == oldValue)
+                {
+                    spans.Add(pair.Value.Span);
+                }
+                spans.AddRange((pair.Value.InlinePairs ?? [])
+                    .Where(inner => inner.Name == key && inner.Value.StringValue == oldValue)
+                    .Select(inner => inner.Value.Span));
+            }
+        }
+        return spans.Count == 0
+            ? definition
+            : toml.Replacing(spans.Select(span => (span, TomlText.String(newValue))));
+    }
+
+    /// <summary>
+    /// The helper definition for a server already in Gateway mode, rendered the way
+    /// <see cref="Enable"/> renders it, at this copy's helper path.
+    /// </summary>
+    private string GatewayDefinition(Target target, string serverName, string routeId) =>
+        Definition(target, serverName, _helperPath, ["--route", routeId], []);
+
+    /// <summary>A stdio definition rendered from the model, in the target file's format.</summary>
+    /// <remarks>
+    /// Codex settings about the entry rather than the process (timeouts, which tools to
+    /// show) stay in the block as they were, as in <see cref="Enable"/>.
+    /// </remarks>
+    private static string Definition(
+        Target target,
+        string serverName,
+        string command,
+        IReadOnlyList<string> arguments,
+        IReadOnlyList<EnvEntry> environment)
+    {
+        if (target.Source.Format == ConfigFormat.Json)
+        {
+            var document = JsonDocument.Parse(target.SourceText);
+            var member = document.ValueAt(target.Source.ServersKey)?.Members?
+                .FirstOrDefault(candidate => Server.Identity(candidate.Key) == Server.Identity(serverName))
+                ?? throw GatewayMigrationException.DefinitionMissing();
+            return new ServerDraft
+            {
+                Name = member.Key,
+                Command = command,
+                Args = arguments,
+                Env = environment,
+            }.Definition(
+                document.LineIndent(member.Value.Span.Start),
+                IndentStyle.Detect(document.SourceText).Text,
+                document.Newline());
+        }
+
+        var toml = TomlDocument.Parse(target.SourceText);
+        var name = toml.ServerNames(target.Source.ServersKey)
+            .FirstOrDefault(candidate => Server.Identity(candidate) == Server.Identity(serverName))
+            ?? throw GatewayMigrationException.DefinitionMissing();
+        var clientSide = toml.Table(target.Source.ServersKey, name)?.Pairs
+            .Where(pair => CodexClientKeys.Contains(pair.Key[0])) ?? [];
+        return string.Join("\n", new[]
+        {
+            TomlBuilder.ServerBlock(name, target.Source.ServersKey, command, arguments, null, environment, null),
+        }.Concat(clientSide.Select(pair => toml.Slice(pair.Span))));
+    }
+
+    /// <summary>Every Gateway definition in a config: its server, route and the helper path it names.</summary>
+    private IReadOnlyList<(string ServerName, string RouteID, string Command)> GatewayEntries(string text, ClientId clientId)
+    {
+        var descriptor = _descriptors.FirstOrDefault(candidate => candidate.Id == clientId);
+        var source = descriptor?.EditableServerMap
+            ?? throw AuthoringException.NoSourceForClient(clientId);
+        var result = new List<(string, string, string)>();
+        if (source.Format == ConfigFormat.Json)
+        {
+            var document = JsonDocument.Parse(text);
+            foreach (var member in document.ValueAt(source.ServersKey)?.Members ?? [])
+            {
+                var command = member.Value["command"]?.StringValue;
+                if (command is not null && RouteID(command,
+                        member.Value["args"]?.Elements?.Select(item => item.StringValue).ToArray()) is { } id)
+                {
+                    result.Add((member.Key, id, command));
+                }
+            }
+            return result;
+        }
+
+        var toml = TomlDocument.Parse(text);
+        foreach (var name in toml.ServerNames(source.ServersKey))
+        {
+            var table = toml.Table(source.ServersKey, name);
+            var command = table?.Value("command")?.StringValue;
+            if (command is not null && RouteID(command,
+                    table?.Value("args")?.Elements?.Select(item => item.StringValue).ToArray()) is { } id)
+            {
+                result.Add((name, id, command));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>A stored value, or null when it is gone or cannot be read.</summary>
+    private string? TryValue(string id)
+    {
+        try { return _secrets.Value(id); }
+        catch (SecretsException) { return null; }
     }
 
     public void ValidateBackupRestore(string text, ClientId clientId)

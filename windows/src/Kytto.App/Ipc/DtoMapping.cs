@@ -210,7 +210,8 @@ internal static class DtoMapping
             finding.Title,
             finding.Detail,
             finding.Remediation,
-            finding.Action is { } action ? Raw(action) : null)).ToArray());
+            finding.Action is { } action ? Raw(action) : null,
+            finding.RouteID)).ToArray());
 
     internal static ContractAlertDto ToDto(this ContractAlert alert) => new(
         alert.ServerID,
@@ -267,11 +268,15 @@ internal static class DtoMapping
             item.DurationMilliseconds,
             item.Succeeded,
             item.ErrorCode,
-            item.ExitCode)).ToArray(),
+            item.ExitCode,
+            item.Unexpected,
+            item.Reason)).ToArray(),
         summary.TotalSessions,
         summary.CompletedCalls,
         summary.FailedCalls,
-        summary.AverageDurationMilliseconds);
+        summary.AverageDurationMilliseconds,
+        summary.RefusedCalls,
+        summary.ServerFailures);
 
     internal static ProfileDto ToDto(this Profile profile, IReadOnlyList<Server> servers)
     {
@@ -376,6 +381,8 @@ internal static class DtoMapping
         GatewayEventKind.SessionStarted => "session.started",
         GatewayEventKind.ToolCallStarted => "tool.call.started",
         GatewayEventKind.ToolCallCompleted => "tool.call.completed",
+        GatewayEventKind.ToolCallRefused => "tool.call.refused",
+        GatewayEventKind.SessionFailed => "session.failed",
         _ => "session.ended",
     };
 }

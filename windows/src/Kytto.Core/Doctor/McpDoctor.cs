@@ -16,6 +16,12 @@ public enum DoctorAction
 
     /// <summary>Ask osv.dev and the package registry about the package (§7.10).</summary>
     CheckPackageSafety,
+
+    /// <summary>Point a Gateway definition at this copy of the helper (Kytto was moved).</summary>
+    RepairGatewayRoute,
+
+    /// <summary>Put the server's own definition back in place of the Gateway one.</summary>
+    RestoreDirectMode,
 }
 
 public sealed record DoctorFinding(
@@ -24,7 +30,12 @@ public sealed record DoctorFinding(
     string Title,
     string Detail,
     string Remediation,
-    DoctorAction? Action = null);
+    DoctorAction? Action = null,
+    /// <summary>
+    /// The Gateway route a route-level action applies to. A server can be in Gateway
+    /// mode in several clients, so the server id alone does not say.
+    /// </summary>
+    string? RouteID = null);
 
 public sealed record DoctorServerReport(
     string ServerID,
@@ -48,10 +59,12 @@ public static class McpDoctor
     /// attached to each server involved.
     /// </remarks>
     /// <param name="packageSafety">Package checks the user asked for, by server id.</param>
+    /// <param name="gateway">Findings about Gateway routes, by server id (<see cref="GatewayDoctor"/>).</param>
     public static IReadOnlyList<DoctorServerReport> Reports(
         IReadOnlyList<Server> servers,
         IReadOnlyList<ClientId> clients,
-        IReadOnlyDictionary<string, PackageSafetyReport>? packageSafety = null)
+        IReadOnlyDictionary<string, PackageSafetyReport>? packageSafety = null,
+        IReadOnlyDictionary<string, IReadOnlyList<DoctorFinding>>? gateway = null)
     {
         var collisions = CollisionFindings(servers, clients);
         return servers
@@ -62,6 +75,7 @@ public static class McpDoctor
                 [
                     .. PackageSafety.Findings(server, packageSafety?.GetValueOrDefault(server.Id)),
                     .. collisions.GetValueOrDefault(server.Id) ?? [],
+                    .. gateway?.GetValueOrDefault(server.Id) ?? [],
                 ];
                 if (extra.Count == 0) return report;
                 return report with { Findings = [.. report.Findings, .. extra] };

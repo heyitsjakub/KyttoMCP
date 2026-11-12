@@ -165,6 +165,18 @@ public sealed class ShellRobustnessTests : IDisposable
         Assert.Equal("Unknown transport htpt.", error.Message);
     }
 
+    /// <summary>
+    /// The page offers Refresh and Try again for this one failure, and must not have
+    /// to recognise it by the wording of the message.
+    /// </summary>
+    [Fact]
+    public void AConfigThatChangedOnDiskIsReportedByCodeNotByWording()
+    {
+        Assert.Equal("changedOnDisk", Envelope.CodeFor(ConfigWriteException.ChangedOnDisk("~/x")));
+        Assert.Equal("configWrite", Envelope.CodeFor(ConfigWriteException.Unreadable("~/x", "r")));
+        Assert.Equal("configWrite", Envelope.CodeFor(new ConfigWriteException("x changed on disk")));
+    }
+
     [Fact]
     public void RefreshStartsWatchingAConfigDirectoryCreatedAfterLaunch()
     {

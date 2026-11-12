@@ -174,6 +174,26 @@ public sealed class GatewayToolFilter(IReadOnlyList<string> exposedTools)
         return new ClientDecision.Refuse(replies.Count == 0 ? [] : Encoding.UTF8.GetBytes(replies.ToJsonString()));
     }
 
+    /// <summary>The hidden tools a client line tries to call, for the activity journal.</summary>
+    /// <remarks>Names and request ids only; arguments are never looked at.</remarks>
+    public IReadOnlyList<(string ToolName, string? RequestId)> HiddenCalls(ReadOnlySpan<byte> line)
+    {
+        var objects = Parse(line) switch
+        {
+            JsonArray batch => batch.OfType<JsonObject>().ToArray(),
+            JsonObject message => [message],
+            _ => [],
+        };
+        var calls = new List<(string, string?)>();
+        foreach (var item in objects)
+        {
+            if (StringAt(item, "method") != "tools/call" ||
+                StringAt(item["params"], "name") is not { } name || Allows(name)) continue;
+            calls.Add((name, RequestId(item["id"])));
+        }
+        return calls;
+    }
+
     private static byte[] Refusal(JsonNode? id, string toolName)
     {
         // The id goes back exactly as it arrived — a client that sent a number and

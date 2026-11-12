@@ -10,4 +10,16 @@ public sealed record ProfileApplyResult(
     int EnabledCount,
     int DisabledCount,
     bool RequiresRestart,
+    IReadOnlyList<ProfileApplyFailure> Failures)
+{
+    /// <summary>The switches that were actually made, in order, so they can be undone.</summary>
+    public IReadOnlyList<ProfileAppliedChange> Applied { get; init; } = [];
+}
+
+/// <summary>One switch a profile apply made: the server and the state it was put in.</summary>
+public sealed record ProfileAppliedChange(string ServerID, bool Enabled);
+
+public sealed record ProfileRevertResult(
+    ClientId ClientID,
+    int RevertedCount,
     IReadOnlyList<ProfileApplyFailure> Failures);

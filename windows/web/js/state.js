@@ -14,6 +14,7 @@
  *   updatePackage: object | null,
  *   provenanceChecking: Set<string>,
  *   packageSafetyBusyServerID: string | null,
+ *   gatewayRepairBusyRouteID: string | null,
  *   clients: object[],
  *   servers: object[],
  *   diagnostics: object[],
@@ -61,6 +62,8 @@ const state = {
   updatePackage: null,
   provenanceChecking: new Set(),
   packageSafetyBusyServerID: null,
+  // The Gateway route Doctor is repairing; one at a time.
+  gatewayRepairBusyRouteID: null,
   clients: [],
   servers: [],
   diagnostics: [],

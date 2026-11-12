@@ -193,6 +193,10 @@ public sealed class MetadataStore(KyttoPaths paths)
                     (existing.Health?.Status == HealthStatus.Passed ? existing.Health.Tools : null);
                 if (baseline is not null)
                 {
+                    // A baseline from before schemas and annotations were recorded
+                    // adopts them from this check instead of reporting each tool as
+                    // changed.
+                    baseline = ContractGuard.UpgradingLegacyBaseline(baseline, health.Tools);
                     // Every check is measured against the contract the user last
                     // reviewed, so changes add up until they are acknowledged. Only
                     // AcknowledgeContract moves the baseline (§7.10); a check that

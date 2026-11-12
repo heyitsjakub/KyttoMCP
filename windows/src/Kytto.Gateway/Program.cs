@@ -28,18 +28,22 @@ try
     string clientId;
     string? eventLogPath;
     IReadOnlyList<string>? exposedTools = null;
+    GatewayRouteStore? routes = null;
 
     if (invocation.RouteID is { } routeId)
     {
-        var routes = new GatewayRouteStore(invocation.RoutesPath ?? paths.GatewayRoutesFile);
-        var launch = routes.Resolve(routeId, new WindowsCredentialStore("Kytto.Gateway"));
-        command = launch.Route.Command;
-        arguments = launch.Route.Arguments;
-        extraEnvironment = launch.Environment;
-        serverId = launch.Route.ServerID;
-        clientId = launch.Route.ClientID.Raw();
+        // The route is looked up before its secrets are read, so a session that then
+        // cannot start is still journalled against its server and client: the client
+        // itself only shows "server failed".
+        routes = new GatewayRouteStore(invocation.RoutesPath ?? paths.GatewayRoutesFile);
+        var known = routes.Route(routeId);
+        command = known.Command;
+        arguments = known.Arguments;
+        extraEnvironment = new Dictionary<string, string>();
+        serverId = known.ServerID;
+        clientId = known.ClientID.Raw();
         eventLogPath = invocation.EventLogPath ?? paths.GatewayEventsFile;
-        exposedTools = launch.Route.ExposedTools;
+        exposedTools = known.ExposedTools;
     }
     else
     {
@@ -57,21 +61,49 @@ try
     IGatewayEventSink sink = eventSink is not null ? eventSink : new NullGatewayEventSink();
     var observer = new GatewayMessageObserver(serverId, clientId, sink);
 
-    var environment = ShellEnvironment.Current.With(extraEnvironment);
-    var start = ManagedExecutable.StartInfo(command, arguments, environment);
-    start.RedirectStandardInput = true;
-    start.RedirectStandardOutput = true;
-    start.RedirectStandardError = true;
+    if (routes is not null && invocation.RouteID is { } resolvedId)
+    {
+        try
+        {
+            var launch = routes.Resolve(resolvedId, new WindowsCredentialStore("Kytto.Gateway"));
+            command = launch.Route.Command;
+            arguments = launch.Route.Arguments;
+            extraEnvironment = launch.Environment;
+            exposedTools = launch.Route.ExposedTools;
+        }
+        catch
+        {
+            observer.Fail(GatewayFailureReason.SecretUnavailable);
+            throw;
+        }
+    }
 
-    using var process = Process.Start(start)
-        ?? throw new InvalidOperationException($"Could not start {command}.");
+    Process? started;
+    try
+    {
+        var environment = ShellEnvironment.Current.With(extraEnvironment);
+        var start = ManagedExecutable.StartInfo(command, arguments, environment);
+        start.RedirectStandardInput = true;
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = true;
+        started = Process.Start(start)
+            ?? throw new InvalidOperationException($"Could not start {command}.");
+    }
+    catch
+    {
+        observer.Fail(GatewayFailureReason.LaunchFailed);
+        throw;
+    }
+    using var process = started;
     using var job = KillOnCloseJob.Create(process);
     observer.Start();
+    var client = new ClientPresence();
 
     using var cancellation = new CancellationTokenSource();
     Console.CancelKeyPress += (_, eventArgs) =>
     {
         eventArgs.Cancel = true;
+        client.MarkGone();
         cancellation.Cancel();
         TryKill(process);
     };
@@ -92,14 +124,20 @@ try
             toServer,
             observer,
             GatewayDirection.ClientToServer,
-            line => filter.InspectClientLine(line) switch
+            line =>
             {
-                GatewayToolFilter.ClientDecision.Refuse refusal =>
-                    RefuseAndDrop(toClient, refusal.Response),
-                _ => line,
+                if (filter.InspectClientLine(line) is not GatewayToolFilter.ClientDecision.Refuse refusal) return line;
+                // Journalled so a refusal is visible in Live Activity: without it a
+                // blocked call looks like nothing happened.
+                foreach (var (toolName, requestId) in filter.HiddenCalls(line))
+                {
+                    observer.RecordRefusal(toolName, requestId);
+                }
+                return RefuseAndDrop(toClient, refusal.Response);
             },
             closeDestination: true,
-            cancellation.Token);
+            cancellation.Token,
+            client);
         serverToClient = RelayMessagesAsync(
             process.StandardOutput.BaseStream,
             toClient,
@@ -117,7 +155,8 @@ try
             observer,
             GatewayDirection.ClientToServer,
             closeDestination: true,
-            cancellation.Token);
+            cancellation.Token,
+            client);
         serverToClient = RelayAsync(
             process.StandardOutput.BaseStream,
             toClient,
@@ -159,13 +198,16 @@ try
         TryKill(process);
         await process.WaitForExitAsync();
     }
+    // Read before anything else can close the client's end: a server that is gone
+    // while its client is still attached stopped on its own.
+    var stoppedOnItsOwn = !client.IsGone;
     // Whatever the upstream started outlives it unless the job is closed too — and a
     // descendant still holding its stdout would keep the relays below waiting forever.
     job.Dispose();
     await Task.WhenAny(
         Task.WhenAll(IgnoreClosure(serverToClient), IgnoreClosure(stderr)),
         Task.Delay(TimeSpan.FromSeconds(1)));
-    observer.Finish(process.ExitCode);
+    observer.Finish(process.ExitCode, unexpected: stoppedOnItsOwn);
     return process.ExitCode;
 }
 catch (Exception error)
@@ -194,7 +236,8 @@ static async Task RelayAsync(
     GatewayMessageObserver? observer,
     GatewayDirection direction,
     bool closeDestination,
-    CancellationToken cancellation)
+    CancellationToken cancellation,
+    ClientPresence? presence = null)
 {
     var buffer = new byte[64 * 1024];
     try
@@ -213,6 +256,9 @@ static async Task RelayAsync(
     }
     finally
     {
+        // First, before the server's input is closed: a server that exits the moment
+        // it sees EOF must already count as let go.
+        presence?.MarkGone();
         if (closeDestination) destination.Close();
     }
 }
@@ -229,7 +275,8 @@ static async Task RelayMessagesAsync(
     GatewayDirection direction,
     Func<byte[], byte[]?> transform,
     bool closeDestination,
-    CancellationToken cancellation)
+    CancellationToken cancellation,
+    ClientPresence? presence = null)
 {
     var framer = new GatewayLineFramer();
     var buffer = new byte[64 * 1024];
@@ -255,6 +302,8 @@ static async Task RelayMessagesAsync(
     }
     finally
     {
+        // First, before the server's input is closed (see RelayAsync).
+        presence?.MarkGone();
         // A trailing partial message still belongs to the other side, and still goes
         // through the filter: servers that read line by line act on a final line
         // without its newline too.
@@ -286,6 +335,17 @@ static void TryKill(Process process)
         if (!process.HasExited) process.Kill(entireProcessTree: true);
     }
     catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+}
+
+/// <summary>Whether the client has let go — closed its end or interrupted the helper.</summary>
+/// <remarks>A server that stops before that did so on its own.</remarks>
+sealed class ClientPresence
+{
+    private volatile bool _gone;
+
+    public void MarkGone() => _gone = true;
+
+    public bool IsGone => _gone;
 }
 
 /// <summary>

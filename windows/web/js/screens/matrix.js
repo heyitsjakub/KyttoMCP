@@ -51,7 +51,7 @@ import {
 import { renderServerForm } from './serverForm.js';
 import { renderToolMask, renderToolSwitch } from './toolMask.js';
 import { renderSidebar, sidebarResizeHandle } from './sidebar.js';
-import { renderDoctor, renderDoctorFix } from './doctor.js';
+import { renderDoctor, renderDoctorFix, renderGatewayRestoreAll } from './doctor.js';
 import { renderActivity } from './activity.js';
 import { renderAgentImport, renderLibrary, renderSkills } from './tools.js';
 import { renderPortableImport } from './portableSetup.js';
@@ -286,6 +286,8 @@ function sheetBody(state) {
       return renderRemoveConfirm(state);
     case 'gatewayPreview':
       return renderGatewayPreview(state);
+    case 'gatewayRestoreAll':
+      return renderGatewayRestoreAll(state);
     case 'gatewayRestore':
       return renderGatewayRestore(state);
     case 'toolMask':
@@ -818,10 +820,12 @@ function notice(current, leaving = false) {
       }),
     );
   }
-  if (current.action && !leaving) {
-    // A follow-up the notice offers, carrying what it needs as data attributes —
-    // the tool switch's Undo names the server, the client and the previous set.
-    const { label, action, ...data } = current.action;
+  // A follow-up the notice offers, carrying what it needs as data attributes — the
+  // tool switch's Undo names the server, the client and the previous set. At most
+  // two: the way forward and the way back. More would be a menu.
+  for (const spec of leaving ? [] : [current.action, current.secondaryAction]) {
+    if (!spec) continue;
+    const { label, action, ...data } = spec;
     bar.append(button(label, action, { className: 'button subtle', dataset: data }));
   }
   // An error is the one notice worth reporting; the private form is offered here

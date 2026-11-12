@@ -203,4 +203,135 @@ public sealed class GatewayMaskingEndToEndTests
         Assert.Equal(2, Reply(replies, 2).GetProperty("result").GetProperty("prompts").GetArrayLength());
         Assert.Equal(1, Reply(replies, 3).GetProperty("result").GetProperty("resources").GetArrayLength());
     }
+
+    // What the journal says about a session
+
+    /// <summary>Runs the helper against an arbitrary upstream and returns its journal.</summary>
+    /// <remarks>
+    /// With <paramref name="closingInput"/> false the client stays attached until the
+    /// helper exits by itself, which is what a crashed server looks like.
+    /// </remarks>
+    private static IReadOnlyList<GatewayEvent> Journal(
+        string command,
+        IReadOnlyList<string> arguments,
+        IReadOnlyList<string>? exposedTools = null,
+        IReadOnlyList<string>? lines = null,
+        bool closingInput = true)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"kytto-e2e-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var routesPath = Path.Combine(directory, "routes.json");
+            var eventsPath = Path.Combine(directory, "events.jsonl");
+            var routeId = Guid.NewGuid().ToString();
+            new GatewayRouteStore(routesPath).Insert(new GatewayRoute(
+                Id: routeId,
+                ServerID: "fixture",
+                ServerName: "fixture",
+                ClientID: ClientId.Cursor,
+                GatewayCommand: HelperPath,
+                Command: command,
+                Arguments: arguments,
+                Environment: [],
+                DirectDefinitionSecretID: $"gateway-definition::{routeId}",
+                CreatedAt: DateTimeOffset.UnixEpoch)
+            {
+                ExposedTools = exposedTools,
+            });
+
+            var start = new ProcessStartInfo(HelperPath)
+            {
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            foreach (var argument in new[] { "--route", routeId, "--routes", routesPath, "--event-log", eventsPath })
+            {
+                start.ArgumentList.Add(argument);
+            }
+
+            using var process = Process.Start(start)!;
+            var errors = process.StandardError.ReadToEndAsync();
+            foreach (var line in lines ?? []) process.StandardInput.Write(line + "\n");
+            process.StandardInput.Flush();
+            if (closingInput) process.StandardInput.Close();
+            _ = process.StandardOutput.ReadToEnd();
+            Assert.True(process.WaitForExit(TimeSpan.FromSeconds(30)), "the helper did not exit");
+            errors.Wait(TimeSpan.FromSeconds(5));
+            if (!closingInput) process.StandardInput.Close();
+
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+            };
+            return File.Exists(eventsPath)
+                ? File.ReadAllLines(eventsPath)
+                    .Where(line => line.Length > 0)
+                    .Select(line => JsonSerializer.Deserialize<GatewayEvent>(line, options)!)
+                    .ToArray()
+                : [];
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); }
+            catch (IOException) { }
+        }
+    }
+
+    [Fact]
+    public void ARefusedCallIsJournalledByToolNameWithoutItsArguments()
+    {
+        RequireHelper();
+        var events = Journal(
+            Python!,
+            [FixtureServer, "ok"],
+            exposedTools: ["read_file"],
+            lines:
+            [
+                .. Handshake,
+                """{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"write_file","arguments":{"path":"private-argument"}}}""",
+            ]);
+
+        var refused = Assert.Single(events, item => item.Kind == GatewayEventKind.ToolCallRefused);
+        Assert.Equal("write_file", refused.ToolName);
+        Assert.Equal("2", refused.RequestID);
+        // Refused here, so the server never started or completed it.
+        Assert.DoesNotContain(events, item =>
+            item.Kind is GatewayEventKind.ToolCallStarted or GatewayEventKind.ToolCallCompleted);
+        Assert.DoesNotContain("private-argument", JsonSerializer.Serialize(events), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AServerThatStopsWhileItsClientIsAttachedIsMarkedUnexpected()
+    {
+        RequireHelper();
+        var events = Journal("cmd.exe", ["/d", "/c", "exit 3"], closingInput: false);
+
+        var ended = Assert.Single(events, item => item.Kind == GatewayEventKind.SessionEnded);
+        Assert.Equal(3, ended.ExitCode);
+        Assert.True(ended.Unexpected);
+    }
+
+    [Fact]
+    public void ASessionTheClientClosedIsNotACrash()
+    {
+        RequireHelper();
+        var events = Journal(Python!, [FixtureServer, "ok"], lines: Handshake);
+
+        var ended = Assert.Single(events, item => item.Kind == GatewayEventKind.SessionEnded);
+        Assert.False(ended.Unexpected);
+    }
+
+    [Fact]
+    public void AServerThatCannotBeStartedLeavesAFailedSessionNotSilence()
+    {
+        RequireHelper();
+        var events = Journal($"kytto-no-such-command-{Guid.NewGuid():N}", []);
+
+        var failed = Assert.Single(events);
+        Assert.Equal(GatewayEventKind.SessionFailed, failed.Kind);
+        Assert.Equal(GatewayFailureReason.LaunchFailed, failed.Reason);
+    }
 }

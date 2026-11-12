@@ -60,6 +60,7 @@ internal sealed partial class AppModel
                 ArmWatcher(discovery, pendingChange: _watcher?.HasPendingChange ?? false);
                 _current = result;
                 RefreshRestartState();
+                RefreshGatewayFindings();
             }
             return StateFingerprint() != before;
         }

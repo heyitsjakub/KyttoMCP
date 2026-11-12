@@ -167,6 +167,23 @@ public sealed class GatewayRouteStore
         }
     }
 
+    /// <summary>Records that a route is now started through a helper at another path.</summary>
+    /// <remarks>For a Kytto that was moved or reinstalled elsewhere after Gateway mode was turned on.</remarks>
+    public GatewayRoute UpdateGatewayCommand(string id, string gatewayCommand)
+    {
+        lock (_lock)
+        {
+            var routes = All().ToList();
+            var index = routes.FindIndex(route => route.Id == id);
+            if (index < 0) throw GatewayRouteException.UnknownRoute(id);
+
+            var updated = routes[index] with { GatewayCommand = gatewayCommand };
+            routes[index] = updated;
+            Save(routes);
+            return updated;
+        }
+    }
+
     public void Remove(string id)
     {
         lock (_lock)

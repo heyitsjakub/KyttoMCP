@@ -10,7 +10,14 @@ public sealed record GatewayActivitySummary(
     int TotalSessions,
     int CompletedCalls,
     int FailedCalls,
-    int? AverageDurationMilliseconds)
+    int? AverageDurationMilliseconds,
+    /// <summary>Calls Kytto refused because the route hides the tool.</summary>
+    int RefusedCalls = 0,
+    /// <summary>
+    /// Sessions whose server stopped while the client was still connected, and sessions
+    /// the helper could not start.
+    /// </summary>
+    int ServerFailures = 0)
 {
     public static GatewayActivitySummary From(IReadOnlyList<GatewayEvent> events)
     {
@@ -21,8 +28,15 @@ public sealed record GatewayActivitySummary(
             events.Select(item => item.SessionID).Distinct(StringComparer.Ordinal).Count(),
             completed.Length,
             completed.Count(item => item.Succeeded == false),
-            durations.Length == 0 ? null : (int?)(durations.Sum(value => (long)value) / durations.Length));
+            durations.Length == 0 ? null : (int?)(durations.Sum(value => (long)value) / durations.Length),
+            events.Count(item => item.Kind == GatewayEventKind.ToolCallRefused),
+            events.Count(IsServerFailure));
     }
+
+    /// <summary>A session that ended badly: the server stopped by itself, or never started.</summary>
+    public static bool IsServerFailure(GatewayEvent item) =>
+        item.Kind == GatewayEventKind.SessionFailed ||
+        (item.Kind == GatewayEventKind.SessionEnded && item.Unexpected == true);
 }
 
 /// <summary>Read-only view of the append-only Gateway journal (§7.10).</summary>
@@ -44,12 +58,37 @@ public sealed class GatewayActivityStore(KyttoPaths paths)
 
     public GatewayActivitySummary Summary(int limit = 500)
     {
+        limit = Math.Max(1, limit);
+        var lines = TailLines(paths.GatewayEventsFile);
+        // Right after a rotation the new journal is nearly empty. The one it replaced
+        // fills the view, so the panel does not go blank at 5 MB.
+        if (lines.Count < limit)
+        {
+            lines = [.. TailLines(paths.GatewayEventsFile + ".1"), .. lines];
+        }
+
+        var events = lines
+            .TakeLast(limit)
+            .Select((line, index) => (Event: Parse(line), Index: index))
+            .Where(item => item.Event is not null)
+            // Timestamps have whole seconds; within one, the journal's own order keeps
+            // "started" before "completed".
+            .OrderByDescending(item => item.Event!.Timestamp)
+            .ThenByDescending(item => item.Index)
+            .Select(item => item.Event!)
+            .ToArray();
+        return GatewayActivitySummary.From(events);
+    }
+
+    /// <summary>The complete lines in the last <see cref="TailBytes"/> of a journal file.</summary>
+    private static List<string> TailLines(string path)
+    {
         byte[] data;
         long start;
         try
         {
             using var stream = new FileStream(
-                paths.GatewayEventsFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             start = Math.Max(0, stream.Length - TailBytes);
             stream.Seek(start, SeekOrigin.Begin);
             using var tail = new MemoryStream();
@@ -58,7 +97,7 @@ public sealed class GatewayActivityStore(KyttoPaths paths)
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            return GatewayActivitySummary.From([]);
+            return [];
         }
 
         // Decoded line by line and lossily: one line cut by a short write must cost
@@ -72,18 +111,7 @@ public sealed class GatewayActivityStore(KyttoPaths paths)
             lineStart = index + 1;
         }
         if (start > 0 && lines.Count > 0) lines.RemoveAt(0); // began mid-line
-
-        var events = lines
-            .TakeLast(Math.Max(1, limit))
-            .Select((line, index) => (Event: Parse(line), Index: index))
-            .Where(item => item.Event is not null)
-            // Timestamps have whole seconds; within one, the journal's own order keeps
-            // "started" before "completed".
-            .OrderByDescending(item => item.Event!.Timestamp)
-            .ThenByDescending(item => item.Index)
-            .Select(item => item.Event!)
-            .ToArray();
-        return GatewayActivitySummary.From(events);
+        return lines;
     }
 
     private static GatewayEvent? Parse(string line)

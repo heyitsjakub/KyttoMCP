@@ -24,6 +24,8 @@ export function renderDoctor(state) {
   const reports = state.doctorReports ?? [];
   if (reports.length === 0) {
     panel.append(el('div', 'placeholder', 'No actionable server findings.'));
+    const gateway = gatewayCard(state);
+    if (gateway) panel.append(gateway);
     return panel;
   }
 
@@ -62,13 +64,67 @@ export function renderDoctor(state) {
       } else if (finding.action === 'checkPackageSafety') {
         const action = packageSafetyAction(state, report.serverID);
         if (action) item.append(action);
+      } else if (finding.action === 'repairGatewayRoute' && finding.routeID) {
+        const busy = state.gatewayRepairBusyRouteID === finding.routeID;
+        const repair = button(busy ? 'Repairing…' : 'Repair route', busy ? 'noop' : 'repair-gateway', {
+          className: busy ? 'button primary busy' : 'button primary',
+          dataset: { routeId: finding.routeID },
+        });
+        repair.disabled = busy;
+        item.append(repair);
+      } else if (finding.action === 'restoreDirectMode' && finding.routeID) {
+        item.append(button('Restore Direct mode…', 'restore-gateway', {
+          className: 'button',
+          dataset: { routeId: finding.routeID },
+        }));
       }
       card.append(item);
     }
     list.append(card);
   }
   panel.append(list);
+  const gateway = gatewayCard(state);
+  if (gateway) panel.append(gateway);
   return panel;
+}
+
+/**
+ * The way out of Gateway mode for everything at once. A config in Gateway mode points
+ * at a helper inside Kytto's folder, so removing Kytto without this leaves every such
+ * server unable to start — and the client would only say "failed".
+ */
+function gatewayCard(state) {
+  const routes = state.gatewayRoutes ?? [];
+  if (routes.length === 0) return null;
+  const card = el('section', 'doctor-card doctor-gateway');
+  const title = el('div', 'doctor-card-head');
+  title.append(el('h3', null, 'Gateway mode'));
+  title.append(button('Restore Direct mode for all…', 'restore-all-gateway', { className: 'button subtle' }));
+  card.append(title);
+  const count = routes.length === 1 ? '1 server definition starts' : `${routes.length} server definitions start`;
+  card.append(el('p', 'muted', `${count} through Kytto’s helper. Before you uninstall, move or replace Kytto, restore Direct mode so those clients can still start their servers.`));
+  return card;
+}
+
+export function renderGatewayRestoreAll(state) {
+  const routes = state.gatewayRoutes ?? [];
+  const body = [
+    el('p', null, `Restore Direct mode for ${routes.length === 1 ? 'the 1 server' : `all ${routes.length} servers`} in Gateway mode?`),
+  ];
+  const list = el('ul', 'plain-list');
+  for (const route of routes) {
+    list.append(el('li', null, `${route.serverName} — ${clientNames(state, [route.clientID])}`));
+  }
+  body.push(list);
+  body.push(el('p', 'muted', 'Kytto puts each original definition back, backs up every config first and removes the routes. Tool masks set on these routes stop applying. Restart the clients afterwards.'));
+  if (state.sheet.error) body.push(el('p', 'failure-message', state.sheet.error));
+  return sheet('Restore Direct mode', body, [
+    button('Cancel', 'close-sheet', { className: 'button subtle' }),
+    el('span', 'spacer'),
+    button(state.sheet.busy ? 'Restoring…' : 'Restore all', state.sheet.busy ? 'noop' : 'confirm-restore-all-gateway', {
+      className: state.sheet.busy ? 'button busy' : 'button',
+    }),
+  ]);
 }
 
 /** How long a lookup stays good enough to pin to; native enforces the same window. */

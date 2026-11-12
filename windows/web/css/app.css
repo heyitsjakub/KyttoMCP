@@ -3108,9 +3108,25 @@ th.col-client.idle .app-icon {
   padding-inline: 0;
 }
 
+/* The matrix rules a line between client columns because it has a dozen of
+   them. Here there is one switch per row, and that line only crossed the row
+   separators and sat hard against the token figure. */
 .client-servers .col-client {
   width: 60px;
   text-align: right;
+  border-left: 0;
+}
+
+/* Cells have no side padding in this list, so the figure needs its own gap
+   before the switch. */
+.client-servers .col-weight {
+  padding-right: 14px;
+}
+
+/* The column guide is for following one client down the matrix. A single
+   switch column needs none, and the band read as a stray stripe. */
+.matrix.client-servers:has(tbody td:nth-child(3):hover) tr > :nth-child(3) {
+  background-color: transparent;
 }
 
 .client-section .plain-list li {
@@ -4344,6 +4360,9 @@ body[data-stubbed='true'] .statusbar::after {
   flex: 1;
 }
 
+.doctor-gateway { margin-top: 12px; }
+.doctor-gateway > p { margin: 0; padding: 12px 13px; }
+
 .doctor-finding {
   padding: 12px 13px;
   border-left: 3px solid var(--hairline);
@@ -4381,7 +4400,7 @@ body[data-stubbed='true'] .statusbar::after {
 
 .activity-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin-bottom: 12px;
 }
 

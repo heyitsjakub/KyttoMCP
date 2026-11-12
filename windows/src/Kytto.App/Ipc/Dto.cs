@@ -85,11 +85,19 @@ internal sealed record RestartFailureDto(string ClientID, string Message);
 /// Every requested client lands in exactly one of the three lists (issue #14). Restarted and
 /// not-running clients are acknowledged; a failure keeps its notice.
 /// </summary>
+/// <param name="Verify">
+/// Per restarted client, the servers that changed and are switched on. The page
+/// health-checks them so a restart is not reported as a success while the definition it
+/// loaded does not start.
+/// </param>
 internal sealed record RestartResultDto(
     IReadOnlyList<string> Restarted,
     IReadOnlyList<string> NotRunning,
     IReadOnlyList<RestartFailureDto> Failures,
+    IReadOnlyList<RestartVerificationDto> Verify,
     StateDto State);
+
+internal sealed record RestartVerificationDto(string ClientID, IReadOnlyList<string> ServerIDs);
 
 /// <summary>
 /// A count and a verdict. Server ids name what was not counted; no tool list
@@ -361,10 +369,23 @@ internal sealed record GatewayMigrationPreviewDto(
     string GatewayDefinitionPreview,
     IReadOnlyList<string> EnvironmentKeys);
 
+/// <param name="MissingEnvironmentKeys">Environment variables a rebuilt Direct definition is missing.</param>
 internal sealed record GatewayMigrationResultDto(
     GatewayRouteDto Route,
     string? BackupID,
     string PathDisplay,
+    IReadOnlyList<string> MissingEnvironmentKeys,
+    StateDto State);
+
+internal sealed record GatewayRestoreAllFailureDto(string ServerName, string ClientID, string Message);
+
+internal sealed record GatewayMissingEnvironmentDto(string ServerName, string ClientID, IReadOnlyList<string> Keys);
+
+/// <summary>Restore Direct mode for every route; one that fails does not stop the rest.</summary>
+internal sealed record GatewayRestoreAllDto(
+    int RestoredCount,
+    IReadOnlyList<GatewayRestoreAllFailureDto> Failures,
+    IReadOnlyList<GatewayMissingEnvironmentDto> MissingEnvironment,
     StateDto State);
 
 internal sealed record ToolSwitchResultDto(
@@ -487,7 +508,9 @@ internal sealed record DoctorFindingDto(
     string Title,
     string Detail,
     string Remediation,
-    string? Action);
+    string? Action,
+    /// <summary>The Gateway route a route-level action applies to, when there is one.</summary>
+    string? RouteID);
 
 internal sealed record DoctorServerReportDto(
     string ServerID,
@@ -581,16 +604,31 @@ internal sealed record GatewayEventDto(
     int? DurationMilliseconds,
     bool? Succeeded,
     int? ErrorCode,
-    int? ExitCode);
+    int? ExitCode,
+    /// <summary>True on a <c>session.ended</c> whose server stopped while the client was still attached.</summary>
+    bool? Unexpected,
+    /// <summary>On <c>session.failed</c>: <c>secret-unavailable</c> or <c>launch-failed</c>.</summary>
+    string? Reason);
 
 internal sealed record GatewayActivityDto(
     IReadOnlyList<GatewayEventDto> Events,
     int TotalSessions,
     int CompletedCalls,
     int FailedCalls,
-    int? AverageDurationMilliseconds);
+    int? AverageDurationMilliseconds,
+    int RefusedCalls,
+    int ServerFailures);
 
 internal sealed record ProfileFailureDto(string ServerName, string Message);
+
+/// <summary>One switch a profile apply made, for <c>profiles.revertApply</c>.</summary>
+internal sealed record ProfileAppliedChangeDto(string ServerID, bool Enabled);
+
+internal sealed record ProfileRevertResultDto(
+    string ClientID,
+    int RevertedCount,
+    IReadOnlyList<ProfileFailureDto> Failures,
+    StateDto State);
 
 internal sealed record ProfileApplyResultDto(
     string ProfileName,
@@ -599,4 +637,5 @@ internal sealed record ProfileApplyResultDto(
     int DisabledCount,
     bool RequiresRestart,
     IReadOnlyList<ProfileFailureDto> Failures,
+    IReadOnlyList<ProfileAppliedChangeDto> Applied,
     StateDto State);
