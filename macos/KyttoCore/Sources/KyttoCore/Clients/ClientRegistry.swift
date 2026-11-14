@@ -266,6 +266,7 @@ public enum ClientRegistry {
         // No tool limit: MCP tools are deferred behind tool search by default,
         // with a catalog of up to 10,000
         // (https://code.claude.com/docs/en/agent-sdk/tool-search).
+        , toolLoading: .deferred(note: "Claude Code defers MCP tools behind tool search by default, so a session starts with tool names and loads a full definition when the model searches for it.")
     )
 
     // MARK: - Cursor
@@ -387,6 +388,7 @@ public enum ClientRegistry {
         // No tool limit: none is documented, and MCP tools are deferred behind
         // tool search where the model supports it
         // (https://github.com/openai/codex/pull/29486).
+        , toolLoading: .deferred(note: "Codex defers MCP tools behind tool search where the model supports it. With a model that does not, every definition loads.")
     )
 
     // MARK: - Google Antigravity

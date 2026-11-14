@@ -184,6 +184,7 @@ final class AppModel {
 
         let pathsChanged = updated.clientPathOverrides != previous.clientPathOverrides
         let sourcesChanged = updated.customConfigSources != previous.customConfigSources
+            || updated.projectFolders != previous.projectFolders
         let discoveryChanged = pathsChanged || sourcesChanged
         let storageChanged = pathsChanged || updated.backupRetention != previous.backupRetention
         if storageChanged {
@@ -376,6 +377,7 @@ final class AppModel {
             metadata: input.metadata.all(),
             pathOverrides: input.settings.clientPathOverrides,
             additionalDescriptors: input.settings.customConfigSources.map(ClientRegistry.customDescriptor)
+                + input.settings.projectFolders.flatMap { ClientRegistry.projectDescriptors(for: $0) }
         )
         return DiscoveryOutput(result: discovery.run(), watchedDirectories: discovery.watchedDirectories())
     }
@@ -951,7 +953,14 @@ final class AppModel {
             isCheckingAll = false
             onStateChanged?()
         }
-        let servers = current().servers.filter { $0.transport != .sse }
+        // A server found only in a repository file is never started without
+        // the user asking for that one server (roadmap §12): a committed
+        // `.mcp.json` is exactly where an attacker would put a command.
+        let snapshot = current()
+        let repositoryClients = Set(snapshot.clients.filter(\.isRepositoryFile).map(\.id))
+        let servers = snapshot.servers.filter { server in
+            server.transport != .sse && !ClientRegistry.isRepositoryOnly(server, repositoryClients: repositoryClients)
+        }
         var persistenceFailures = 0
         var interrupted = 0
         for (index, server) in servers.enumerated() {

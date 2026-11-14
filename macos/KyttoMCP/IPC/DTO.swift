@@ -112,6 +112,11 @@ struct ClientDTO: Encodable {
     let serverCount: Int
     let schemaQuirks: String
     let isReadOnly: Bool
+    /// A project file in a folder the user chose (roadmap §12).
+    let isRepositoryFile: Bool
+    /// `{ mode: "deferred" | "all" | "unknown", note }` — whether this client
+    /// sends every tool definition up front (roadmap §16).
+    let toolLoading: ToolLoadingDTO
     let configurationScope: String
     let scopeLabel: String
     /// How many tools this client hands its model, against its cap if it has one.
@@ -144,6 +149,11 @@ struct ClientDTO: Encodable {
         serverCount = client.serverCount
         schemaQuirks = client.schemaQuirks
         isReadOnly = client.isReadOnly
+        isRepositoryFile = client.isRepositoryFile
+        // Built-ins only: a read-only scope of a client inherits nothing here,
+        // and an unknown answer is shown as unknown.
+        let loading = client.isReadOnly ? ToolLoading.unknown : (ClientRegistry.descriptorIfKnown(for: client.id)?.toolLoading ?? .unknown)
+        toolLoading = ToolLoadingDTO(mode: loading.mode, note: loading.note)
         configurationScope = client.configurationScope.rawValue
         scopeLabel = client.scopeLabel
         self.toolBudget = ClientToolBudgetDTO(toolBudget)
@@ -153,6 +163,11 @@ struct ClientDTO: Encodable {
         canRestart = client.isInstalled && descriptor?.restartsWithApp == true
         restartCaveat = canRestart ? descriptor?.restartCaveat : nil
     }
+}
+
+struct ToolLoadingDTO: Encodable {
+    let mode: String
+    let note: String?
 }
 
 /// A count and a verdict. Server ids name what was not counted; no tool list
@@ -336,6 +351,9 @@ struct ServerDTO: Encodable {
     let hasRelativePath: Bool
     let health: HealthDTO?
     let tokenWeight: TokenWeightDTO?
+    /// cl100k tokens for the names of the tools last seen — what a client that
+    /// defers definitions still sends up front. Null before a passing check.
+    let toolNameTokens: Int?
     let provenance: MCPProvenanceDTO
     let source: ServerSourceDTO
     /// Client id → the known tools that client's own files switch off (§7.11).
@@ -353,6 +371,7 @@ struct ServerDTO: Encodable {
         }
         health = server.health.map(HealthDTO.init)
         tokenWeight = server.tokenWeight.map(TokenWeightDTO.init)
+        toolNameTokens = server.knownTools.isEmpty ? nil : TokenWeight.nameTokens(server.knownTools.map(\.name))
         self.provenance = MCPProvenanceDTO(server, provenance: provenance)
         source = ServerSourceDTO(server.origin.provenance)
         id = server.id
@@ -1067,6 +1086,10 @@ struct ContractChangeDTO: Encodable {
     let toolName: String
     let summary: String
     let details: [ContractFieldChange]?
+    let compatibility: String?
+    let compatibilityReason: String?
+    let security: String?
+    let securityReason: String?
 
     nonisolated init(_ change: ContractChange) {
         kind = change.kind.rawValue
@@ -1074,6 +1097,10 @@ struct ContractChangeDTO: Encodable {
         toolName = change.toolName
         summary = change.summary
         details = change.details
+        compatibility = change.compatibility?.rawValue
+        compatibilityReason = change.compatibilityReason
+        security = change.security?.rawValue
+        securityReason = change.securityReason
     }
 }
 

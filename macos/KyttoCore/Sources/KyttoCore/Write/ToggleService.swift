@@ -614,7 +614,7 @@ public struct ToggleService: Sendable {
                 throw ConfigWriteError.changedOnDisk(pathDisplay: snapshot.pathDisplay)
             }
             if let data = snapshot.data {
-                try AtomicWriter.write(data, to: snapshot.url)
+                try AtomicWriter.write(data, to: snapshot.url, expecting: .digest(receipt.digest))
             } else if FileManager.default.fileExists(atPath: snapshot.url.path) {
                 try FileManager.default.removeItem(at: snapshot.url)
             }

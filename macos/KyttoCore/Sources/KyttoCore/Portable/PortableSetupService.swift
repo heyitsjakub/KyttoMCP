@@ -415,7 +415,7 @@ public final class PortableSetupService: @unchecked Sendable {
                 for (snapshot, writtenDigest) in committed.reversed() {
                     do {
                         guard ConfigWriter.digest(of: snapshot.url) == writtenDigest else { throw PortableSetupError.stalePreview }
-                        if let data = snapshot.data { try AtomicWriter.write(data, to: snapshot.url) }
+                        if let data = snapshot.data { try AtomicWriter.write(data, to: snapshot.url, expecting: writtenDigest.map(AtomicWriter.Precondition.digest) ?? .absent) }
                         else {
                             let created = try AtomicWriter.resolvingSymbolicLinks(snapshot.url)
                             if FileManager.default.fileExists(atPath: created.path) { try FileManager.default.removeItem(at: created) }

@@ -22,7 +22,13 @@ struct ContractFieldDiffTests {
         #expect(dryRun.after == "false")
         #expect(dryRun.explanation?.contains("actual enforcement") == true)
         #expect(fields.first { $0.path == "inputSchema/required" }?.explanation != nil)
-        #expect(change.severity == .breaking)
+        // Nothing a call sends is rejected now, but leaving dry_run out now
+        // runs for real: not "compatible", and a reason to look.
+        #expect(change.compatibility == .unknown)
+        #expect(change.compatibilityReason?.contains("dry_run") == true)
+        #expect(change.security == .review)
+        #expect(change.securityReason?.contains("dry-run") == true)
+        #expect(change.severity == .warning)
     }
 
     @Test func longEqualPrefixesDoNotHideChanges() throws {

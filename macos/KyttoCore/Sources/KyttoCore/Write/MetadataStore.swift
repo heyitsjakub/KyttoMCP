@@ -7,8 +7,10 @@ import Foundation
 /// Written only when a check actually runs, never on launch (§6.6).
 public struct MetadataStore: Sendable {
     private let url: URL
+    private let paths: KyttoPaths
 
     public init(paths: KyttoPaths) {
+        self.paths = paths
         url = paths.root.appending(path: "server-metadata.json")
     }
 
@@ -74,6 +76,7 @@ public struct MetadataStore: Sendable {
                 entry.contractTools = health.tools
             }
             entry.lastPassingTools = health.tools
+            entry.lastPassingCheckedAt = health.checkedAt
         }
         entry.health = health
         // A failed check tells us nothing new about token weight, so the last
@@ -163,7 +166,12 @@ public struct MetadataStore: Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(entries)
         guard let text = String(data: data, encoding: .utf8) else { return }
-        try AtomicWriter.write(text, to: url)
+        // A health result keeps the server's stderr verbatim, and a server can
+        // print its token there. The first check can run before anything else
+        // has created Kytto's folder, so this write makes it owner-only itself
+        // rather than relying on a backup or the next launch to (AUD-05).
+        try paths.createPrivateDirectory(url.deletingLastPathComponent())
+        try AtomicWriter.write(text, to: url, permissions: KyttoPaths.privateFilePermissions)
     }
 }
 

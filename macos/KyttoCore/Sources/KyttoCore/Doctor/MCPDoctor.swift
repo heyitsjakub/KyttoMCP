@@ -194,7 +194,7 @@ public enum MCPDoctor {
                 ))
             }
             findings.append(contentsOf: deprecatedFeatureFindings(server.health))
-            findings.append(contentsOf: ToolSafetyScanner.scan(server.knownTools).map(finding(for:)))
+            findings.append(contentsOf: toolSafetyFindings(for: server))
             return DoctorServerReport(serverID: server.id, serverName: server.name, findings: findings)
         }
 
@@ -257,7 +257,7 @@ public enum MCPDoctor {
         // file would call that healthy (§7.10).
         // The last passing contract, not this check's: a failed check lists no
         // tools, and failing must not be a way to make a finding go away.
-        findings.append(contentsOf: ToolSafetyScanner.scan(server.knownTools).map(finding(for:)))
+        findings.append(contentsOf: toolSafetyFindings(for: server))
         findings.append(contentsOf: deprecatedFeatureFindings(health))
 
         if health.status == .passed,
@@ -354,6 +354,28 @@ public enum MCPDoctor {
         )
     }
 
+    /// Tool Safety findings for the contract Kytto last saw.
+    ///
+    /// After a failed check that is the last *passing* check's contract — a
+    /// failure must not hide a finding — and the finding says so, with the
+    /// date where it is recorded. Otherwise an old finding reads as something
+    /// the check that just failed found.
+    static func toolSafetyFindings(for server: Server) -> [DoctorFinding] {
+        let findings = ToolSafetyScanner.scan(server.knownTools).map(finding(for:))
+        guard let health = server.health, health.status != .passed, !findings.isEmpty else { return findings }
+        let when = server.lastPassingCheckedAt.map {
+            "the last passing check (\($0.formatted(date: .abbreviated, time: .shortened)))"
+        } ?? "an earlier passing check"
+        let note = " This finding comes from \(when). The latest check did not pass, so the tools were not read again; they are what the server last offered."
+        return findings.map { finding in
+            DoctorFinding(
+                code: finding.code, severity: finding.severity, title: finding.title,
+                detail: finding.detail + note, remediation: finding.remediation,
+                action: finding.action, routeID: finding.routeID
+            )
+        }
+    }
+
     /// A tool-contract risk, as a Doctor finding.
     ///
     /// There is no automatic action. Kytto does not edit what a server says
@@ -381,6 +403,7 @@ public enum MCPDoctor {
         case .impersonatedAuthority: "the description imitates a system message"
         case .credentialInterest: "a read-only tool names credential material"
         case .shadowedName: "the tool name is claimed by another server"
+        case .consentBypass: "the description tells the model not to ask you"
         }
     }
 

@@ -154,6 +154,15 @@ function argumentsEditor(args) {
       }),
     );
     list.append(row);
+    // Each row is one argument, passed exactly as typed: ` --port` is not the
+    // option `--port`, and the server usually refuses to start. Spaces can be
+    // real argument data, so this points it out rather than trimming.
+    if (argument.trim() !== argument && argument.trim() !== '') {
+      const hint = el('div', 'editor-row argument-whitespace');
+      hint.append(el('p', 'field-hint', 'This argument starts or ends with a space, and is passed with it. Most programs will not recognize it as an option.'));
+      hint.append(button('Remove spaces', 'draft-arg-trim', { className: 'button subtle', dataset: { index: String(index) } }));
+      list.append(hint);
+    }
   });
   section.append(list);
   section.append(button('Add argument', 'draft-arg-add', { className: 'button subtle' }));

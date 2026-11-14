@@ -195,6 +195,8 @@ public struct Server: Identifiable, Sendable, Equatable {
     public var health: HealthResult?
     /// The tools from the last passing check, kept through later failures.
     public var lastPassingTools: [ToolSummary]?
+    /// When the check that produced `lastPassingTools` ran, where recorded.
+    public var lastPassingCheckedAt: Date?
     /// Each client's own rules for this server's single tools, where its files
     /// have any to say (§7.11). Absent means every tool stays on.
     public var toolFilters: [ClientID: ToolFilter] = [:]

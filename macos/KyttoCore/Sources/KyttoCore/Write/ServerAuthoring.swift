@@ -801,7 +801,7 @@ public struct ServerAuthoring: Sendable {
                 }
 
                 if let data = write.snapshot.data {
-                    try AtomicWriter.write(data, to: write.snapshot.url)
+                    try AtomicWriter.write(data, to: write.snapshot.url, expecting: .digest(write.writtenDigest))
                 } else {
                     // The file did not exist. If the path is a symbolic link whose
                     // target was missing, the write created the target: remove

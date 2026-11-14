@@ -205,7 +205,9 @@ public struct MCPStdioClient: Sendable {
     /// Sends `server/discover` and classifies the answer.
     private func probe(_ session: Session, deadline: Date, timeout: TimeInterval) throws -> Era {
         do {
-            try session.process.write(line: Self.request(id: Self.discoverID, method: "server/discover", params: [:], modern: true))
+            try session.process.write(line: Self.request(id: Self.discoverID, method: "server/discover", params: [:], modern: true), deadline: deadline, timeout: timeout)
+        } catch ProcessError.timedOut(let after) {
+            throw ProcessError.timedOut(after: after)
         } catch {
             return .exited
         }
@@ -259,7 +261,7 @@ public struct MCPStdioClient: Sendable {
             // answering with its own; one retry with the best shared one.
             initialize = try initializeHandshake(version: version, session: session, deadline: deadline, timeout: timeout, allowRetry: false)
         }
-        try session.process.write(line: #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+        try session.process.write(line: #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#, deadline: deadline, timeout: timeout)
         let capabilityNames = initialize.value(at: ["result", "capabilities"])?.keys.sorted() ?? []
         return try listing(
             capabilityNames: capabilityNames,
@@ -280,7 +282,7 @@ public struct MCPStdioClient: Sendable {
             "protocolVersion": version,
             "capabilities": [String: Any](),
             "clientInfo": Self.clientInfo,
-        ], modern: false))
+        ], modern: false), deadline: deadline, timeout: timeout)
         switch try read(id: 1, session: session, deadline: deadline, timeout: timeout) {
         case .result(let document):
             return document
@@ -351,7 +353,15 @@ public struct MCPStdioClient: Sendable {
                 session.observe(method)
                 if let requestID = document.root.member("id"), !requestID.value.isNull {
                     let echoed = document.slice(requestID.value.span)
-                    try? session.process.write(line: #"{"jsonrpc":"2.0","id":\#(echoed),"error":{"code":-32601,"message":"Method not found"}}"#)
+                    // A server that stopped reading cannot hold this write
+                    // past the check's deadline (AUD-04); one that closed its
+                    // input is still read to the end.
+                    do {
+                        try session.process.write(
+                            line: #"{"jsonrpc":"2.0","id":\#(echoed),"error":{"code":-32601,"message":"Method not found"}}"#,
+                            deadline: deadline, timeout: timeout
+                        )
+                    } catch ProcessError.writeFailed {}
                 }
                 continue
             }
@@ -362,7 +372,7 @@ public struct MCPStdioClient: Sendable {
             guard responseID == Double(id) else { continue }
             if let error = document.root["error"] {
                 return .error(
-                    code: Int(error["code"]?.numberValue ?? 0),
+                    code: try MCPHTTPClient.errorCode(error) { MCPError.protocolError($0) },
                     message: error["message"]?.stringValue ?? "no message",
                     supported: error.value(at: ["data", "supported"])?.elements?.compactMap(\.stringValue) ?? []
                 )
@@ -396,7 +406,7 @@ public struct MCPStdioClient: Sendable {
         var notes: [String] = []
         var pages: [JSONDocument] = []
         do {
-            try session.process.write(line: Self.request(id: 2, method: "tools/list", params: [:], modern: modern))
+            try session.process.write(line: Self.request(id: 2, method: "tools/list", params: [:], modern: modern), deadline: deadline, timeout: timeout)
             let first = try readResponse(id: 2, session: session, deadline: deadline, timeout: timeout)
             pages = morePages(after: first, modern: modern, session: session, deadline: deadline, timeout: timeout, notes: &notes)
         } catch MCPError.serverError(let code, _) where code == -32601 && !capabilityNames.contains("tools") {
@@ -490,7 +500,7 @@ public struct MCPStdioClient: Sendable {
             }
             let id = 100 + pages.count
             do {
-                try session.process.write(line: Self.request(id: id, method: "tools/list", params: ["cursor": cursor], modern: modern))
+                try session.process.write(line: Self.request(id: id, method: "tools/list", params: ["cursor": cursor], modern: modern), deadline: deadline, timeout: timeout)
                 let page = try readResponse(id: id, session: session, deadline: deadline, timeout: timeout)
                 guard page.value(at: ["result", "tools"])?.elements != nil else {
                     notes.append("tools/list page \(pages.count + 1) did not return a tools array; counts cover the first \(pages.count).")
@@ -523,7 +533,7 @@ public struct MCPStdioClient: Sendable {
     ) -> Int? {
         guard capabilityNames.contains(capability) else { return nil }
         do {
-            try session.process.write(line: Self.request(id: id, method: method, params: [:], modern: modern))
+            try session.process.write(line: Self.request(id: id, method: method, params: [:], modern: modern), deadline: deadline, timeout: timeout)
             let response = try readResponse(id: id, session: session, deadline: deadline, timeout: timeout)
             guard let values = response.value(at: ["result", resultKey])?.elements else {
                 notes.append("\(method) did not return a \(resultKey) array.")

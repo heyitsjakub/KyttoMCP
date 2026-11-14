@@ -103,6 +103,11 @@ final class ManagedProcess {
         // A server that exits between two of Kytto's writes must surface as
         // EPIPE, not as a SIGPIPE that terminates the whole app.
         _ = fcntl(inPipe[1], F_SETNOSIGPIPE, 1)
+        // Kytto's end of the server's input never blocks: a server that stops
+        // reading would otherwise hold a write, and the whole check, past its
+        // deadline once the pipe fills (AUD-04). The server's end is a separate
+        // open file and keeps its ordinary blocking reads.
+        _ = fcntl(inPipe[1], F_SETFL, fcntl(inPipe[1], F_GETFL) | O_NONBLOCK)
 
         var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
@@ -183,18 +188,40 @@ final class ManagedProcess {
 
     // MARK: - Talking
 
-    func write(line: String) throws {
+    /// Writes one line, waiting for room in the pipe no longer than `deadline`.
+    func write(line: String, deadline: Date, timeout: TimeInterval) throws {
         let data = Array((line + "\n").utf8)
         var offset = 0
         while offset < data.count {
             let written = data.withUnsafeBufferPointer { buffer in
                 Darwin.write(stdinFD, buffer.baseAddress! + offset, data.count - offset)
             }
-            if written <= 0 {
-                // EPIPE: the server is already gone. Its stderr says why.
+            if written > 0 {
+                offset += written
+                continue
+            }
+            let code = errno
+            if written < 0, code == EINTR { continue }
+            // EPIPE: the server is already gone. Its stderr says why.
+            guard written < 0, code == EAGAIN else { throw ProcessError.writeFailed }
+            try waitUntilWritable(deadline: deadline, timeout: timeout)
+        }
+    }
+
+    private func waitUntilWritable(deadline: Date, timeout: TimeInterval) throws {
+        while true {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { throw ProcessError.timedOut(after: timeout) }
+            var descriptor = pollfd(fd: stdinFD, events: Int16(POLLOUT), revents: 0)
+            let ready = poll(&descriptor, 1, Int32(max(1, min(remaining, 1) * 1000)))
+            if ready < 0 {
+                if errno == EINTR { continue }
                 throw ProcessError.writeFailed
             }
-            offset += written
+            if ready == 0 { continue }
+            if descriptor.revents & Int16(POLLOUT) != 0 { return }
+            // POLLHUP / POLLERR without room: the reading end is gone.
+            throw ProcessError.writeFailed
         }
     }
 

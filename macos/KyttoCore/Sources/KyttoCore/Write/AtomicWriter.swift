@@ -9,9 +9,26 @@ import Foundation
 /// never a torn one.
 public enum AtomicWriter {
 
-    public enum WriteError: Error, LocalizedError {
+    /// What the destination must still hold at the moment it is replaced.
+    ///
+    /// Checked after the new bytes are staged and immediately before the swap,
+    /// which is as late as a check can happen without a lock other programs
+    /// would have to honour. It narrows the window in which another program's
+    /// save can be overwritten; it cannot close it completely.
+    public enum Precondition: Sendable, Equatable {
+        /// There must be no file. Enforced by the rename itself (`RENAME_EXCL`),
+        /// so a file created in the meantime is never replaced.
+        case absent
+        /// The file must still have exactly these bytes (SHA-256, hex).
+        case digest(String)
+    }
+
+    public enum WriteError: Error, LocalizedError, Equatable {
         case couldNotCreateTemporaryFile(String)
         case renameFailed(String)
+        /// The destination no longer matched the ``Precondition``; nothing was
+        /// replaced.
+        case targetChanged
 
         public var errorDescription: String? {
             switch self {
@@ -19,12 +36,14 @@ public enum AtomicWriter {
                 "Could not stage the new configuration: \(reason)"
             case .renameFailed(let reason):
                 "Could not put the new configuration in place: \(reason)"
+            case .targetChanged:
+                "The file changed while Kytto was writing it, so it was left as it is."
             }
         }
     }
 
-    public static func write(_ text: String, to url: URL, permissions: Int? = nil) throws {
-        try write(Data(text.utf8), to: url, permissions: permissions)
+    public static func write(_ text: String, to url: URL, permissions: Int? = nil, expecting precondition: Precondition? = nil) throws {
+        try write(Data(text.utf8), to: url, permissions: permissions, expecting: precondition)
     }
 
     /// Byte-preserving variant used by transaction rollback.
@@ -33,7 +52,14 @@ public enum AtomicWriter {
     ///   the mode of the file being replaced, so a config the user had locked
     ///   down does not come back world-readable; a file that did not exist yet
     ///   gets the process default.
-    public static func write(_ data: Data, to requested: URL, permissions: Int? = nil) throws {
+    /// - Parameter expecting: when set, the write is refused with
+    ///   ``WriteError/targetChanged`` unless the destination still matches.
+    public static func write(
+        _ data: Data,
+        to requested: URL,
+        permissions: Int? = nil,
+        expecting precondition: Precondition? = nil
+    ) throws {
         // A config kept in a dotfiles folder and linked into place is a symbolic
         // link. Renaming over the link would replace it with a regular file —
         // cutting the dotfiles copy loose — and the mode read off the link is
@@ -56,15 +82,43 @@ public enum AtomicWriter {
             throw WriteError.couldNotCreateTemporaryFile(error.localizedDescription)
         }
 
-        guard rename(temporary.path, url.path) == 0 else {
-            let reason = String(cString: strerror(errno))
-            try? FileManager.default.removeItem(at: temporary)
-            throw WriteError.renameFailed(reason)
+        switch precondition {
+        case .digest(let expected):
+            guard let current = try? Data(contentsOf: url), ConfigWriter.digest(of: current) == expected else {
+                try? FileManager.default.removeItem(at: temporary)
+                throw WriteError.targetChanged
+            }
+            try swap(temporary, into: url, exclusive: false)
+        case .absent:
+            try swap(temporary, into: url, exclusive: true)
+        case nil:
+            try swap(temporary, into: url, exclusive: false)
         }
 
         // Without this the rename itself can still be lost on power failure,
         // which would leave neither the old nor the new file.
         flushDirectory(directory)
+    }
+
+    private static func swap(_ temporary: URL, into url: URL, exclusive: Bool) throws {
+        var result = exclusive
+            ? renamex_np(temporary.path, url.path, UInt32(RENAME_EXCL))
+            : rename(temporary.path, url.path)
+        // A filesystem without exclusive rename (some network volumes) gets the
+        // closest check there is instead.
+        if result != 0, exclusive, errno == ENOTSUP || errno == EINVAL {
+            if FileManager.default.fileExists(atPath: url.path) {
+                errno = EEXIST
+            } else {
+                result = rename(temporary.path, url.path)
+            }
+        }
+        guard result == 0 else {
+            let code = errno
+            try? FileManager.default.removeItem(at: temporary)
+            if exclusive, code == EEXIST { throw WriteError.targetChanged }
+            throw WriteError.renameFailed(String(cString: strerror(code)))
+        }
     }
 
     /// Writes the temporary file and forces its contents out of the page cache

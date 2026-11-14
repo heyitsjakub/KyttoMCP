@@ -284,6 +284,12 @@ public struct ClientDescriptor: Sendable {
     /// every terminal session kept the old configuration. Where a launcher in
     /// `executableNames` can also start sessions, `restartCaveat` says so.
     public var restartsWithApp: Bool = false
+    /// A project file inside a folder the user chose (roadmap §12). Always
+    /// read-only; its servers are never checked unless the user asks.
+    public var isRepositoryFile: Bool = false
+    /// Whether the client sends every MCP tool definition up front or defers
+    /// them behind tool search (roadmap §16). Unknown until documented.
+    public var toolLoading: ToolLoading = .unknown
 
     /// What Restart now cannot reach, for the confirmation — terminal sessions
     /// started with this client's command line launcher. Nil when there is none.
@@ -351,5 +357,32 @@ public struct ClientDescriptor: Sendable {
             }
         }
         return parts.joined(separator: " ")
+    }
+}
+
+/// What a client puts into a session before the model has searched for a tool
+/// (roadmap §16). Only documented behaviour is recorded; anything else stays
+/// `unknown`, because the second number Kytto shows depends on it.
+public enum ToolLoading: Equatable, Sendable {
+    /// Definitions wait behind tool search; the session starts with names or
+    /// short entries. The note says what is documented, and where.
+    case deferred(note: String)
+    /// Every enabled tool's full definition is sent with each session.
+    case loadsAll(note: String)
+    case unknown
+
+    public var mode: String {
+        switch self {
+        case .deferred: "deferred"
+        case .loadsAll: "all"
+        case .unknown: "unknown"
+        }
+    }
+
+    public var note: String? {
+        switch self {
+        case .deferred(let note), .loadsAll(let note): note
+        case .unknown: nil
+        }
     }
 }

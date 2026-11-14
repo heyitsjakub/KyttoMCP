@@ -90,7 +90,7 @@ struct ContractGuardTests {
         #expect(ContractGuard.changes(from: old, to: new).isEmpty)
     }
 
-    @Test("a changed property type is still breaking, and array order still counts")
+    @Test("a changed property type is still breaking, and array order still counts as a change")
     func realSchemaChangesStillFire() {
         let base = #"{"type":"object","properties":{"mode":{"enum":["a","b"]},"n":{"type":"integer"}}}"#
         let retyped = #"{"properties":{"n":{"type":"string"},"mode":{"enum":["a","b"]}},"type":"object"}"#
@@ -100,8 +100,19 @@ struct ContractGuardTests {
                 from: [ToolSummary(name: "t", description: nil, inputSchemaJSON: base)],
                 to: [ToolSummary(name: "t", description: nil, inputSchemaJSON: changed)]
             )
-            #expect(result.contains { $0.kind == .inputSchemaChanged && $0.severity == .breaking })
+            #expect(result.contains { $0.kind == .inputSchemaChanged })
         }
+        let retypedResult = ContractGuard.changes(
+            from: [ToolSummary(name: "t", description: nil, inputSchemaJSON: base)],
+            to: [ToolSummary(name: "t", description: nil, inputSchemaJSON: retyped)]
+        )
+        #expect(retypedResult.first?.severity == .breaking)
+        // The same values in another order still accept the same calls.
+        let reorderedResult = ContractGuard.changes(
+            from: [ToolSummary(name: "t", description: nil, inputSchemaJSON: base)],
+            to: [ToolSummary(name: "t", description: nil, inputSchemaJSON: reordered)]
+        )
+        #expect(reorderedResult.first?.compatibility == .compatible)
     }
 
     @Test("a boolean is not equal to a number, and unparseable text falls back to raw comparison")

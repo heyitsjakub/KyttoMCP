@@ -13,9 +13,24 @@ new sections are appended at the end.
 
 In rough order of value. Each links to its section below.
 
-1. **Context cost: full catalog vs. what a session loads** (§16).
-2. **Project configs inside repositories**, read-only, in folders the user
-   chooses, scanned by the Tool Safety Scanner (§12).
+Marketing evidence was reviewed on 2026-11-14; see §20 for the proposed
+shortlist, evidence strength, superseded requests and reports awaiting a later
+audit. No implementation or code audit was performed in that review.
+
+A separate source audit on 2026-11-14 confirmed four high-priority defects and
+three medium-priority defects (§21). All seven are fixed on macOS for the next
+release (see `CHANGELOG.md`); the Windows port still has to be checked.
+
+Done on macOS for 1.0.9.5 (2026-11-14), Windows to follow: the §21 audit
+fixes, Contract Guard compatibility and security labels (§18), consent-bypass
+wording in the scanner (§20), project folders (§12), a second context figure
+for clients documented to defer tools (§16), and both parked demo reports
+(§20).
+
+1. **Context cost, the rest** (§16): which other clients defer tools, and
+   what a session actually loaded.
+2. **Project configs, the rest** (§12): precedence between scopes, and
+   noticing a newly committed file without waiting for the window to activate.
 3. **Alert when a server's launch definition changes outside Kytto** (§7).
 4. **`kytto` command-line tool** to switch a profile or a server from a terminal
    or hook ([claude-code#10447](https://github.com/anthropics/claude-code/issues/10447)).
@@ -160,6 +175,16 @@ commits `.cursor/mcp.json`, `.claude/settings.json`, `AGENTS.md`, `CLAUDE.md` an
 `.vscode/tasks.json` into repositories, and today Kytto only sees user-level
 configs.
 
+**Project folders, first slice (1.0.9.5, macOS):** Settings → Project folders
+reads `.mcp.json`, `.cursor/mcp.json` and `.vscode/mcp.json` at the top of each
+chosen folder, read-only, labelled `Workspace`, with a stable id per folder and
+file (`ClientRegistry.projectDescriptors`). A server found only in such files
+is left out of Check all. Conflicts with other scopes show through the existing
+drift report. Not done: precedence as each client applies it, and a file
+committed later appears when Kytto next re-reads (window activation), because
+the folder itself is not watched. The scanner needs tool definitions, so a
+repository-only server is scanned only after the user checks it.
+
 **Candidate scope:** Project configs inside repositories (`.mcp.json`,
 `.cursor/mcp.json`, `.vscode/mcp.json`) in folders the user selects, read-only,
 scanned by the Tool Safety Scanner. Clear `Global`, `Profile` and `Workspace`
@@ -255,6 +280,13 @@ in the context estimate), which is still open.
 - Never present an estimate as a measurement; keep the `~` marker and say where
   each number comes from.
 
+**First slice (1.0.9.5, macOS):** each built-in client carries a `toolLoading`
+mode. Claude Code and Codex are `deferred` (documented, notes in
+`ClientRegistry.swift`); every other client is `unknown` until verified, and
+its page says so. For a deferring client the page shows a second figure, the
+cl100k tokens of the switched-on tools' names, labelled as a lower bound.
+Session measurement is not attempted.
+
 **Dependencies:** verify per client what is loaded before a search and whether
 that changes by model; Gateway request correlation from Live Activity; the same
 `cl100k_base` tokenizer for both numbers so they are comparable.
@@ -270,10 +302,13 @@ document. The section number is kept so references stay stable.
 longer reports every tool as changed; it adopts the missing fields from the
 next check (see `CHANGELOG.md`). Check that the Windows port has the same fix.
 
-**Still open:** every input schema change is reported as Breaking. That label
-speaks about compatibility, while the reason to look is often security (a new
-optional field is compatible but can still ask an agent for local data).
-Consider separate compatibility and security labels.
+**Done (1.0.9.5, macOS):** every change carries a compatibility label
+(`compatible`, `breaking`, `unknown`) and a security label (`none`, `review`),
+each with a reason (`ContractSchemaAssessment.swift`). Schema keywords Kytto
+does not compare make the result `unknown`, never `compatible`; a changed
+`default` is `unknown` because calls that omit the argument behave
+differently. Changes recorded earlier keep only their severity. Check the
+Windows port.
 
 ## 19. Failure handling — what is still thin
 
@@ -290,3 +325,148 @@ broken definition and a partly applied profile. Known remainders:
   by something else in between is refused by the digest guard like any write.
 - **Retry after "changed on disk"** is offered for a switch in the matrix. Other
   writes offer Refresh only.
+
+## 20. Marketing and feedback review — 2026-11-14
+
+**Scope:** planning from the supplied marketing records, the existing roadmap,
+README and release notes. This is not a code review, a fresh reproduction of a
+reported defect, or a commitment to ship these items. A source-code and
+stability/security audit will start only when the owner requests it.
+
+### Evidence and its limits
+
+The main source is the internal `marketing/KyttoMCP-stav.md`, especially the
+entries dated 2026-10-25/26 and 2026-11-04/06/09/13/14. Historical context comes
+from the archived plans v3, v4 and v5 and the daily records for 2026-09-17,
+2026-09-25 and 2026-10-12. These are historical records, not fresh verification
+of the linked conversations. Private correspondence, contact lists, screenshots
+and private-repository material are not reproduced here.
+
+The records contain a small amount of qualitative feedback, not a representative
+user survey. Reactions, stars and downloads are not feature votes or confirmed
+repeat use. Requests in other products' issue trackers are adjacent demand,
+not requests submitted to Kytto. Prepared outreach is not received feedback.
+
+### Proposed shortlist
+
+| Priority | Candidate | Evidence and expected benefit | Smallest useful scope / completion criterion |
+|---|---|---|---|
+| First | Make Contract Guard findings easier to interpret (§18) | Marketing records identify definition review as a promising value proposition, but do not prove broad demand. The 14 November record also describes a dependency update changing descriptions without an attack. | Explain what changed and why it deserves review; separate compatibility from security relevance. A compatible schema addition must not automatically mean breaking, and a description diff must not automatically mean malicious. Preserve the before/after evidence and explicit acknowledgement. |
+| First | Scanner coverage for instructions that bypass consent | Concrete public discussion recorded on 25–26 October: a description change was visible to Contract Guard, but consent-bypass wording was not covered by the scanner at that time. The change was explicitly deferred. | Revisit narrowly scoped detection of instructions such as skipping approval. Include benign descriptions of approval behavior as counterexamples. Remain advisory; do not claim that keyword coverage enforces client permissions. Current behavior still needs verification before implementation. |
+| First | Project configuration visibility (§12) | Repeated marketing discussions on 26 October and 6/9 November acknowledge project-config coverage limits. This supports the promise of knowing where a server is configured; it is not a newly confirmed application defect. | Read-only discovery in explicitly selected projects, exact source and scope labels, and understandable conflicts. Distinguish Claude Code local entries in its user file from repository `.mcp.json`. Discovery must not execute newly found servers. |
+| Next | Explain context estimates (§16) | The existing roadmap records a direct request on 9 November for full-catalog versus session-loaded cost. The marketing plan v5 independently warns against claiming actual savings from schema size. The original X request was not independently found in the supplied marketing records. | Clearly separate full-schema estimate, any supported upfront estimate, and unavailable session measurements. Tools called through Gateway do not establish which definitions a model loaded. Show unknown when the client supplies no reliable evidence. |
+| Next | Explain discovery coverage for additional clients (§11, §13) | Historical outreach exposes confusion between built-in clients, attached read-only files and hosted connections. The 16 October record contains an adjacent multi-client need including Grok, not a confirmed Kytto test. | Make supported source types and read-only limits discoverable. Select a new adapter only after a concrete current setup and redacted format example are available. Zed, Gemini CLI and Grok remain research candidates, not promised integrations. |
+
+Suggested next-version theme: **understand what is configured, what changed,
+and what Kytto actually checked**. This ordering is a product judgment from the
+records; it is not a ranking measured from user votes. Final scope should wait
+for the separately requested reliability audit.
+
+### Expectations to carry into design
+
+These are inferences from the marketing promises, not additional user requests:
+
+- A successful Kytto check should say when it ran and what it checked. It must
+  not imply that the target client is currently connected or that the server is
+  safe. Preserve the distinction between configured, checked and observed use.
+- A changed launch definition should be visible with a useful explanation and
+  recovery path (§7); the marketing discussions about unexpected config edits
+  reinforce this existing candidate. Do not imply monitoring of hooks,
+  `AGENTS.md`, `CLAUDE.md` or agent traces.
+- Secret management should distinguish replacing matching local values from
+  revoking or issuing a key at its provider. The 4 and 14 November records
+  reinforce clarity and discoverability of an existing feature, not demand for
+  a new credential service.
+- Preserve the local, account-free workflow, previews, backups and Undo when
+  expanding coverage. The marketing material does not justify cloud sync,
+  automatic server execution or automatic blocking as next-version defaults.
+
+### Reports parked for the later audit
+
+The 9 November marketing entry records two observations from a Windows 1.0.9.3
+demo report. They are **reported, not reproduced in this review**, and their
+status in the current build is unknown:
+
+1. After a failed health check, Review reportedly shows Tool Safety findings
+   from the saved contract without identifying them as historical. Later verify
+   the failure-to-review flow and whether the last successful check is visible.
+2. A leading space in an Add server argument reportedly prevents launch. Later
+   reproduce with the exact field and input; do not assume trimming every
+   argument is correct, because whitespace can be intentional argument data.
+
+No new critical vulnerability is asserted here. These reports are inputs for
+the future audit, not findings from inspecting the application today.
+
+**Checked on macOS (2026-11-14):** both apply to the Mac as well. (1) Doctor
+scans the last passing contract after a failed check without saying so; the
+finding now names that check and its date. (2) Each Add server argument is one
+argv element passed verbatim, so a leading space breaks an option; the form
+now points it out and offers Remove spaces, without trimming automatically.
+Windows still needs the same changes.
+
+### Avoid reopening work already documented as shipped
+
+- The October marketing summary says Claude Code plugin cache discovery is
+  missing. Release notes for 1.0.8 document discovery of registered, enabled
+  Claude Code and Codex plugins on both platforms. Do not turn arbitrary cache
+  crawling into the replacement requirement.
+- The migration-to-a-new-machine discussion overlaps with portable setup
+  export/import documented in 1.0.8. First collect a limitation of that workflow
+  before proposing another migration feature.
+- Old client lists predate current README support for Antigravity, Devin Desktop
+  (formerly Windsurf) and OpenCode. Historical claims about missing support or
+  storage formats must not become current requirements without revalidation.
+- Earlier tester fixes, OAuth support, package provenance checks, schema-key
+  reordering and restart assistance are already covered by release notes.
+  Keep any new regression report separate from the original delivered work.
+- CLI automation, Linux, MCP Router import, Firewall and cost limits remain
+  existing research/backlog items. This marketing review adds no verified new
+  demand sufficient to move them ahead of the shortlist.
+
+Marketing distribution work (listings, outreach, SEO and demo promotion) stays
+outside the application feature backlog. No messages were sent and no public
+marketing material was changed during this review.
+
+## 21. Security and reliability audit — 2026-11-14
+
+**Status: fixed on macOS (2026-11-14, branch `release/1.0.9.5`); Windows not
+yet checked.** Each finding has regression tests in the regular core suite:
+`GatewayToolFilterAmbiguityTests` and the end-to-end duplicate-name test
+(AUD-07), `ErrorCodeConversionTests` (AUD-01), `ConfigWriterConcurrentEditTests`
+(AUD-02), `RotationRollbackTests` (AUD-03, AUD-06) and `HealthCheckBoundaryTests`
+(AUD-04, AUD-05). All nine original audit probes now fail against the fixed
+code, the two crash probes with controlled errors instead of signal 5.
+
+The audit covered the
+active macOS implementation at `3ad6434`, with isolated reproductions against
+its actual core library and Gateway executable. Historical copies were excluded;
+the Windows implementation was not audited or tested. The full evidence,
+conditions, source locations and acceptance criteria are in
+[`SECURITY_RELIABILITY_AUDIT_2026-11-14.md`](SECURITY_RELIABILITY_AUDIT_2026-11-14.md).
+
+P1 means a high-priority security boundary failure, process crash or data-loss
+bug to address before the next release. P2 means a medium-priority defect with
+more limited impact or additional conditions. No P0 vulnerability was confirmed.
+These findings supplement the product shortlist in §20; that earlier review
+did not inspect code.
+
+| Order | ID | Priority | Confirmed defect | Completion criterion |
+|---|---|---|---|---|
+| 1 | AUD-07 | P1 | Gateway's JSON parser can see an allowed tool while the upstream sees a hidden tool in the same request. The real proxy forwarded and dispatched the hidden tool. | Reject ambiguous duplicate keys before forwarding narrowed traffic; cover requests, batches and tool-list responses with real upstream tests. |
+| 2 | AUD-01 | P1 | An out-of-range JSON-RPC error code traps during conversion to `Int`, crashing the checking process on both HTTP and stdio paths. | Invalid, fractional, non-finite and out-of-range codes produce controlled protocol errors; test crash inputs in subprocesses. |
+| 3 | AUD-02 | P1 | `ConfigWriter` checks the digest before reading/transforming, then overwrites a change made during the edit without another check. | Transform one verified byte snapshot and refuse observed changes before commit; the backup and write must describe that snapshot. |
+| 4 | AUD-03 | P1 | Secret-rotation rollback restores old config bytes over a newer external save without checking the digest. | Roll back only bytes still matching that transaction's receipt; preserve conflicting edits and report incomplete rollback with recovery information. |
+| 5 | AUD-04 | P2 | A blocking stdio response write can outlive the health-check deadline when the server stops reading. | Apply the shared deadline to writes as well as reads, and terminate/reap the process group after expiry. |
+| 6 | AUD-05 | P2 | The first measurements write can persist credential-bearing stderr in a `0644` file under a newly created `0755` Kytto folder. Cross-user access depends on ancestor permissions. | Create measurements storage privately before writing and keep the file `0600`; retain useful stderr without broadening access. |
+| 7 | AUD-06 | P2 | A failed rotation unconditionally deletes the destination credential ID, including a previously saved value when credential storage was not selected. | Track credential mutations and restore their previous state; failures before any credential mutation must leave the store unchanged. |
+
+**Validation:** the existing 589-test core run had two loopback failures caused
+by sandbox restrictions; both passed when rerun with local socket access. Six
+additional non-crashing probes reproduced the findings, including the real
+Gateway bypass. Two separately enabled crash probes both terminated with signal
+5. The probes document current defects; passing them does not mean the defects
+are fixed.
+
+**Follow-up scope:** verify the same boundaries independently on Windows, then
+convert each reproduction into a regression test for the corrected behavior.
+The two Windows demo reports parked in §20 remain unverified by this macOS audit.

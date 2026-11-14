@@ -12,6 +12,9 @@ public enum ToolRiskKind: String, Codable, Sendable {
     case credentialInterest
     /// Two enabled servers claiming the same tool name in one client.
     case shadowedName
+    /// Wording that tells the model to act without asking the user, or to
+    /// treat an action as already approved.
+    case consentBypass
 }
 
 public struct ToolRisk: Codable, Equatable, Sendable {
@@ -91,6 +94,22 @@ public enum ToolSafetyScanner {
                 describing what the tool does. A tool contract is loaded into \
                 context before anything is called, so this runs whether or not \
                 you ever use the tool.
+                """
+            ))
+        }
+
+        if let phrase = unnegatedMatch(in: text, against: consentBypassPhrases) {
+            risks.append(ToolRisk(
+                kind: .consentBypass,
+                severity: .warning,
+                toolName: tool.name,
+                evidence: phrase,
+                explanation: """
+                The description tells the model to go ahead without asking you, \
+                or to treat the action as already approved. Whether you are \
+                asked is decided by your client's permission settings, not by \
+                this text, and Kytto cannot see those. This is a note about the \
+                wording: check that the client still asks where you expect it to.
                 """
             ))
         }
@@ -178,6 +197,86 @@ public enum ToolSafetyScanner {
         "new instructions:",
         "system prompt:",
     ]
+
+    /// Wording that asks the model to skip the user's approval. Describing
+    /// approval is not this: "asks for confirmation before deleting" and "set
+    /// `confirm` once the user agrees" are how a careful tool reads. So each
+    /// phrase is about *not* asking, and a negation earlier in the same
+    /// sentence ("never deletes without asking the user") cancels the match.
+    static let consentBypassPhrases = [
+        "without asking the user",
+        "without asking for permission",
+        "without asking for confirmation",
+        "without asking for approval",
+        "without asking first",
+        "without user approval",
+        "without user confirmation",
+        "without the user's approval",
+        "without the user's permission",
+        "without the user's consent",
+        "without confirmation from the user",
+        "without waiting for the user",
+        "do not ask the user",
+        "don't ask the user",
+        "do not ask for confirmation",
+        "don't ask for confirmation",
+        "do not ask for permission",
+        "don't ask for permission",
+        "do not ask for approval",
+        "don't ask for approval",
+        "do not wait for confirmation",
+        "do not wait for the user",
+        "never ask the user",
+        "never ask for confirmation",
+        "never ask for permission",
+        "no need to ask the user",
+        "no need to ask for",
+        "no need to confirm",
+        "no confirmation is needed",
+        "no confirmation needed",
+        "skip confirmation",
+        "skip the confirmation",
+        "skip approval",
+        "skip user approval",
+        "skip the approval",
+        "bypass confirmation",
+        "bypass approval",
+        "bypass the approval",
+        "bypass the confirmation",
+        "assume the user has approved",
+        "assume the user has consented",
+        "assume the user approves",
+        "assume the user agrees",
+        "assume approval",
+        "assume consent",
+        "treat this as approved",
+        "treat it as approved",
+        "treat as pre-approved",
+        "is pre-approved",
+        "has already been approved by the user",
+    ]
+
+    private static let negations = [" never ", " not ", "n't ", " no ", " cannot ", " only after ", " unless "]
+
+    /// The first phrase that occurs with no negation before it in its sentence.
+    static func unnegatedMatch(in text: String, against needles: [String]) -> String? {
+        let haystack = normalizedForMatching(text)
+        for needle in needles {
+            var searchStart = haystack.startIndex
+            while let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
+                searchStart = range.upperBound
+                let sentenceStart = haystack[..<range.lowerBound]
+                    .lastIndex { ".!?;:\n".contains($0) }
+                    .map { haystack.index(after: $0) } ?? haystack.startIndex
+                let before = " " + haystack[sentenceStart..<range.lowerBound]
+                // The phrase's own "do not" or "never" is the instruction; only
+                // a negation in front of it reverses the meaning.
+                if negations.contains(where: { before.contains($0) }) { continue }
+                return needle
+            }
+        }
+        return nil
+    }
 
     private static let authorityMarkers = [
         "<important>",

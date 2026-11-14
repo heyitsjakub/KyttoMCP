@@ -38,6 +38,9 @@ public struct KyttoSettings: Codable, Equatable, Sendable {
     /// Additional user-selected configuration files. They are discovery-only:
     /// no write service receives descriptors built from this collection.
     public var customConfigSources: [CustomConfigSource]
+    /// Folders whose repository MCP files Kytto reads (roadmap §12). Like
+    /// custom sources, discovery-only and read-only.
+    public var projectFolders: [ProjectFolder]
     /// Cleared once the user has seen the first-run screen.
     public var hasCompletedOnboarding: Bool
     /// The matrix writes immediately, which is intentionally confirmed once
@@ -84,6 +87,7 @@ public struct KyttoSettings: Codable, Equatable, Sendable {
         menuBarClient: ClientID?,
         clientPathOverrides: [String: String],
         customConfigSources: [CustomConfigSource] = [],
+        projectFolders: [ProjectFolder] = [],
         hasCompletedOnboarding: Bool,
         hasConfirmedMatrixWrites: Bool = false,
         showsCustomSources: Bool = true,
@@ -97,6 +101,7 @@ public struct KyttoSettings: Codable, Equatable, Sendable {
         self.menuBarClient = menuBarClient
         self.clientPathOverrides = clientPathOverrides
         self.customConfigSources = customConfigSources
+        self.projectFolders = projectFolders
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.hasConfirmedMatrixWrites = hasConfirmedMatrixWrites
         self.showsCustomSources = showsCustomSources
@@ -112,6 +117,7 @@ public struct KyttoSettings: Codable, Equatable, Sendable {
         case menuBarClient
         case clientPathOverrides
         case customConfigSources
+        case projectFolders
         case hasCompletedOnboarding
         case hasConfirmedMatrixWrites
         case showsCustomSources
@@ -137,6 +143,7 @@ public struct KyttoSettings: Codable, Equatable, Sendable {
         menuBarClient = field(ClientID.self, .menuBarClient)
         clientPathOverrides = field([String: String].self, .clientPathOverrides) ?? [:]
         customConfigSources = field([CustomConfigSource].self, .customConfigSources) ?? []
+        projectFolders = field([ProjectFolder].self, .projectFolders) ?? []
         hasCompletedOnboarding = field(Bool.self, .hasCompletedOnboarding) ?? false
         hasConfirmedMatrixWrites = field(Bool.self, .hasConfirmedMatrixWrites) ?? false
         showsCustomSources = field(Bool.self, .showsCustomSources) ?? true
@@ -168,6 +175,20 @@ public struct KyttoSettings: Codable, Equatable, Sendable {
             cleaned.displayName = source.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             cleaned.scopeLabel = source.scopeLabel.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleaned.displayName.isEmpty else { return nil }
+            return cleaned
+        }
+        // Absolute folders only, each once. A relative path would resolve
+        // against whatever directory the app was started from.
+        var seenFolders: Set<UUID> = []
+        var seenPaths: Set<String> = []
+        result.projectFolders = projectFolders.compactMap { folder in
+            let path = URL(filePath: folder.path).standardizedFileURL.path
+            guard folder.path.hasPrefix("/"), seenFolders.insert(folder.id).inserted,
+                  seenPaths.insert(path).inserted else { return nil }
+            var cleaned = folder
+            cleaned.path = path
+            cleaned.label = folder.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleaned.label.isEmpty { cleaned.label = URL(filePath: path).lastPathComponent }
             return cleaned
         }
         return result

@@ -2289,6 +2289,9 @@ root.addEventListener('click', async (event) => {
     case 'draft-arg-remove':
       updateDraft({ args: sheet.draft.args.filter((_, i) => i !== Number(target.dataset.index)) });
       break;
+    case 'draft-arg-trim':
+      updateDraft({ args: sheet.draft.args.map((arg, i) => (i === Number(target.dataset.index) ? arg.trim() : arg)) });
+      break;
     case 'draft-env-add':
       updateDraft({ env: [...sheet.draft.env, { key: '', value: '' }] });
       break;
@@ -2390,7 +2393,12 @@ root.addEventListener('input', (event) => {
 root.addEventListener('change', (event) => {
   const action = event.target.dataset.action;
   const sheet = getState().sheet;
-  if (action === 'scope-filter') {
+  if (action === 'draft-arg' && sheet?.draft) {
+    // Typing stays quiet so the cursor is not disturbed; leaving the field
+    // renders once, which is when a stray space around an argument is shown.
+    const index = Number(event.target.dataset.index);
+    if (sheet.draft.args[index] !== sheet.draft.args[index]?.trim()) updateDraft({});
+  } else if (action === 'scope-filter') {
     setState({ scopeFilter: event.target.value });
   } else if (action === 'source-filter') {
     setState({ sourceFilter: event.target.value });

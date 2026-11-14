@@ -119,8 +119,12 @@ public struct ConfigWriter: Sendable {
         transform: (Document) throws -> String
     ) throws -> WriteReceipt {
         try MutationCoordinator.sync {
-        let exists = FileManager.default.fileExists(atPath: url.path)
-        let currentDigest = Self.digest(of: url)
+        // Read once. The digest check, the transform, the backup and the final
+        // conflict check all refer to these bytes; reading the file again for
+        // any of them is how an edit made in between was lost (AUD-02).
+        let snapshot = try? Data(contentsOf: url)
+        let exists = snapshot != nil || FileManager.default.fileExists(atPath: url.path)
+        let currentDigest = snapshot.map { Self.digest(of: $0) }
 
         guard currentDigest == expectedDigest else {
             throw ConfigWriteError.changedOnDisk(pathDisplay: pathDisplay)
@@ -131,7 +135,7 @@ public struct ConfigWriter: Sendable {
         if exists {
             // Read as bytes: decoding UTF-8 drops a leading byte-order mark, and
             // a file that had one must still have it after Kytto touched it.
-            guard let data = try? Data(contentsOf: url),
+            guard let data = snapshot,
                   let text = String(data: data, encoding: .utf8)
             else {
                 throw ConfigWriteError.unreadable(pathDisplay: pathDisplay, reason: "not valid UTF-8")
@@ -174,8 +178,20 @@ public struct ConfigWriter: Sendable {
         }
 
         let bytes = (byteOrderMark ? Self.byteOrderMark : Data()) + Data(updated.utf8)
-        let backup = try backups.backUp(url, clientID: clientID, pathDisplay: pathDisplay)
-        try AtomicWriter.write(bytes, to: url)
+        let backup = try snapshot.flatMap {
+            try backups.backUp(url, clientID: clientID, pathDisplay: pathDisplay, snapshot: $0)
+        }
+        // Another program does not take Kytto's lock, so the file is checked
+        // once more at the last moment: it must still hold the snapshot, or
+        // still not exist. A save in between is refused, not overwritten.
+        do {
+            try AtomicWriter.write(
+                bytes, to: url,
+                expecting: currentDigest.map(AtomicWriter.Precondition.digest) ?? .absent
+            )
+        } catch AtomicWriter.WriteError.targetChanged {
+            throw ConfigWriteError.changedOnDisk(pathDisplay: pathDisplay)
+        }
 
         return WriteReceipt(
             digest: Self.digest(of: bytes),

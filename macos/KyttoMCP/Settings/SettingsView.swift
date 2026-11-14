@@ -39,6 +39,7 @@ struct SettingsView: View {
             // flushes at once.
             let pathsEdited = settings.clientPathOverrides != model.settings.clientPathOverrides
                 || settings.customConfigSources != model.settings.customConfigSources
+                || settings.projectFolders != model.settings.projectFolders
             do {
                 try await Task.sleep(for: .milliseconds(pathsEdited ? 1500 : 350))
             } catch {
@@ -212,8 +213,70 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section {
+                ForEach($settings.projectFolders) { $folder in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            TextField("Folder name", text: $folder.label)
+                            Button(role: .destructive) {
+                                settings.projectFolders.removeAll { $0.id == folder.id }
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Stop reading this folder. Nothing in it is changed.")
+                        }
+                        Text(folder.path)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                        Text(Self.projectFilesSummary(folder))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Button("Add Project Folder…") { chooseProjectFolder() }
+            } header: {
+                Text("Project folders")
+            } footer: {
+                Text("Kytto reads only \(Self.projectFileNames) at the top of each folder you add—never subfolders, never other files, and never a folder you did not choose. These files are read-only. A server found only in one is left out of Check all, because a check runs its command on this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
+    }
+
+    private static var projectFileNames: String {
+        let names = ProjectConfigFile.allCases.map(\.rawValue)
+        return names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+    }
+
+    /// Which of the known files the folder has right now.
+    private static func projectFilesSummary(_ folder: ProjectFolder) -> String {
+        let found = ProjectConfigFile.allCases.filter { file in
+            FileManager.default.fileExists(atPath: URL(filePath: folder.path).appending(path: file.rawValue).path)
+        }
+        return found.isEmpty
+            ? "No MCP files here yet. Kytto looks again each time its window becomes active."
+            : "Reading " + found.map(\.rawValue).joined(separator: ", ") + "."
+    }
+
+    private func chooseProjectFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a project folder"
+        panel.prompt = "Read MCP Files Here"
+        panel.message = "Kytto reads only .mcp.json, .cursor/mcp.json and .vscode/mcp.json in this folder, and never changes them."
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let path = url.standardizedFileURL.path
+        guard !settings.projectFolders.contains(where: { $0.path == path }) else { return }
+        settings.projectFolders.append(ProjectFolder(path: path))
     }
 
     // MARK: - Safety

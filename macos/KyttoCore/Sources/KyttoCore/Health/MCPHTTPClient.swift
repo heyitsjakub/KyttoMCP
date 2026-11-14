@@ -72,7 +72,8 @@ public struct MCPHTTPClient: Sendable {
                 guard let document = RemoteHTTPTransport.document(message), document.root["jsonrpc"]?.stringValue == "2.0",
                       document.root["id"]?.numberValue == Double(id) else { continue }
                 if let error = document.root["error"] {
-                    return .rpcError(code: Int(error["code"]?.numberValue ?? 0),
+                    let code = try Self.errorCode(error) { RemoteHTTPError.protocolFailure($0) }
+                    return .rpcError(code: code,
                                      supported: error.value(at: ["data", "supported"])?.elements?.compactMap(\.stringValue) ?? [])
                 }
                 guard document.root["result"]?.members != nil else {
@@ -260,14 +261,25 @@ public struct MCPHTTPClient: Sendable {
         throw RemoteHTTPError.protocolFailure("expected application/json or text/event-stream")
     }
 
+    /// A JSON-RPC error's code. A missing code reads as 0, as before; one that
+    /// is present but not an integer Kytto can hold is a protocol failure, not
+    /// a number to convert (AUD-01).
+    static func errorCode(_ error: JSONNode, _ failure: (String) -> Error) throws -> Int {
+        guard let raw = error["code"] else { return 0 }
+        guard let code = raw.integerValue else {
+            throw failure("the JSON-RPC error code is not an integer")
+        }
+        return code
+    }
+
     /// The code and advertised versions of a JSON-RPC error in an HTTP error
     /// body, and nothing else from it.
     private static func rpcError(in reply: RemoteHTTPTransport.Reply) -> (code: Int, supported: [String])? {
         guard let messages = try? messages(in: reply) else { return nil }
         for message in messages {
             guard let document = RemoteHTTPTransport.document(message), let error = document.root["error"],
-                  let code = error["code"]?.numberValue else { continue }
-            return (Int(code), error.value(at: ["data", "supported"])?.elements?.compactMap(\.stringValue) ?? [])
+                  let code = error["code"]?.integerValue else { continue }
+            return (code, error.value(at: ["data", "supported"])?.elements?.compactMap(\.stringValue) ?? [])
         }
         return nil
     }

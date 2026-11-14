@@ -5,7 +5,7 @@
 Free and **open source** under the MIT License — the full source of both the macOS
 and the Windows app lives in this repository. Read it, build it, or send a pull request.
 
-[![Version](https://img.shields.io/badge/beta-1.0.9.4-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
+[![Version](https://img.shields.io/badge/beta-1.0.9.5-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 [![Open source](https://img.shields.io/badge/open%20source-yes-brightgreen)](#source-code)
@@ -62,7 +62,7 @@ Attach multiple named JSON, JSONC or TOML configuration files as read-only custo
 Run an on-demand MCP handshake and read what the server actually reports: tools, prompts, resources, protocol details and stderr. MCP Doctor turns that evidence into concrete findings — missing environment values, relative paths, failed handshakes, executables that only resolve inside one client's PATH — and previews any fix before writing it. A package a server fetches by name without an exact version (`npx some-package`, `@latest`, `uvx`) is flagged, and once you check the latest release Doctor can pin that exact version in every client that uses it. Package names that imitate an official server (`mcp-server-github`) and archived reference servers that get no more fixes (`@modelcontextprotocol/server-github`, `-puppeteer`, `-slack` and others) are flagged offline; "Check package safety" asks osv.dev about known malware and vulnerabilities and the npm registry about install scripts and deprecation, only when you click.
 
 **Read what a server tells your model**
-A tool's name, description and input schema go straight into the model's context, so an MCP server can give instructions without ever being called. The Tool Safety Scanner reads them the way the model does and reports what a person would not see: hidden or direction-override characters, wording that addresses the model instead of describing the tool ("ignore previous instructions"), markup that imitates a system message, a tool advertised as read-only that names credential files, and two enabled servers claiming the same tool name in one client. Contract Guard remembers each server's tool contract between health checks and reports tools that were added or removed and changed descriptions, input schemas or safety annotations. Acknowledge a change and the contract you reviewed becomes the new baseline.
+A tool's name, description and input schema go straight into the model's context, so an MCP server can give instructions without ever being called. The Tool Safety Scanner reads them the way the model does and reports what a person would not see: hidden or direction-override characters, wording that addresses the model instead of describing the tool ("ignore previous instructions"), markup that imitates a system message, a tool advertised as read-only that names credential files, and two enabled servers claiming the same tool name in one client, and wording that tells the model not to ask you ("skip confirmation"). Contract Guard remembers each server's tool contract between health checks and reports tools that were added or removed and changed descriptions, input schemas or safety annotations. Since 1.0.9.5 every change carries two labels: whether existing calls still fit (Compatible, Breaking or Compatibility unknown) and whether it is worth reading for security, each with its reason — a new optional argument is not breaking, and a new `filePath` argument is still worth a look. Acknowledge a change and the contract you reviewed becomes the new baseline.
 
 Both are advice. Nothing is switched off and no config is edited, the scan is deliberately narrow so a finding is worth reading, and a clean scan does not mean a server is trustworthy. Version 1.0.7.1 fixed reordered schema keys ([#12](https://github.com/heyitsjakub/KyttoMCP/issues/12)) and detection of bidi isolate characters ([#13](https://github.com/heyitsjakub/KyttoMCP/issues/13)). Source: [macOS](macos/KyttoCore/Sources/KyttoCore/Health) · [Windows](windows/src/Kytto.Core/Health).
 
@@ -75,7 +75,7 @@ Both are advice. Nothing is switched off and no config is edited, the scan is de
 *Kytto 1.0.7 on Windows after two health checks of a test server whose description changed between them. `drift-fixture` is a harmless server written for this demonstration; the instruction in its description is a sample and does nothing.*
 
 **Compare tool-schema footprint**
-Clients differ in how and when they load MCP tool definitions. Kytto estimates the full-schema footprint of each server and profile as a consistent comparison, not exact per-conversation usage, and flags heavy definitions, unmeasured entries and duplicate tool names for review. For clients with a known tool limit — VS Code refuses a chat request with more than 128 tools — Kytto shows how many tools the servers switched on there offer against that limit and warns when you are near or over it.
+Clients differ in how and when they load MCP tool definitions. Kytto estimates the full-schema footprint of each server and profile as a consistent comparison, not exact per-conversation usage, and flags heavy definitions, unmeasured entries and duplicate tool names for review. For clients with a known tool limit — VS Code refuses a chat request with more than 128 tools — Kytto shows how many tools the servers switched on there offer against that limit and warns when you are near or over it. Claude Code and Codex defer MCP tools behind tool search, so for them Kytto also shows what the tool names alone cost before a search; for other clients it says it has not verified how they load tools.
 
 **Switch between setups**
 Save local profiles such as Coding, Research or Minimal. Preview exactly what a switch will change, then apply it to one client with the normal backup and restart safeguards.
@@ -99,11 +99,11 @@ For supported stdio servers, preview a local Gateway route, move the direct defi
 | Devin Desktop (formerly Windsurf) | Supported |
 | OpenCode | Supported |
 
-Custom sources are read-only and are not an additional writable client. Want another built-in client supported? [Open an issue](https://github.com/heyitsjakub/KyttoMCP/issues) — the roadmap is driven by what people actually ask for.
+Custom sources are read-only and are not an additional writable client. Project folders (since 1.0.9.5) show the MCP files a repository commits — `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` — in folders you choose, read-only; a server found only there is never checked unless you ask, because a check starts it. Want another built-in client supported? [Open an issue](https://github.com/heyitsjakub/KyttoMCP/issues) — the roadmap is driven by what people actually ask for.
 
 ## Install
 
-Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.4 for macOS ([v1.0.9.4](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.4)) and Beta 1.0.9.4 for Windows ([v1.0.9.4-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.4-windows)).
+Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.5 for macOS ([v1.0.9.5](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.5)) and Beta 1.0.9.4 for Windows ([v1.0.9.4-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.4-windows)). Windows 1.0.9.5 is coming soon.
 
 ### macOS
 
@@ -121,8 +121,8 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.9.4.dmg
-# 50cf4964a73ffed47c890114a6906ee091c5ca961bd4f076cb98645e8642bbb5
+shasum -a 256 KyttoMCP-1.0.9.5.dmg
+# 45f2481c3a5a1954940f3a475d06e7fe72b37159684fb2b838fdc144078dd0c2
 
 # Windows (PowerShell)
 Get-FileHash Kytto-Setup-win-x64-1.0.9.4.exe -Algorithm SHA256

@@ -14,6 +14,31 @@ public enum ContractChangeSeverity: String, Codable, Sendable {
     case breaking
 }
 
+/// Whether calls written for the old contract still fit the new one.
+///
+/// This is one question, and security is another (roadmap §18): a new optional
+/// argument is compatible, yet it can ask the model for local data. Keeping the
+/// two apart stops "Breaking" from standing in for "look at this".
+public enum ContractCompatibility: String, Codable, Sendable {
+    /// Existing calls keep working: an added tool, a new optional argument,
+    /// changed wording.
+    case compatible
+    /// Existing calls can fail: a removed tool or argument, a new required
+    /// argument, a narrowed type or value list.
+    case breaking
+    /// Kytto cannot tell from the schema alone, for example a changed pattern,
+    /// `$ref` or `oneOf`.
+    case unknown
+}
+
+/// Whether the change touches what the model is told or allowed to do, so
+/// that a person should read it. This is a reason to look, never a verdict
+/// that the server is malicious.
+public enum ContractSecurityRelevance: String, Codable, Sendable {
+    case none
+    case review
+}
+
 /// Bounded excerpts of the model-visible fields that changed. These explain a
 /// review; they do not certify that a server implements its stated safeguards.
 public struct ContractFieldChange: Codable, Equatable, Sendable {
@@ -36,19 +61,41 @@ public struct ContractChange: Codable, Equatable, Sendable {
     public let toolName: String
     public let summary: String
     public let details: [ContractFieldChange]?
+    /// Nil on a change recorded before the two labels existed; the UI then
+    /// falls back to `severity`.
+    public let compatibility: ContractCompatibility?
+    public let compatibilityReason: String?
+    public let security: ContractSecurityRelevance?
+    public let securityReason: String?
 
     public init(
         kind: ContractChangeKind,
         severity: ContractChangeSeverity,
         toolName: String,
         summary: String,
-        details: [ContractFieldChange]? = nil
+        details: [ContractFieldChange]? = nil,
+        compatibility: ContractCompatibility? = nil,
+        compatibilityReason: String? = nil,
+        security: ContractSecurityRelevance? = nil,
+        securityReason: String? = nil
     ) {
         self.kind = kind
         self.severity = severity
         self.toolName = toolName
         self.summary = summary
         self.details = details
+        self.compatibility = compatibility
+        self.compatibilityReason = compatibilityReason
+        self.security = security
+        self.securityReason = securityReason
+    }
+
+    /// The one-word severity, derived from the two labels: only a change that
+    /// can break existing calls is `breaking`; one worth reading for security
+    /// is a `warning`.
+    static func severity(_ compatibility: ContractCompatibility, _ security: ContractSecurityRelevance) -> ContractChangeSeverity {
+        if compatibility == .breaking { return .breaking }
+        return security == .review || compatibility == .unknown ? .warning : .info
     }
 }
 
@@ -66,53 +113,81 @@ public enum ContractGuard {
         let beforeNames = Set(before.keys)
         let afterNames = Set(after.keys)
 
+        func change(
+            _ kind: ContractChangeKind, _ name: String, _ summary: String, details: [ContractFieldChange]? = nil,
+            _ compatibility: ContractCompatibility, _ compatibilityReason: String,
+            _ security: ContractSecurityRelevance, _ securityReason: String?
+        ) -> ContractChange {
+            ContractChange(
+                kind: kind, severity: ContractChange.severity(compatibility, security), toolName: name,
+                summary: summary, details: details,
+                compatibility: compatibility, compatibilityReason: compatibilityReason,
+                security: security, securityReason: securityReason
+            )
+        }
+
         for name in beforeNames.subtracting(afterNames).sorted() {
-            result.append(ContractChange(
-                kind: .toolRemoved,
-                severity: .breaking,
-                toolName: name,
-                summary: "Tool removed"
+            result.append(change(
+                .toolRemoved, name, "Tool removed",
+                .breaking, "Anything that calls this tool will now fail.",
+                .none, nil
             ))
         }
         for name in afterNames.subtracting(beforeNames).sorted() {
-            result.append(ContractChange(
-                kind: .toolAdded,
-                severity: .info,
-                toolName: name,
-                summary: "New tool added"
+            result.append(change(
+                .toolAdded, name, "New tool added",
+                .compatible, "Existing calls are unaffected.",
+                .review, "The model can now call a tool you have not reviewed. Read what it does before relying on this server."
             ))
         }
         for name in beforeNames.intersection(afterNames).sorted() {
             guard let lhs = before[name], let rhs = after[name] else { continue }
             if lhs.description != rhs.description {
-                result.append(ContractChange(
-                    kind: .descriptionChanged,
-                    severity: .warning,
-                    toolName: name,
-                    summary: "Model-facing description changed",
-                    details: [field("description", lhs.description, rhs.description)]
+                result.append(change(
+                    .descriptionChanged, name, "Model-facing description changed",
+                    details: [field("description", lhs.description, rhs.description)],
+                    .compatible, "Wording does not change which arguments a call accepts.",
+                    .review, "The model reads this text as instructions. A changed description is not malicious by itself; check that it still only describes the tool."
                 ))
             }
             if !sameSchema(lhs.inputSchemaJSON, rhs.inputSchemaJSON) {
-                result.append(ContractChange(
-                    kind: .inputSchemaChanged,
-                    severity: .breaking,
-                    toolName: name,
-                    summary: "Input schema changed — review compatibility and safeguards",
-                    details: schemaDetails(lhs.inputSchemaJSON, rhs.inputSchemaJSON)
+                let assessment = assessSchema(lhs.inputSchemaJSON, rhs.inputSchemaJSON)
+                result.append(change(
+                    .inputSchemaChanged, name, assessment.summary,
+                    details: schemaDetails(lhs.inputSchemaJSON, rhs.inputSchemaJSON),
+                    assessment.compatibility, assessment.compatibilityReason,
+                    assessment.security, assessment.securityReason
                 ))
             }
             if lhs.annotations != rhs.annotations {
-                result.append(ContractChange(
-                    kind: .annotationsChanged,
-                    severity: .warning,
-                    toolName: name,
-                    summary: "Safety annotations changed",
-                    details: annotationDetails(lhs.annotations, rhs.annotations)
+                result.append(change(
+                    .annotationsChanged, name, "Safety annotations changed",
+                    details: annotationDetails(lhs.annotations, rhs.annotations),
+                    .compatible, "Annotations do not change which arguments a call accepts.",
+                    .review, annotationSecurityReason(lhs.annotations, rhs.annotations)
                 ))
             }
         }
         return result
+    }
+
+    /// Clients use these hints to decide what to ask the user about, so a hint
+    /// that moves either way is worth a look: a tool newly claiming to be
+    /// read-only may be approved without a prompt.
+    static func annotationSecurityReason(_ before: ToolAnnotations?, _ after: ToolAnnotations?) -> String {
+        if after?.readOnlyHint == true, before?.readOnlyHint != true {
+            return "The tool now claims to be read-only, which some clients use to skip asking you. Hints are not enforced; check that the tool really only reads."
+        }
+        if before?.readOnlyHint == true, after?.readOnlyHint != true {
+            return "The tool no longer claims to be read-only. It may now change data."
+        }
+        if after?.destructiveHint == true, before?.destructiveHint != true {
+            return "The tool now says it can make destructive changes."
+        }
+        if after?.openWorldHint == true, before?.openWorldHint != true {
+            return "The tool now says it reaches outside systems."
+        }
+        return "Clients use these hints when deciding what to ask you about. They are hints, not enforced permissions."
     }
 
     /// Whether a saved baseline predates schema and annotation capture.

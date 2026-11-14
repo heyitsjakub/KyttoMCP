@@ -343,6 +343,21 @@ export function clientTokenTotal(clientID) {
     .reduce((total, server) => total + (server.tokenWeight?.estimate ?? 0), 0);
 }
 
+/**
+ * What switched-on servers cost in tool names alone — the part a client that
+ * defers definitions behind tool search still sends (roadmap §16). `known`
+ * says how many of the switched-on servers had names to count.
+ */
+export function clientNameTokenTotal(clientID) {
+  const on = state.servers.filter((server) => server.enabledIn[clientID] === 'enabled');
+  const counted = on.filter((server) => typeof server.toolNameTokens === 'number');
+  return {
+    total: counted.reduce((sum, server) => sum + server.toolNameTokens, 0),
+    known: counted.length,
+    on: on.length,
+  };
+}
+
 /** Client ids as the names the user knows them by: "Claude Code, Cursor". */
 export function clientNames(from, clientIDs) {
   return clientIDs

@@ -54,8 +54,16 @@ public struct BackupStore: Sendable {
     /// Returns nil when there was nothing to back up yet.
     @discardableResult
     public func backUp(_ url: URL, clientID: ClientID, pathDisplay: String) throws -> Backup? {
+        try backUp(url, clientID: clientID, pathDisplay: pathDisplay, snapshot: nil)
+    }
+
+    /// - Parameter snapshot: the bytes to keep, when the caller has already
+    ///   read the file and is about to act on exactly those bytes. A backup
+    ///   then describes what the edit started from, not whatever the file held
+    ///   a moment later (AUD-02). Nil reads the file now.
+    public func backUp(_ url: URL, clientID: ClientID, pathDisplay: String, snapshot: Data?) throws -> Backup? {
         try MutationCoordinator.sync {
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard snapshot != nil || FileManager.default.fileExists(atPath: url.path) else { return nil }
 
         // Owner-only, folders and files alike: a backup is the whole config,
         // secrets included, and must not be more readable than what it copies.
@@ -73,7 +81,7 @@ public struct BackupStore: Sendable {
             collision += 1
         }
 
-        let data = try Data(contentsOf: url)
+        let data = try snapshot ?? Data(contentsOf: url)
         try AtomicWriter.write(data, to: destination, permissions: KyttoPaths.privateFilePermissions)
 
         // The path the backup came from is not recoverable from the file name
@@ -168,16 +176,30 @@ public struct BackupStore: Sendable {
             throw BackupError.unknownRestoreTarget(pathDisplay: backup.originalPathDisplay)
         }
 
+        // Read once: the check, the pre-restore backup and the final swap all
+        // describe these bytes (AUD-02).
+        let current = try? Data(contentsOf: target)
+        let currentDigest = current.map { ConfigWriter.digest(of: $0) }
+
         // Before anything is written — no pre-restore backup either.
-        if let ledger, ConfigWriter.digest(of: target) != ledger.digest(for: target) {
+        if let ledger, currentDigest != ledger.digest(for: target) {
             throw ConfigWriteError.changedOnDisk(pathDisplay: backup.originalPathDisplay)
         }
 
         // Bytes, not text: decoding would drop a byte-order mark, and a restore
         // puts back exactly what was there.
         let data = try Data(contentsOf: backup.url)
-        try backUp(target, clientID: backup.clientID, pathDisplay: backup.originalPathDisplay)
-        try AtomicWriter.write(data, to: target)
+        if let current {
+            try backUp(target, clientID: backup.clientID, pathDisplay: backup.originalPathDisplay, snapshot: current)
+        }
+        do {
+            try AtomicWriter.write(
+                data, to: target,
+                expecting: currentDigest.map(AtomicWriter.Precondition.digest) ?? .absent
+            )
+        } catch AtomicWriter.WriteError.targetChanged {
+            throw ConfigWriteError.changedOnDisk(pathDisplay: backup.originalPathDisplay)
+        }
         ledger?.record(ConfigWriter.digest(of: data), for: target)
         }
     }

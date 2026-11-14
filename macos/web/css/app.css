@@ -4143,6 +4143,41 @@ body[data-stubbed='true'] .statusbar::after {
 .contract-change.breaking { color: var(--fail); }
 .contract-change.warning { color: var(--warn); }
 
+.contract-summary {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.contract-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* The labels restate the text in words, so colour is a reinforcement only:
+   red can break calls, amber is worth a read, grey is fine or unknown. */
+.badge.contract-compat.breaking {
+  color: var(--fail);
+  background: color-mix(in srgb, var(--fail) 12%, transparent);
+}
+
+.badge.contract-compat.compatible,
+.badge.contract-compat.unknown {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+
+.badge.contract-security {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+.contract-reason {
+  margin: 0;
+  color: var(--text-muted);
+}
+
 /* The command line, replaced by the tool names that matched the filter. Green
    is taken (running) and amber is taken (context), so this stays neutral and
    leans on the monospace to read as a list of identifiers. */

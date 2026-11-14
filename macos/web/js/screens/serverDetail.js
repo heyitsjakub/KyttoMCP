@@ -308,6 +308,27 @@ function listPhrase(items) {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
+/// Two separate questions about a change (roadmap §18): will existing calls
+/// still work, and is there something here a person should read. A change
+/// recorded before the labels existed has neither and shows its summary only.
+const COMPATIBILITY_LABELS = {
+  compatible: 'Compatible',
+  breaking: 'Breaking',
+  unknown: 'Compatibility unknown',
+};
+
+function contractLabels(change) {
+  if (!change.compatibility && !change.security) return null;
+  const row = el('span', 'contract-labels');
+  if (change.compatibility) {
+    row.append(el('span', `badge contract-compat ${change.compatibility}`, COMPATIBILITY_LABELS[change.compatibility] ?? change.compatibility));
+  }
+  if (change.security === 'review') {
+    row.append(el('span', 'badge contract-security', 'Security: review'));
+  }
+  return row;
+}
+
 function contractSection(state, server) {
   const alert = (state.contractAlerts ?? []).find((entry) => entry.serverID === server.id);
   const pending = state.pendingContractImports?.entries?.find((entry) => entry.serverID === server.id);
@@ -327,7 +348,14 @@ function contractSection(state, server) {
   for (const change of alert?.changes ?? []) {
     const item = el('li', `contract-change ${change.severity}`);
     item.append(el('strong', 'mono', change.toolName));
-    item.append(el('span', null, change.summary));
+    const summary = el('div', 'contract-summary');
+    summary.append(el('span', null, change.summary));
+    const labels = contractLabels(change);
+    if (labels) summary.append(labels);
+    for (const reason of [change.compatibilityReason, change.securityReason]) {
+      if (reason) summary.append(el('p', 'field-hint contract-reason', reason));
+    }
+    item.append(summary);
     for (const field of change.details ?? []) {
       const detail = el('div', 'contract-field');
       detail.append(el('code', 'contract-path', field.path));
@@ -362,6 +390,14 @@ function contractSection(state, server) {
   return section;
 }
 
+/// Every client that lists this server reads it from a repository file in a
+/// project folder the user chose (roadmap §12), so nothing outside the project
+/// vouches for it. Native leaves such servers out of Check all.
+function isRepositoryOnly(state, server) {
+  const ids = Object.keys(server.enabledIn ?? {}).filter((id) => server.enabledIn[id] !== 'absent');
+  return ids.length > 0 && ids.every((id) => state.clients.find((client) => client.id === id)?.isRepositoryFile === true);
+}
+
 /// Health, token weight, the tool list, and the server's own error output (§7.3).
 function healthSection(state, server) {
   const section = el('section', 'detail-section');
@@ -384,6 +420,11 @@ function healthSection(state, server) {
     }),
   );
   section.append(heading);
+
+  if (isRepositoryOnly(state, server)) {
+    section.append(el('p', 'field-hint repository-note',
+      'Found only in a repository file. Check all leaves it out, because a check runs its command on this Mac. Look at where the project got it before choosing Check now.'));
+  }
 
   if (server.transport === 'http' && state.app?.capabilities?.includes('health.oauth')) {
     const auth = el('div', 'auth-actions');

@@ -174,9 +174,19 @@ public struct SecretsService: Sendable {
         var updated: [SecretUsage] = []
         var backupIDs: [String] = []
         var originals: [URL: Data?] = [:]
-        var written: [URL] = []
-        var parksWritten: [ParkStore.Entry] = []
+        /// Each file this rotation changed, with the digest it left behind.
+        /// Rollback only touches a file that still has exactly those bytes.
+        var written: [(url: URL, digest: String)] = []
+        /// Each parked definition changed, with the text it had before and the
+        /// text this rotation gave it.
+        var parksWritten: [(previous: ParkStore.Entry, written: String)] = []
         let oldStoredValue = record.isInSecretStore ? reveal(secretID: secretID, servers: servers) : nil
+        // Credential changes are undone only if they happened, and back to
+        // what was there before: the destination id may already hold a value
+        // the user saved earlier (AUD-06).
+        var storedNewCredential = false
+        var deletedOldCredential = false
+        let previousNewCredential = try? store.value(for: newID)
 
         // Grouped per file, so a config holding the same token for two servers is
         // opened, backed up and written once rather than twice.
@@ -242,7 +252,7 @@ public struct SecretsService: Sendable {
                 }
             }
             ledger.record(receipt.digest, for: url)
-            if receipt.didWrite { written.append(url) }
+            if receipt.didWrite { written.append((url, receipt.digest)) }
 
             for usage in parkedUsages {
                 guard let parkStore,
@@ -252,42 +262,68 @@ public struct SecretsService: Sendable {
                     record.key, with: newValue, in: JSONDocument.parse(entry.sourceText), at: []
                 )
                 try parkStore.park(clientID: clientID, serverName: entry.serverName, sourceText: text)
-                parksWritten.append(entry)
+                parksWritten.append((entry, text))
             }
 
             if let backupID = receipt.backupID { backupIDs.append(backupID) }
             updated.append(contentsOf: usages)
         }
         if alsoStoreInSecretStore {
+            // Marked before each call: a store that fails part-way may still
+            // have changed the record, and restoring the previous state is
+            // harmless when it did not.
+            storedNewCredential = true
             try store.store(newValue, for: newID)
+            deletedOldCredential = true
             try store.delete(for: secretID)
         }
         } catch {
             var rollbackFailures: [String] = []
-            for entry in parksWritten.reversed() {
+            for (previous, text) in parksWritten.reversed() {
+                // Only a definition that still holds what this rotation wrote
+                // is put back; anything else was changed after it.
+                guard let parkStore,
+                      parkStore.parked(clientID: previous.clientID, serverName: previous.serverName)?.sourceText == text
+                else {
+                    rollbackFailures.append("\(previous.clientID.rawValue) (switched-off copy of \(previous.serverName), changed since)")
+                    continue
+                }
                 do {
-                    try parkStore?.park(
-                        clientID: entry.clientID, serverName: entry.serverName, sourceText: entry.sourceText
+                    try parkStore.park(
+                        clientID: previous.clientID, serverName: previous.serverName, sourceText: previous.sourceText
                     )
                 } catch {
-                    rollbackFailures.append("\(entry.clientID.rawValue) (switched-off copy of \(entry.serverName))")
+                    rollbackFailures.append("\(previous.clientID.rawValue) (switched-off copy of \(previous.serverName))")
                 }
             }
-            for url in written.reversed() {
+            for (url, digest) in written.reversed() {
+                // A file another program saved after this rotation wrote it
+                // keeps that save. Putting the old bytes back over it would
+                // erase newer work to undo older work (AUD-03).
                 do {
                     if let original = originals[url] ?? nil {
-                        try AtomicWriter.write(original, to: url)
+                        try AtomicWriter.write(original, to: url, expecting: .digest(digest))
                         ledger.record(ConfigWriter.digest(of: original), for: url)
-                    } else if FileManager.default.fileExists(atPath: url.path) {
+                    } else if ConfigWriter.digest(of: url) == digest {
                         try FileManager.default.removeItem(at: url)
                         ledger.record(nil, for: url)
+                    } else if FileManager.default.fileExists(atPath: url.path) {
+                        throw AtomicWriter.WriteError.targetChanged
                     }
+                } catch AtomicWriter.WriteError.targetChanged {
+                    rollbackFailures.append("\(url.path) (changed by another app since; left as it is)")
                 } catch {
                     rollbackFailures.append(url.path)
                 }
             }
-            try? store.delete(for: newID)
-            if let oldStoredValue { try? store.store(oldStoredValue, for: secretID) }
+            if storedNewCredential {
+                if let previousNewCredential {
+                    try? store.store(previousNewCredential, for: newID)
+                } else {
+                    try? store.delete(for: newID)
+                }
+            }
+            if deletedOldCredential, let oldStoredValue { try? store.store(oldStoredValue, for: secretID) }
             if !rollbackFailures.isEmpty {
                 throw SecretsError.rollbackFailed(paths: rollbackFailures, backupIDs: backupIDs)
             }

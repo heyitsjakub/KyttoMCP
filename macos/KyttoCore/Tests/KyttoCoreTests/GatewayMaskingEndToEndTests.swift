@@ -156,6 +156,30 @@ struct GatewayMaskingEndToEndTests {
         #expect(tools(in: replies, id: 2) == [])
     }
 
+    /// AUD-07 through the real helper and a real Python server: the server's
+    /// parser keeps the last of two names, so a forwarded request would run
+    /// `write_file` on a route that only exposes `read_file`.
+    @Test("a repeated tool name cannot reach the server as a hidden tool")
+    func duplicateNameNeverReachesServer() throws {
+        let replies = try converse(
+            exposedTools: ["read_file"],
+            sending: handshake + [
+                #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read_file","name":"write_file","arguments":{}}}"#,
+                #"[{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read_file","name":"write_file"}}]"#,
+                #"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_file","na\u006de":"write_file"}}"#,
+                #"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"read_file","arguments":{}}}"#,
+            ]
+        )
+        for id in [2, 4] {
+            let reply = try #require(replies.first { ($0["id"] as? NSNumber)?.intValue == id })
+            #expect(reply["result"] == nil, "request \(id) reached the server")
+            #expect(reply["error"] != nil)
+        }
+        #expect(!replies.contains { ($0["result"] as? [String: Any])?["called"] as? String == "write_file" })
+        let allowed = try #require(replies.first { ($0["id"] as? NSNumber)?.intValue == 5 })
+        #expect((allowed["result"] as? [String: Any])?["called"] as? String == "read_file")
+    }
+
     /// Masking must not become a filter on everything else the server offers.
     @Test("prompts and resources are not touched")
     func otherListsPassThrough() throws {

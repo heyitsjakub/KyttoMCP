@@ -9,6 +9,48 @@ without a backup.
 
 ## [Unreleased]
 
+## [1.0.9.5] — 2026-11-14
+
+macOS only. Fixes from a security and reliability audit, and the requests that
+came up most in conversations about Kytto: clearer Contract Guard findings,
+repository MCP files, and an honest second context figure. The Windows build of
+1.0.9.5 is coming soon; until then Windows stays on 1.0.9.4.
+
+**Download**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.9.5.dmg` | 6.3 MB | `45f2481c3a5a1954940f3a475d06e7fe72b37159684fb2b838fdc144078dd0c2` |
+| Windows x64 | Coming soon | | |
+
+The macOS build is ad-hoc signed rather than notarized. Verify the SHA-256
+checksum before bypassing Gatekeeper.
+
+### Added (macOS)
+
+- **Project folders.** Settings → Clients → Project folders reads the MCP files a repository commits, `.mcp.json`, `.cursor/mcp.json` and `.vscode/mcp.json`, in folders you choose. Kytto never searches subfolders or folders you did not add, and never writes to these files. A server found only in a repository is left out of Check all, because a check starts its command on your Mac, and its page says so.
+- **Two labels on every Contract Guard change.** Compatibility says whether existing calls still fit (Compatible, Breaking or Compatibility unknown), and a separate Security: review label says when the change is worth reading, with the reason. A new optional argument is no longer called breaking, and one that can ask for files, credentials or a URL is called out. A changed description is flagged for reading, not as malicious.
+- **The scanner notices wording that tells the model not to ask you,** such as "skip confirmation" or "without asking the user". Careful descriptions like "never deletes without asking the user" stay quiet. The finding is advisory: your client's permission settings decide whether you are asked.
+- **A second context figure for Claude Code and Codex.** Both defer MCP tools behind tool search, so the client page now also shows what tool names cost before a search, next to the cost if every tool loads. For other clients Kytto says it has not verified how they load tools, instead of guessing.
+
+### Changed (macOS)
+
+- **Tool Safety findings kept from an earlier check say so.** After a check fails, MCP Doctor still reports what the server last offered, and now names the passing check the finding comes from.
+- **Add server points out a space around an argument.** Each argument is passed exactly as typed, so ` --port` is not the option `--port`. The form says so and offers Remove spaces, rather than trimming arguments silently.
+
+### Security (macOS)
+
+- **Gateway mode can no longer be tricked into running a hidden tool.** A request that named a tool twice, such as `"name":"read_file","name":"write_file"`, was checked against the first name and run by the server as the second. On a route that hides tools, Kytto now refuses any message that repeats a key, a `tools/call` without exactly one readable tool name, and anything it cannot read as JSON. These refusals appear in Live Activity as an unreadable request.
+- **A server's health-check results are stored privately from the first check.** Results keep the server's error output, which can contain a token. The first check could write them before Kytto's data folder existed, readable by other accounts on the Mac. The file and folder are now owner-only.
+
+### Fixed (macOS)
+
+- **A malformed error from a server no longer crashes Kytto.** A server that answered with an error code too large to be a number Kytto can hold took the whole app down during a health check. The check now fails with a protocol error.
+- **A save made by another app during a Kytto change is kept.** If a client or editor saved a config while Kytto was writing it, Kytto's write went ahead and the other save was lost. Kytto now checks the file again at the last moment and stops with "changed on disk" instead. Backups now hold exactly the bytes the change started from.
+- **Undoing a failed secret rotation keeps newer work.** When a rotation failed part-way, putting the old files back could erase a save another app made in between. Those files are now left as they are, and the error names them with the backup to recover from. A failed rotation also no longer deletes a value already saved in the Keychain under the new key.
+- The same last-moment check now protects undo after a failed switch, server edit or portable import, and restoring a backup.
+- **A health check ends on time when a server stops reading.** A server that sent a request and then stopped reading Kytto's answer could hold the check past its time limit.
+
 ## [1.0.9.4] — 2026-11-11
 
 A release about what happens when something Kytto depends on fails: a config

@@ -33,6 +33,15 @@ public struct TokenWeight: Codable, Equatable, Sendable {
         Double(estimate) / Double(Self.referenceContextWindow) * 100
     }
 
+    /// What a session pays for these tools' names alone, the part a client
+    /// that defers definitions behind tool search still sends (roadmap §16).
+    /// A lower bound: the client's own wrapping per entry is not counted. Nil
+    /// when the vocabulary did not load, rather than a heuristic.
+    public static func nameTokens(_ names: [String]) -> Int? {
+        guard let tokenizer = BPETokenizer.cl100kBase else { return nil }
+        return names.reduce(0) { $0 + tokenizer.countTokens($1) }
+    }
+
     /// Counts `text` with the bundled cl100k_base vocabulary (§7.4).
     ///
     /// Falls back to the old character heuristic if the table did not load,
@@ -278,6 +287,8 @@ public struct ServerMetadata: Codable, Equatable, Sendable {
     /// Absent in records written before 1.0.7.1, where `contractTools` held the
     /// same thing.
     public var lastPassingTools: [ToolSummary]?
+    /// When that passing check ran. Nil in records written before 1.0.9.5.
+    public var lastPassingCheckedAt: Date?
 
     /// What the server offers as far as Kytto knows: the last passing check's
     /// tools, surviving later failures.

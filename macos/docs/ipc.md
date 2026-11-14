@@ -191,6 +191,7 @@ attached custom sources follow them with opaque `custom.<uuid>` ids.
 | `serverCount` | |
 | `schemaQuirks` | How this client differs; surfaced in the client screen (§7.8) |
 | `isReadOnly` | True for custom sources; all write controls must remain unavailable |
+| `isRepositoryFile` | True for a project file (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`) in a folder chosen under Settings → Project folders. Always read-only. A server whose every configured client is one of these is left out of `health.checkAll`; the UI says so on its Health section |
 | `configurationScope` | `global` \| `profile` \| `workspace` |
 | `scopeLabel` | Optional user-visible profile or workspace name |
 | `toolBudget` | `{ toolCount, maskedToolCount, unmeasuredServerIDs, limit, state, pastLimitSummary }` — see below |
@@ -298,7 +299,12 @@ action names (`runHealthCheck`, `pinResolvedCommand`, `pinPackageVersion`). An
 `unpinned-package` finding carries no version: the UI offers "Check latest
 release" (`provenance.checkLatest`) until the server's `provenance.latestVersion`
 is set, then "Pin to …" through `doctor.previewFix`. `contractAlerts` contains tool names and model-facing contract
-change summaries. Neither contains environment values or tool-call payloads.
+change summaries. Each change carries two labels besides its one-word
+`severity`: `compatibility` (`compatible` | `breaking` | `unknown`) with
+`compatibilityReason`, and `security` (`none` | `review`) with
+`securityReason`. All four are absent on a change recorded before 1.0.9.5, and
+the UI then shows `severity` alone. Neither contains environment values or
+tool-call payloads.
 
 `drift` is present for a server only when its clients disagree about what it
 runs. One row in the matrix can be several definitions on disk, and merging them

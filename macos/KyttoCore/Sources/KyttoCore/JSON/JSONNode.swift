@@ -75,6 +75,13 @@ public extension JSONNode {
         return nil
     }
 
+    /// The number as an `Int`, or `nil` when it is not finite, has a fraction
+    /// or does not fit. `Int(_: Double)` traps on those, and a trap is a crash
+    /// that no `catch` can turn into a failed check (AUD-01).
+    var integerValue: Int? {
+        numberValue.flatMap { Int(exactly: $0) }
+    }
+
     var boolValue: Bool? {
         if case .bool(let value) = kind { return value }
         return nil

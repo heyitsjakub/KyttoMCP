@@ -618,9 +618,15 @@ deliberately narrow:
 
 - A route with no list keeps forwarding bytes untouched. §3.3's guarantee is
   given up only by a route that has actually been narrowed.
-- Exactly two message kinds are altered: a `tools/list` result, and a
-  `tools/call` request for a hidden tool. Prompts, resources, notifications,
-  the handshake and anything that is not valid JSON pass through.
+- Two message kinds are altered: a `tools/list` result, and a `tools/call`
+  request for a hidden tool. Prompts, resources, notifications and the
+  handshake pass through.
+- The helper decides with one JSON parser and the server reads the same bytes
+  with another, so a narrowed route refuses any client message the two could
+  read differently: one that is not JSON, one that repeats a key at any depth
+  (escaped spellings included), and a `tools/call` without exactly one string
+  `name`. A server message with a repeated key is passed on re-serialized, in
+  the one reading the filter acted on. Tool names are compared byte for byte.
 - The list is closed. A tool the server begins offering after the list was
   chosen stays hidden until the user chooses it, because a context budget that
   quietly grows when a server updates is not a budget. §7.10 already reports the

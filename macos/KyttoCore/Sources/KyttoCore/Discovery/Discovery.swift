@@ -28,6 +28,8 @@ public struct DiscoveredClient: Sendable, Equatable {
     public let shortName: String?
     /// The client's tool cap, carried from its descriptor. Nil when it has none.
     public var toolLimit: ClientToolLimit? = nil
+    /// A project file in a folder the user chose; see ``ProjectFolder``.
+    public var isRepositoryFile: Bool = false
 }
 
 public struct DiscoveryResult: Sendable, Equatable {
@@ -221,7 +223,8 @@ public struct Discovery: Sendable {
                     configurationScope: descriptor.configurationScope,
                     scopeLabel: descriptor.scopeLabel,
                     shortName: descriptor.shortName,
-                    toolLimit: descriptor.toolLimit
+                    toolLimit: descriptor.toolLimit,
+                    isRepositoryFile: descriptor.isRepositoryFile
                 )
             )
         }
@@ -284,6 +287,7 @@ public struct Discovery: Sendable {
             // anything (§6).
             server.health = metadata[server.id]?.health
             server.lastPassingTools = metadata[server.id]?.knownTools
+            server.lastPassingCheckedAt = metadata[server.id]?.lastPassingCheckedAt
             server.tokenWeight = metadata[server.id]?.tokenWeight
             return server
         }
