@@ -76,7 +76,17 @@ internal sealed record ClientDto(
     /// </summary>
     bool CanRestart = false,
     /// <summary>What a restart does not reach, or null (issue #14).</summary>
-    string? RestartCaveat = null);
+    string? RestartCaveat = null,
+    /// <summary>
+    /// A project file in a folder chosen under Settings → Project folders (roadmap §12).
+    /// Always read-only.
+    /// </summary>
+    bool IsRepositoryFile = false,
+    /// <summary>Whether this client sends every tool definition up front (roadmap §16).</summary>
+    ToolLoadingDto? ToolLoading = null);
+
+/// <param name="Mode"><c>deferred</c> | <c>all</c> | <c>unknown</c>.</param>
+internal sealed record ToolLoadingDto(string Mode, string? Note);
 
 /// <summary>One client that did not restart, and why. The notice stays for it.</summary>
 internal sealed record RestartFailureDto(string ClientID, string Message);
@@ -194,7 +204,10 @@ internal sealed record ServerDto(
     IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? LockedTools = null,
     /// The last package safety check the user asked for, while it still describes what
     /// this server launches; null otherwise (§7.10).
-    PackageSafetyDto? PackageSafety = null);
+    PackageSafetyDto? PackageSafety = null,
+    /// cl100k tokens for the names of the tools last seen — what a client that defers
+    /// definitions still sends up front (roadmap §16). Null before a passing check.
+    int? ToolNameTokens = null);
 
 /// <summary>What <c>doctor.checkPackageSafety</c> found; the advisory text stays native.</summary>
 internal sealed record PackageSafetyDto(
@@ -521,12 +534,21 @@ internal sealed record DoctorServerReportDto(
 /// Field-level before/after, bounded natively (§7.10). Null — written as null, not
 /// omitted — for an added or removed tool, and for a change recorded before 1.0.8.
 /// </param>
+/// <param name="Compatibility">
+/// <c>compatible</c> | <c>breaking</c> | <c>unknown</c>; with the other three labels,
+/// absent on a change recorded before 1.0.9.5 (roadmap §18).
+/// </param>
+/// <param name="Security"><c>none</c> | <c>review</c>.</param>
 internal sealed record ContractChangeDto(
     string Kind,
     string Severity,
     string ToolName,
     string Summary,
-    IReadOnlyList<ContractFieldChangeDto>? Details = null);
+    IReadOnlyList<ContractFieldChangeDto>? Details = null,
+    string? Compatibility = null,
+    string? CompatibilityReason = null,
+    string? Security = null,
+    string? SecurityReason = null);
 
 /// <summary>
 /// One changed field, as display text: an escaped JSON Pointer path, bounded excerpts

@@ -69,6 +69,22 @@ public sealed record CustomConfigSource(
 {
     [JsonIgnore]
     public ClientKey ClientID => ClientKey.Custom(Id);
+
+    /// <summary>
+    /// A project file from a folder under Settings → Project folders (roadmap §12).
+    /// Never stored: these sources are made from <see cref="KyttoSettings.ProjectFolders"/>
+    /// on every discovery.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsRepositoryFile { get; init; }
+
+    /// <summary>What the column is called where there is little room.</summary>
+    [JsonIgnore]
+    public string? ShortName { get; init; }
+
+    /// <summary>How this source differs, shown on the client screen instead of the generic text.</summary>
+    [JsonIgnore]
+    public string? Quirks { get; init; }
 }
 
 /// <summary>An actionable settings error which must be shown before saving.</summary>
@@ -131,6 +147,12 @@ public sealed record KyttoSettings
     /// separate from the writable client registry.
     /// </summary>
     public IReadOnlyList<CustomConfigSource> CustomConfigSources { get; init; } = [];
+
+    /// <summary>
+    /// Folders whose repository MCP files Kytto reads (roadmap §12). Like custom
+    /// sources, discovery-only and read-only.
+    /// </summary>
+    public IReadOnlyList<ProjectFolder> ProjectFolders { get; init; } = [];
 
     /// <summary>
     /// Whether read-only configuration sources are drawn in the sidebar and matrix.
@@ -196,6 +218,7 @@ public sealed record KyttoSettings
         // duplicate dynamic id into discovery. Interactive updates are rejected
         // with an actionable exception before this fallback is reached.
         CustomConfigSources = SanitizedCustomSources(CustomConfigSources),
+        ProjectFolders = Settings.ProjectFolders.Sanitized(ProjectFolders),
     };
 
     public void ValidateCustomConfigSources()

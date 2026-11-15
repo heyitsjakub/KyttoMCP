@@ -473,6 +473,32 @@ export function clientTokenTotal(clientID) {
     .reduce((total, server) => total + (server.tokenWeight?.estimate ?? 0), 0);
 }
 
+/**
+ * What switched-on servers cost in tool names alone — the part a client that
+ * defers definitions behind tool search still sends (roadmap §16). `known`
+ * says how many of the switched-on servers had names to count.
+ */
+export function clientNameTokenTotal(clientID) {
+  const on = state.servers.filter((server) => server.enabledIn[clientID] === 'enabled');
+  const counted = on.filter((server) => typeof server.toolNameTokens === 'number');
+  return {
+    total: counted.reduce((sum, server) => sum + server.toolNameTokens, 0),
+    known: counted.length,
+    on: on.length,
+  };
+}
+
+/**
+ * Every client that lists this server reads it from a repository file in a
+ * project folder the user chose (roadmap §12), so nothing outside the project
+ * vouches for it. A batch check leaves such a server out: a check runs its
+ * command, and that should happen only when the user asks for this one server.
+ */
+export function isRepositoryOnly(server) {
+  const ids = Object.keys(server.enabledIn ?? {}).filter((id) => server.enabledIn[id] !== 'absent');
+  return ids.length > 0 && ids.every((id) => state.clients.find((client) => client.id === id)?.isRepositoryFile === true);
+}
+
 /** Client ids as the names the user knows them by: "Claude Code, Cursor". */
 export function clientNames(from, clientIDs) {
   return clientIDs

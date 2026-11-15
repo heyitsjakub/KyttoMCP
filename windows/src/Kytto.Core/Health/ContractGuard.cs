@@ -30,12 +30,48 @@ public sealed record ContractFieldChange(
 /// <param name="Details">
 /// Optional on purpose: records written before 1.0.8 have none and must keep loading.
 /// </param>
+/// <param name="Compatibility">
+/// Whether existing calls still fit (roadmap §18). Null, with the other three labels,
+/// on a change recorded before 1.0.9.5; the UI then shows <paramref name="Severity"/> alone.
+/// </param>
+/// <param name="Security">Whether a person should read this change, and why in <paramref name="SecurityReason"/>.</param>
 public sealed record ContractChange(
     ContractChangeKind Kind,
     ContractChangeSeverity Severity,
     string ToolName,
     string Summary,
-    IReadOnlyList<ContractFieldChange>? Details = null);
+    IReadOnlyList<ContractFieldChange>? Details = null,
+    ContractCompatibility? Compatibility = null,
+    string? CompatibilityReason = null,
+    ContractSecurityRelevance? Security = null,
+    string? SecurityReason = null)
+{
+    /// <summary>The one-word severity, derived from the two labels.</summary>
+    /// <remarks>
+    /// Only a change that can break existing calls is <c>breaking</c>; one worth reading
+    /// for security, or one Kytto cannot judge, is a <c>warning</c>.
+    /// </remarks>
+    internal static ContractChangeSeverity SeverityOf(
+        ContractCompatibility compatibility,
+        ContractSecurityRelevance security) =>
+        compatibility == ContractCompatibility.Breaking
+            ? ContractChangeSeverity.Breaking
+            : security == ContractSecurityRelevance.Review || compatibility == ContractCompatibility.Unknown
+                ? ContractChangeSeverity.Warning
+                : ContractChangeSeverity.Info;
+
+    internal static ContractChange Labelled(
+        ContractChangeKind kind,
+        string toolName,
+        string summary,
+        IReadOnlyList<ContractFieldChange>? details,
+        ContractCompatibility compatibility,
+        string compatibilityReason,
+        ContractSecurityRelevance security,
+        string? securityReason) =>
+        new(kind, SeverityOf(compatibility, security), toolName, summary, details,
+            compatibility, compatibilityReason, security, securityReason);
+}
 
 /// <summary>Compares model-visible MCP behavior between successful checks (§7.10).</summary>
 public static class ContractGuard
@@ -53,19 +89,27 @@ public static class ContractGuard
 
         foreach (var name in beforeNames.Except(afterNames).Order(StringComparer.Ordinal))
         {
-            changes.Add(new ContractChange(
+            changes.Add(ContractChange.Labelled(
                 ContractChangeKind.ToolRemoved,
-                ContractChangeSeverity.Breaking,
                 name,
-                "Tool removed"));
+                "Tool removed",
+                null,
+                ContractCompatibility.Breaking,
+                "Anything that calls this tool will now fail.",
+                ContractSecurityRelevance.None,
+                null));
         }
         foreach (var name in afterNames.Except(beforeNames).Order(StringComparer.Ordinal))
         {
-            changes.Add(new ContractChange(
+            changes.Add(ContractChange.Labelled(
                 ContractChangeKind.ToolAdded,
-                ContractChangeSeverity.Info,
                 name,
-                "New tool added"));
+                "New tool added",
+                null,
+                ContractCompatibility.Compatible,
+                "Existing calls are unaffected.",
+                ContractSecurityRelevance.Review,
+                "The model can now call a tool you have not reviewed. Read what it does before relying on this server."));
         }
         foreach (var name in beforeNames.Intersect(afterNames).Order(StringComparer.Ordinal))
         {
@@ -73,35 +117,72 @@ public static class ContractGuard
             var right = after[name];
             if (left.Description != right.Description)
             {
-                changes.Add(new ContractChange(
+                changes.Add(ContractChange.Labelled(
                     ContractChangeKind.DescriptionChanged,
-                    ContractChangeSeverity.Warning,
                     name,
                     "Model-facing description changed",
-                    budget.Admit("description", ContractFieldDiff.DescriptionDetails(left.Description, right.Description))));
+                    budget.Admit("description", ContractFieldDiff.DescriptionDetails(left.Description, right.Description)),
+                    ContractCompatibility.Compatible,
+                    "Wording does not change which arguments a call accepts.",
+                    ContractSecurityRelevance.Review,
+                    "The model reads this text as instructions. A changed description is not malicious by itself; check that it still only describes the tool."));
             }
             if (!SameSchema(left.InputSchemaJSON, right.InputSchemaJSON))
             {
-                changes.Add(new ContractChange(
+                var assessment = ContractSchemaAssessment.Assess(left.InputSchemaJSON, right.InputSchemaJSON);
+                changes.Add(ContractChange.Labelled(
                     ContractChangeKind.InputSchemaChanged,
-                    ContractChangeSeverity.Breaking,
                     name,
-                    "Input schema changed — review compatibility and safeguards",
-                    budget.Admit("inputSchema", ContractFieldDiff.SchemaDetails(left.InputSchemaJSON, right.InputSchemaJSON))));
+                    assessment.Summary,
+                    budget.Admit("inputSchema", ContractFieldDiff.SchemaDetails(left.InputSchemaJSON, right.InputSchemaJSON)),
+                    assessment.Compatibility,
+                    assessment.CompatibilityReason,
+                    assessment.Security,
+                    assessment.SecurityReason));
             }
             // No annotations, `{}` and a title alone all mean "no hints", however a
             // record from an older build or another route spells it.
             if ((left.Annotations ?? NoHints) != (right.Annotations ?? NoHints))
             {
-                changes.Add(new ContractChange(
+                changes.Add(ContractChange.Labelled(
                     ContractChangeKind.AnnotationsChanged,
-                    ContractChangeSeverity.Warning,
                     name,
                     "Safety annotations changed",
-                    budget.Admit("annotations", ContractFieldDiff.AnnotationDetails(left.Annotations, right.Annotations))));
+                    budget.Admit("annotations", ContractFieldDiff.AnnotationDetails(left.Annotations, right.Annotations)),
+                    ContractCompatibility.Compatible,
+                    "Annotations do not change which arguments a call accepts.",
+                    ContractSecurityRelevance.Review,
+                    AnnotationSecurityReason(left.Annotations, right.Annotations)));
             }
         }
         return changes;
+    }
+
+    /// <summary>Why a moved hint is worth a look, in the direction it moved.</summary>
+    /// <remarks>
+    /// Clients use these hints to decide what to ask the user about, so a hint that
+    /// moves either way matters: a tool newly claiming to be read-only may be approved
+    /// without a prompt.
+    /// </remarks>
+    internal static string AnnotationSecurityReason(ToolAnnotations? before, ToolAnnotations? after)
+    {
+        if (after?.ReadOnlyHint == true && before?.ReadOnlyHint != true)
+        {
+            return "The tool now claims to be read-only, which some clients use to skip asking you. Hints are not enforced; check that the tool really only reads.";
+        }
+        if (before?.ReadOnlyHint == true && after?.ReadOnlyHint != true)
+        {
+            return "The tool no longer claims to be read-only. It may now change data.";
+        }
+        if (after?.DestructiveHint == true && before?.DestructiveHint != true)
+        {
+            return "The tool now says it can make destructive changes.";
+        }
+        if (after?.OpenWorldHint == true && before?.OpenWorldHint != true)
+        {
+            return "The tool now says it reaches outside systems.";
+        }
+        return "Clients use these hints when deciding what to ask you about. They are hints, not enforced permissions.";
     }
 
     /// <summary>Whether a saved baseline predates schema and annotation capture.</summary>
@@ -260,6 +341,17 @@ public static class ContractGuard
             // that cannot be compared, not a reason to fail the whole check.
             return null;
         }
+    }
+
+    /// <summary>A JSON value's text with object keys sorted, for comparing values.</summary>
+    internal static string CanonicalText(JsonElement element)
+    {
+        var output = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(output))
+        {
+            Write(element, writer);
+        }
+        return Encoding.UTF8.GetString(output.ToArray());
     }
 
     private static void Write(JsonElement element, Utf8JsonWriter writer)

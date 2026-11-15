@@ -340,6 +340,9 @@ public sealed class Server
     /// <summary>The tools from the last passing check, kept through later failures.</summary>
     public IReadOnlyList<ToolSummary>? LastPassingTools { get; set; }
 
+    /// <summary>When the check that produced <see cref="LastPassingTools"/> ran, where recorded.</summary>
+    public DateTimeOffset? LastPassingCheckedAt { get; set; }
+
     /// <summary>What the server offers as far as Kytto knows.</summary>
     /// <remarks>
     /// <c>Health.Tools</c> is empty after a failed check, yet clients keep running

@@ -241,7 +241,10 @@ def main():
             send({
                 "jsonrpc": "2.0",
                 "id": message["id"],
-                "result": {"content": [{"type": "text", "text": "fixture result"}]},
+                # `called` reports the name this server's parser read, so a
+                # test can tell which tool a forwarded request really reached.
+                "result": {"content": [{"type": "text", "text": "fixture result"}],
+                           "called": (message.get("params") or {}).get("name")},
             })
         elif "id" in message:
             # What the reference SDKs do with a method they do not know.

@@ -172,18 +172,25 @@ public sealed class ManagedProcess : IDisposable
         if (_terminated || _disposed) return;
         _terminated = true;
 
-        try
+        // A server holding a write it never drains is not going to read the closing of
+        // its input either, and closing the stream under a blocked write is not safe.
+        // It is ended straight away; the kill breaks the pipe and releases the write.
+        var stuck = WriteIsPending;
+        if (!stuck)
         {
-            _process.StandardInput.Close();
-        }
-        catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidOperationException)
-        {
-            // Already closed by a server that went away, which is the point.
+            try
+            {
+                _process.StandardInput.Close();
+            }
+            catch (Exception error) when (error is IOException or ObjectDisposedException or InvalidOperationException)
+            {
+                // Already closed by a server that went away, which is the point.
+            }
         }
 
         try
         {
-            if (!_process.WaitForExit(ExitGrace)) _process.Kill(entireProcessTree: true);
+            if (stuck || !_process.WaitForExit(ExitGrace)) _process.Kill(entireProcessTree: true);
         }
         catch (Exception error) when (error is InvalidOperationException or NotSupportedException or
                                               System.ComponentModel.Win32Exception)
@@ -195,6 +202,14 @@ public sealed class ManagedProcess : IDisposable
         // Every holder of the stderr pipe is gone with the job, so its end arrives
         // promptly; the bound only covers a handle something outside the job kept.
         _stderrEnded.Task.Wait(TimeSpan.FromSeconds(1));
+        if (stuck)
+        {
+            // The broken pipe fails the blocked write; waited for so the process's
+            // own disposal does not close the stream underneath it, and observed so
+            // it is not reported as an unobserved task exception.
+            ((IAsyncResult)_pendingWrite).AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(1));
+            _ = _pendingWrite.Exception;
+        }
     }
 
     /// <summary>The server's own output so far, exactly as it wrote it (§6).</summary>
@@ -206,12 +221,50 @@ public sealed class ManagedProcess : IDisposable
         }
     }
 
-    public void WriteLine(string line)
+    /// <summary>The last write handed to the pipe, which may still be blocked in it.</summary>
+    private Task _pendingWrite = Task.CompletedTask;
+
+    /// <summary>Writes one message, giving up at <paramref name="deadline"/> (AUD-04).</summary>
+    /// <remarks>
+    /// <para>
+    /// A pipe write blocks once the server stops reading and the pipe is full, and
+    /// an anonymous pipe has no timeout of its own. Answering a server's request with
+    /// a 256 KB id it never drains held a one-second check for as long as the server
+    /// cared to sleep. The write therefore runs off this thread and is waited for only
+    /// until the deadline; the job kill in <see cref="Terminate"/> is what finally
+    /// releases it.
+    /// </para>
+    /// <para>
+    /// Writes are chained, so one that timed out and is still pending cannot be
+    /// overtaken by the next: interleaved bytes would corrupt both messages. UTF-8,
+    /// as MCP requires, rather than the console code page the default writer uses.
+    /// </para>
+    /// </remarks>
+    public void WriteLine(string line, DateTimeOffset deadline)
     {
-        _process.StandardInput.Write(line);
-        _process.StandardInput.Write('\n');
-        _process.StandardInput.Flush();
+        var bytes = new UTF8Encoding(false).GetBytes(line + "\n");
+        var stream = _process.StandardInput.BaseStream;
+        var write = _pendingWrite.ContinueWith(
+            _ =>
+            {
+                stream.Write(bytes);
+                stream.Flush();
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.None,
+            TaskScheduler.Default);
+        _pendingWrite = write;
+
+        var remaining = deadline - DateTimeOffset.UtcNow;
+        if (remaining > TimeSpan.Zero) ((IAsyncResult)write).AsyncWaitHandle.WaitOne(remaining);
+        if (!write.IsCompleted) throw ProcessException.TimedOut(_timeoutSeconds);
+        // The pipe's own exception, not an AggregateException, so callers can tell a
+        // server that closed its input from anything else.
+        write.GetAwaiter().GetResult();
     }
+
+    /// <summary>Whether a write is still blocked in the pipe.</summary>
+    private bool WriteIsPending => !_pendingWrite.IsCompleted;
 
     /// <summary>
     /// The next line of stdout, or null when the server closed it. Throws once the

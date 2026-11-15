@@ -217,7 +217,7 @@ public sealed class MetadataStore(KyttoPaths paths)
                 {
                     updated = updated with { ContractTools = health.Tools };
                 }
-                updated = updated with { LastPassingTools = health.Tools };
+                updated = updated with { LastPassingTools = health.Tools, LastPassingCheckedAt = health.CheckedAt };
             }
             entries[serverId] = updated with
             {

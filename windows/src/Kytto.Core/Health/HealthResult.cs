@@ -7,6 +7,17 @@ namespace Kytto.Core.Health;
 public sealed record TokenWeight(int Estimate, string Method, DateTimeOffset MeasuredAt)
 {
     /// <summary>
+    /// What a session pays for these tools' names alone, the part a client that defers
+    /// definitions behind tool search still sends (roadmap §16).
+    /// </summary>
+    /// <remarks>
+    /// A lower bound: the client's own wrapping per entry is not counted. Null when the
+    /// vocabulary did not load, rather than a heuristic.
+    /// </remarks>
+    public static int? NameTokens(IEnumerable<string> names) =>
+        Tokenizer.BpeTokenizer.Cl100kBase is { } tokenizer ? names.Sum(tokenizer.CountTokens) : null;
+
+    /// <summary>
     /// A context window to measure against. 200k is what the UI shows a percentage
     /// of; it is a yardstick, not a claim about any specific model.
     /// </summary>
@@ -342,6 +353,8 @@ public sealed record ServerMetadata(HealthResult? Health = null, TokenWeight? To
     /// thing.
     /// </remarks>
     public IReadOnlyList<ToolSummary>? LastPassingTools { get; init; }
+    /// <summary>When that passing check ran. Absent in records written before 1.0.9.5.</summary>
+    public DateTimeOffset? LastPassingCheckedAt { get; init; }
     /// <summary>Explicit latest-version checks survive a relaunch.</summary>
     public Model.ServerProvenance? Provenance { get; init; }
 

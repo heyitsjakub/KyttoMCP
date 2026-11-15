@@ -49,7 +49,22 @@ internal static class DtoMapping
         CanRestart: CanRestart(client),
         RestartCaveat: CanRestart(client) && client.Id.BuiltIn is { } caveated
             ? ClientRegistry.Descriptor(caveated).RestartCaveat
-            : null);
+            : null,
+        IsRepositoryFile: client.IsRepositoryFile,
+        ToolLoading: ToolLoadingOf(client));
+
+    /// <summary>Whether a client sends every tool definition up front (roadmap §16).</summary>
+    /// <remarks>
+    /// Built-ins only: a read-only source inherits nothing here, and an unknown answer
+    /// is shown as unknown.
+    /// </remarks>
+    internal static ToolLoadingDto ToolLoadingOf(DiscoveredClient client)
+    {
+        var loading = client.IsReadOnly || client.Id.BuiltIn is not { } builtIn
+            ? ToolLoading.Unknown
+            : ClientRegistry.Descriptor(builtIn).ToolLoading;
+        return new ToolLoadingDto(loading.Mode, loading.Note);
+    }
 
     /// <summary>An installed desktop app that reads its configuration only at launch (issue #14).</summary>
     internal static bool CanRestart(DiscoveredClient client) =>
@@ -118,7 +133,10 @@ internal static class DtoMapping
         LockedTools: server.ToolFilters.ToDictionary(
             pair => pair.Key.Raw(),
             pair => pair.Value.LockedTools(KnownToolNames(server))),
-        PackageSafety: packageSafety?.ToDto());
+        PackageSafety: packageSafety?.ToDto(),
+        ToolNameTokens: server.KnownTools.Count == 0
+            ? null
+            : TokenWeight.NameTokens(server.KnownTools.Select(tool => tool.Name)));
 
     /// <summary>The tools a server is known to offer, each name once.</summary>
     private static IReadOnlyList<string> KnownToolNames(Server server) =>
@@ -226,7 +244,11 @@ internal static class DtoMapping
                 field.Path,
                 field.Before,
                 field.After,
-                field.Explanation)).ToArray())).ToArray(),
+                field.Explanation)).ToArray(),
+            change.Compatibility is { } compatibility ? Raw(compatibility) : null,
+            change.CompatibilityReason,
+            change.Security is { } security ? Raw(security) : null,
+            change.SecurityReason)).ToArray(),
         alert.ReviewToken);
 
     internal static DoctorFixPreviewDto ToDto(this DoctorFixPreview preview) => new(

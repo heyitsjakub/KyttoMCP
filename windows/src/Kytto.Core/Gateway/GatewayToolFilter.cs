@@ -1,4 +1,5 @@
-using System.Buffers;
+using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -18,6 +19,12 @@ public sealed class GatewayLineFramer
     private readonly List<byte> _buffer = [];
 
     /// <summary>Calls <paramref name="body"/> once per complete line, without the newline.</summary>
+    /// <remarks>
+    /// The line leaves the buffer before <paramref name="body"/> sees it. If the body
+    /// throws, what is still buffered is only what came after — never the line that
+    /// failed, which a later <see cref="Flush"/> would otherwise hand over a second
+    /// time glued to everything behind it (AUD-07).
+    /// </remarks>
     public void Consume(ReadOnlySpan<byte> data, Action<byte[]> body)
     {
         _buffer.AddRange(data);
@@ -25,8 +32,9 @@ public sealed class GatewayLineFramer
         {
             var newline = _buffer.IndexOf((byte)'\n');
             if (newline < 0) break;
-            body([.. _buffer.Take(newline)]);
+            byte[] line = [.. _buffer.Take(newline)];
             _buffer.RemoveRange(0, newline + 1);
+            body(line);
         }
     }
 
@@ -38,8 +46,188 @@ public sealed class GatewayLineFramer
     public void Flush(Action<byte[]> body)
     {
         if (_buffer.Count == 0) return;
-        body([.. _buffer]);
+        byte[] tail = [.. _buffer];
         _buffer.Clear();
+        body(tail);
+    }
+}
+
+/// <summary>
+/// A strict reading of one message: the only reading the filter acts on, and the
+/// proof that it is the only reading there is (AUD-07).
+/// </summary>
+/// <remarks>
+/// <para>
+/// The filter decides and then forwards the original bytes, which the server reads
+/// with its own parser. That is only safe while both parsers must agree, and a
+/// repeated key is where they do not: <c>JsonDocument</c> keeps both,
+/// <c>JsonNode.Parse</c> throws, Python and JavaScript keep the last one and
+/// Foundation keeps the first. <c>{"name":"write_file","name":"read_file"}</c> read
+/// last-wins here is an allowed call, and a first-wins server runs it as the hidden
+/// tool. Keys are compared after escapes are resolved, so <c>"name"</c> repeats
+/// <c>"name"</c>; refusing a message no conforming client sends is the cheap side of
+/// that trade.
+/// </para>
+/// <para>
+/// Text that cannot be decoded — an unpaired surrogate escape, invalid UTF-8 — is
+/// read with U+FFFD in its place instead of throwing. <c>JsonElement.GetString</c>
+/// throws <c>InvalidOperationException</c> on <c>"\ud800"</c>, and that throw used to
+/// escape the relay's line callback: the helper then flushed everything still
+/// buffered as one unreadable "line" and forwarded it, so a hidden tool reached the
+/// server behind an id of <c>"\ud800"</c>.
+/// </para>
+/// </remarks>
+internal static class GatewayStrictJson
+{
+    /// <param name="Root">The message, read last-wins, every string decoded.</param>
+    /// <param name="HasDuplicateKeys">Whether any object, at any depth, repeats a key.</param>
+    /// <param name="RawId">
+    /// The id exactly as the sender wrote it, so a refusal can still be matched to its
+    /// request — but only when there is one unambiguous string or number to echo.
+    /// </param>
+    internal sealed record Reading(JsonNode? Root, bool HasDuplicateKeys, string? RawId);
+
+    /// <summary>The reading, or null when the bytes are not exactly one JSON value.</summary>
+    /// <remarks>
+    /// The default options are the strict ones: no comments, no trailing commas, no
+    /// <c>NaN</c>, a bounded depth. A message one of those lets through is one a
+    /// stricter server could read differently or not at all.
+    /// </remarks>
+    public static Reading? Read(ReadOnlySpan<byte> line)
+    {
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(line.ToArray());
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        using (document)
+        {
+            var duplicates = false;
+            var root = Build(document.RootElement, ref duplicates);
+            return new Reading(root, duplicates, RawId(document.RootElement));
+        }
+    }
+
+    public static bool IsBlank(ReadOnlySpan<byte> line)
+    {
+        foreach (var value in line)
+        {
+            if (value is not ((byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n')) return false;
+        }
+        return true;
+    }
+
+    private static JsonNode? Build(JsonElement element, ref bool duplicates)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                var json = new JsonObject();
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var property in element.EnumerateObject())
+                {
+                    // Never property.Name: it throws on an unpaired surrogate.
+                    var name = Decode(JsonMarshal.GetRawUtf8PropertyName(property));
+                    if (!seen.Add(name)) duplicates = true;
+                    json[name] = Build(property.Value, ref duplicates);
+                }
+                return json;
+            case JsonValueKind.Array:
+                var array = new JsonArray();
+                foreach (var item in element.EnumerateArray()) array.Add(Build(item, ref duplicates));
+                return array;
+            case JsonValueKind.String:
+                var raw = JsonMarshal.GetRawUtf8Value(element);
+                return JsonValue.Create(Decode(raw[1..^1]));
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                return null;
+            default:
+                // Numbers keep their exact text; cloned because the document this
+                // element belongs to is disposed on return.
+                return JsonValue.Create(element.Clone());
+        }
+    }
+
+    private static string? RawId(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object) return null;
+        JsonElement? id = null;
+        var count = 0;
+        foreach (var property in root.EnumerateObject())
+        {
+            if (Decode(JsonMarshal.GetRawUtf8PropertyName(property)) != "id") continue;
+            count++;
+            id = property.Value;
+        }
+        if (count != 1 || id is not { } value) return null;
+        return value.ValueKind is JsonValueKind.String or JsonValueKind.Number
+            ? Encoding.UTF8.GetString(JsonMarshal.GetRawUtf8Value(value))
+            : null;
+    }
+
+    /// <summary>
+    /// A JSON string's raw text, between its quotes, decoded — with U+FFFD for an
+    /// unpaired surrogate or a byte that is not UTF-8.
+    /// </summary>
+    /// <remarks>The reader has already validated every escape.</remarks>
+    internal static string Decode(ReadOnlySpan<byte> raw)
+    {
+        if (raw.IndexOf((byte)'\\') < 0) return Encoding.UTF8.GetString(raw);
+
+        var text = new StringBuilder(raw.Length);
+        var start = 0;
+        var index = 0;
+        while (index < raw.Length)
+        {
+            if (raw[index] != (byte)'\\')
+            {
+                index++;
+                continue;
+            }
+            text.Append(Encoding.UTF8.GetString(raw[start..index]));
+            var escape = raw[index + 1];
+            index += 2;
+            switch (escape)
+            {
+                case (byte)'b': text.Append('\b'); break;
+                case (byte)'f': text.Append('\f'); break;
+                case (byte)'n': text.Append('\n'); break;
+                case (byte)'r': text.Append('\r'); break;
+                case (byte)'t': text.Append('\t'); break;
+                case (byte)'u':
+                    text.Append((char)int.Parse(
+                        Encoding.ASCII.GetString(raw.Slice(index, 4)),
+                        NumberStyles.AllowHexSpecifier,
+                        CultureInfo.InvariantCulture));
+                    index += 4;
+                    break;
+                default:
+                    // \" \\ \/
+                    text.Append((char)escape);
+                    break;
+            }
+            start = index;
+        }
+        text.Append(Encoding.UTF8.GetString(raw[start..]));
+
+        for (var position = 0; position < text.Length; position++)
+        {
+            if (char.IsHighSurrogate(text[position]) &&
+                position + 1 < text.Length &&
+                char.IsLowSurrogate(text[position + 1]))
+            {
+                position++;
+                continue;
+            }
+            if (char.IsSurrogate(text[position])) text[position] = '�';
+        }
+        return text.ToString();
     }
 }
 
@@ -49,7 +237,7 @@ public sealed class GatewayLineFramer
 /// This is the one place Kytto stops being a transparent relay. §3.3 promises
 /// byte-for-byte forwarding, and that promise still holds for every route without
 /// an allow list — an unmasked route never constructs one of these. When a list is
-/// present, exactly two kinds of message are altered:
+/// present, exactly these kinds of message are altered:
 /// </para>
 /// <list type="bullet">
 /// <item>a <c>tools/list</c> <strong>result</strong> has hidden tools removed from
@@ -58,10 +246,16 @@ public sealed class GatewayLineFramer
 /// protocol message and not a user's config file (§6 governs the latter).</item>
 /// <item>a <c>tools/call</c> <strong>request</strong> for a hidden tool is refused
 /// here and never reaches the upstream server.</item>
+/// <item>a client message the filter cannot read in exactly one way — not JSON,
+/// a repeated key, a <c>tools/call</c> without a single string <c>name</c> — is
+/// refused rather than forwarded. Forwarding what the filter could not read would
+/// let the server read it differently (AUD-07).</item>
+/// <item>a server message with a repeated key is re-serialized, so the client reads
+/// the same message the filter acted on.</item>
 /// </list>
 /// <para>
-/// Everything else — notifications, prompts, resources, banners on stdout, anything
-/// that is not valid JSON — is forwarded untouched.
+/// Everything else — notifications, prompts, resources, banners on the server's
+/// stdout — is forwarded untouched.
 /// </para>
 /// <para>
 /// The allow list is exact and closed: a tool the server starts offering after the
@@ -90,6 +284,21 @@ public sealed class GatewayToolFilter(IReadOnlyList<string> exposedTools)
     /// </remarks>
     internal const int UnknownTool = -32_602;
 
+    internal const int ParseError = -32_700;
+
+    internal const int InvalidRequest = -32_600;
+
+    /// <summary>
+    /// What the activity journal records for a refused message that had no readable
+    /// tool name.
+    /// </summary>
+    public const string UnreadableRequest = "(unreadable request)";
+
+    /// <summary>
+    /// Ordinal, which for text that decoded cleanly is byte for byte. A culture or
+    /// normalizing comparison would treat a decomposed spelling of an exposed name as
+    /// that name; the server does not, so it is a different tool.
+    /// </summary>
     private readonly HashSet<string> _exposed = new(exposedTools, StringComparer.Ordinal);
     private readonly Lock _lock = new();
 
@@ -105,55 +314,145 @@ public sealed class GatewayToolFilter(IReadOnlyList<string> exposedTools)
 
     // MARK: - Client to server
 
+    /// <remarks>
+    /// Never throws. A filter that cannot decide refuses: an exception here would end
+    /// the relay, and what it had buffered would reach the server unread.
+    /// </remarks>
     public ClientDecision InspectClientLine(ReadOnlySpan<byte> line)
     {
-        var parsed = Parse(line);
-        if (parsed is JsonArray batch) return InspectBatch(batch);
-        if (parsed is not JsonObject message) return new ClientDecision.Forward();
-
-        switch (StringAt(message, "method"))
+        try
         {
-            case "tools/list":
-                if (RequestKey(message["id"]) is { } listId)
-                {
-                    lock (_lock) _pendingListRequests.Add(listId);
-                }
-                return new ClientDecision.Forward();
+            return Evaluate(line, registeringLists: true).Decision;
+        }
+        catch (Exception)
+        {
+            return new ClientDecision.Refuse(Error(null, ParseError, CouldNotRead));
+        }
+    }
 
-            case "tools/call":
-                var name = StringAt(message["params"], "name");
-                if (name is null || Allows(name)) return new ClientDecision.Forward();
+    /// <summary>The refused calls in a client line, for the activity journal.</summary>
+    /// <remarks>
+    /// Names and request ids only; arguments are never looked at. A message refused
+    /// because it could not be read is recorded as <see cref="UnreadableRequest"/>.
+    /// </remarks>
+    public IReadOnlyList<(string ToolName, string? RequestId)> HiddenCalls(ReadOnlySpan<byte> line)
+    {
+        try
+        {
+            return Evaluate(line, registeringLists: false).Refused;
+        }
+        catch (Exception)
+        {
+            return [(UnreadableRequest, null)];
+        }
+    }
+
+    private const string CouldNotRead = "Kytto could not read this message, so it was not forwarded.";
+
+    private enum CallKind { NotACall, Allowed, Hidden, Unreadable }
+
+    private (CallKind Kind, string? Name) Check(JsonObject message)
+    {
+        if (StringAt(message, "method") != "tools/call") return (CallKind.NotACall, null);
+        // U+FFFD is what an unpaired surrogate or a stray byte was read as. The server
+        // may keep the original, so the name Kytto would approve is not necessarily
+        // the one it would run.
+        if (StringAt(message["params"], "name") is not { } name || name.Contains('�'))
+        {
+            return (CallKind.Unreadable, null);
+        }
+        return Allows(name) ? (CallKind.Allowed, name) : (CallKind.Hidden, name);
+    }
+
+    private (ClientDecision Decision, IReadOnlyList<(string ToolName, string? RequestId)> Refused) Evaluate(
+        ReadOnlySpan<byte> line,
+        bool registeringLists)
+    {
+        // Blank lines carry nothing a server could act on.
+        if (GatewayStrictJson.IsBlank(line)) return (new ClientDecision.Forward(), []);
+
+        if (GatewayStrictJson.Read(line) is not { } reading)
+        {
+            return (new ClientDecision.Refuse(Error(null, ParseError, CouldNotRead)), [(UnreadableRequest, null)]);
+        }
+        if (reading.HasDuplicateKeys)
+        {
+            return (
+                new ClientDecision.Refuse(Error(
+                    reading.RawId,
+                    InvalidRequest,
+                    "Kytto refused a message that repeats a key: it can be read more than one way.")),
+                [(UnreadableRequest, null)]);
+        }
+
+        if (reading.Root is JsonArray batch) return EvaluateBatch(batch, registeringLists);
+        if (reading.Root is not JsonObject message) return (new ClientDecision.Forward(), []);
+
+        if (StringAt(message, "method") == "tools/list")
+        {
+            if (registeringLists) Register(message["id"]);
+            return (new ClientDecision.Forward(), []);
+        }
+
+        var requestId = RequestId(message["id"]);
+        var (kind, name) = Check(message);
+        switch (kind)
+        {
+            case CallKind.Hidden:
                 // A notification has no id and therefore no reply to send. Dropping
                 // it silently is still correct: the tool is not available.
-                if (RequestId(message["id"]) is null) return new ClientDecision.Refuse([]);
-                return new ClientDecision.Refuse(Refusal(message["id"], name));
-
+                if (requestId is null) return (new ClientDecision.Refuse([]), [(name!, null)]);
+                // The id goes back exactly as it arrived — a client that sent a number
+                // and gets a string back cannot match its own request.
+                return (
+                    new ClientDecision.Refuse(Error(
+                        reading.RawId,
+                        UnknownTool,
+                        $"{name} is not available: Kytto is not exposing this tool on this route.")),
+                    [(name!, requestId)]);
+            case CallKind.Unreadable:
+                if (requestId is null) return (new ClientDecision.Refuse([]), [(UnreadableRequest, null)]);
+                return (
+                    new ClientDecision.Refuse(Error(
+                        reading.RawId,
+                        UnknownTool,
+                        "Kytto refused a tools/call whose tool name it cannot read: params.name must be one string.")),
+                    [(UnreadableRequest, requestId)]);
             default:
-                return new ClientDecision.Forward();
+                return (new ClientDecision.Forward(), []);
         }
     }
 
     /// <summary>A JSON-RPC batch, inspected element by element.</summary>
     /// <remarks>
     /// Letting a batch through unread would let a hidden tool be called by wrapping
-    /// it in <c>[…]</c>. One hidden call refuses the whole batch, answered as a batch.
+    /// it in <c>[…]</c>. One hidden or unreadable call — or an element that is not a
+    /// message at all — refuses the whole batch, answered as a batch.
     /// </remarks>
-    private ClientDecision InspectBatch(JsonArray batch)
+    private (ClientDecision Decision, IReadOnlyList<(string ToolName, string? RequestId)> Refused) EvaluateBatch(
+        JsonArray batch,
+        bool registeringLists)
     {
         var objects = batch.OfType<JsonObject>().ToArray();
-        var hidden = objects.Any(item =>
-            StringAt(item, "method") == "tools/call" &&
-            StringAt(item["params"], "name") is { } name && !Allows(name));
-        if (!hidden)
+        var refused = new List<(string ToolName, string? RequestId)>();
+        if (objects.Length != batch.Count) refused.Add((UnreadableRequest, null));
+        foreach (var item in objects)
         {
-            foreach (var item in objects.Where(item => StringAt(item, "method") == "tools/list"))
+            var (kind, name) = Check(item);
+            if (kind == CallKind.Hidden) refused.Add((name!, RequestId(item["id"])));
+            else if (kind == CallKind.Unreadable) refused.Add((UnreadableRequest, RequestId(item["id"])));
+        }
+
+        if (refused.Count == 0)
+        {
+            if (registeringLists)
             {
-                if (RequestKey(item["id"]) is { } listId)
+                foreach (var item in objects.Where(item => StringAt(item, "method") == "tools/list"))
                 {
-                    lock (_lock) _pendingListRequests.Add(listId);
+                    Register(item["id"]);
                 }
             }
-            return new ClientDecision.Forward();
+            return (new ClientDecision.Forward(), []);
         }
 
         var replies = new JsonArray();
@@ -167,149 +466,101 @@ public sealed class GatewayToolFilter(IReadOnlyList<string> exposedTools)
                 ["error"] = new JsonObject
                 {
                     ["code"] = UnknownTool,
-                    ["message"] = "Kytto refused this batch: it calls a tool this route does not expose.",
+                    ["message"] =
+                        "Kytto refused this batch: it calls a tool this route does not expose, or a tool it cannot read.",
                 },
             });
         }
-        return new ClientDecision.Refuse(replies.Count == 0 ? [] : Encoding.UTF8.GetBytes(replies.ToJsonString()));
+        return (
+            new ClientDecision.Refuse(replies.Count == 0 ? [] : Encoding.UTF8.GetBytes(replies.ToJsonString())),
+            refused);
     }
 
-    /// <summary>The hidden tools a client line tries to call, for the activity journal.</summary>
-    /// <remarks>Names and request ids only; arguments are never looked at.</remarks>
-    public IReadOnlyList<(string ToolName, string? RequestId)> HiddenCalls(ReadOnlySpan<byte> line)
+    private void Register(JsonNode? id)
     {
-        var objects = Parse(line) switch
-        {
-            JsonArray batch => batch.OfType<JsonObject>().ToArray(),
-            JsonObject message => [message],
-            _ => [],
-        };
-        var calls = new List<(string, string?)>();
-        foreach (var item in objects)
-        {
-            if (StringAt(item, "method") != "tools/call" ||
-                StringAt(item["params"], "name") is not { } name || Allows(name)) continue;
-            calls.Add((name, RequestId(item["id"])));
-        }
-        return calls;
+        if (RequestKey(id) is not { } key) return;
+        lock (_lock) _pendingListRequests.Add(key);
     }
 
-    private static byte[] Refusal(JsonNode? id, string toolName)
-    {
-        // The id goes back exactly as it arrived — a client that sent a number and
-        // gets a string back cannot match its own request.
-        var body = new JsonObject
-        {
-            ["jsonrpc"] = "2.0",
-            ["id"] = id?.DeepClone(),
-            ["error"] = new JsonObject
-            {
-                ["code"] = UnknownTool,
-                ["message"] =
-                    $"{toolName} is not available: Kytto is not exposing this tool on this route.",
-            },
-        };
-        return Encoding.UTF8.GetBytes(body.ToJsonString());
-    }
+    /// <summary>An error built around the id's original text, so the id round-trips exactly.</summary>
+    private static byte[] Error(string? rawId, int code, string message) =>
+        Encoding.UTF8.GetBytes(
+            "{\"jsonrpc\":\"2.0\",\"id\":" + (rawId ?? "null") +
+            ",\"error\":{\"code\":" + code.ToString(CultureInfo.InvariantCulture) +
+            ",\"message\":" + JsonSerializer.Serialize(message) + "}}");
 
     // MARK: - Server to client
 
     /// <summary>
     /// The line to forward, which is the original unless it is a <c>tools/list</c>
-    /// result with something to remove.
+    /// result with something to remove, or a message with a repeated key.
     /// </summary>
+    /// <remarks>
+    /// A line that is not JSON — a banner on stdout — is forwarded untouched. A
+    /// repeated key would let the client read a different id or tool list from the
+    /// one filtered here, so such a message is passed on in the one reading the
+    /// filter used.
+    /// </remarks>
     public byte[] RewriteServerLine(byte[] line)
     {
-        var parsed = Parse(line);
-        if (parsed is JsonArray batch)
+        try
         {
-            // A batched response: each element answers on its own.
-            var changed = false;
-            var rewritten = new JsonArray();
-            foreach (var element in batch)
+            if (GatewayStrictJson.Read(line) is not { } reading) return line;
+            var changed = reading.HasDuplicateKeys;
+            switch (reading.Root)
             {
-                if (element is JsonObject item && Rewrite(item) is { } filtered)
-                {
-                    rewritten.Add(filtered.DeepClone());
-                    changed = true;
-                }
-                else
-                {
-                    rewritten.Add(element?.DeepClone());
-                }
+                case JsonArray batch:
+                    // A batched response: each element answers on its own.
+                    foreach (var element in batch)
+                    {
+                        if (element is JsonObject item && FilterListResponse(item)) changed = true;
+                    }
+                    return changed ? Encoding.UTF8.GetBytes(batch.ToJsonString()) : line;
+                case JsonObject message:
+                    if (FilterListResponse(message)) changed = true;
+                    return changed ? Encoding.UTF8.GetBytes(message.ToJsonString()) : line;
+                default:
+                    return line;
             }
-            return changed ? Encoding.UTF8.GetBytes(rewritten.ToJsonString()) : line;
         }
-        if (parsed is not JsonObject message) return line;
-        return Rewrite(message) is { } result ? Encoding.UTF8.GetBytes(result.ToJsonString()) : line;
+        catch (Exception)
+        {
+            // Never the end of the session over one odd message; a hidden tool that
+            // slips into a list still cannot be called.
+            return line;
+        }
     }
 
-    /// <summary>The message with hidden tools removed, or null when it is not one to change.</summary>
-    private JsonObject? Rewrite(JsonObject message)
+    /// <summary>
+    /// Removes hidden tools from a pending <c>tools/list</c> answer, in place; whether
+    /// anything was removed.
+    /// </summary>
+    private bool FilterListResponse(JsonObject message)
     {
         // Only a response can answer a pending request. The server numbers its own
         // requests (`roots/list`, `sampling/createMessage`) from its own id space,
         // and one that happens to reuse a pending id must not use it up — the real
         // tool list would then pass through unfiltered.
         if (message.ContainsKey("method") ||
-            !(message.ContainsKey("result") || message.ContainsKey("error"))) return null;
-        if (RequestKey(message["id"]) is not { } id) return null;
+            !(message.ContainsKey("result") || message.ContainsKey("error"))) return false;
+        if (RequestKey(message["id"]) is not { } id) return false;
 
         bool isListResponse;
         lock (_lock) isListResponse = _pendingListRequests.Remove(id);
-        if (!isListResponse) return null;
+        if (!isListResponse) return false;
 
-        if (message["result"] is not JsonObject result) return null;
-        if (result["tools"] is not JsonArray tools) return null;
+        if (message["result"] is not JsonObject result) return false;
+        if (result["tools"] is not JsonArray tools) return false;
 
+        // An entry without a readable name cannot be shown to be allowed.
         var kept = tools
             .Where(tool => StringAt(tool, "name") is { } name && Allows(name))
             .Select(tool => tool!.DeepClone())
             .ToArray();
-        if (kept.Length == tools.Count) return null;
+        if (kept.Length == tools.Count) return false;
 
         result["tools"] = new JsonArray(kept);
-        return message;
-    }
-
-    /// <remarks>
-    /// Built member by member, last-wins, rather than with <c>JsonNode.Parse</c>:
-    /// that throws on a repeated key the first time the object is read, and the
-    /// client and server on either side resolve one by keeping the last. Reading it
-    /// the same way is what stops <c>{"name":"read_file","name":"delete_all"}</c> from
-    /// meaning one tool to the filter and another to the server.
-    /// </remarks>
-    private static JsonNode? Parse(ReadOnlySpan<byte> line)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(line.ToArray());
-            return Build(document.RootElement);
-        }
-        catch (JsonException)
-        {
-            // Not JSON at all — a banner on stdout, say. Forwarded untouched.
-            return null;
-        }
-    }
-
-    private static JsonNode? Build(JsonElement element)
-    {
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                var json = new JsonObject();
-                foreach (var property in element.EnumerateObject()) json[property.Name] = Build(property.Value);
-                return json;
-            case JsonValueKind.Array:
-                return new JsonArray(element.EnumerateArray().Select(Build).ToArray());
-            case JsonValueKind.Null:
-            case JsonValueKind.Undefined:
-                return null;
-            default:
-                // Cloned: the document this element belongs to is disposed on return.
-                return JsonValue.Create(element.Clone());
-        }
+        return true;
     }
 
     /// <summary>A string member of an object, or null for any other shape.</summary>
@@ -340,7 +591,7 @@ public sealed class GatewayToolFilter(IReadOnlyList<string> exposedTools)
         if (json.TryGetValue<string>(out var text)) return text;
         if (json.TryGetValue<bool>(out _)) return null;
         return json.TryGetValue<decimal>(out var number)
-            ? number.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            ? number.ToString(CultureInfo.InvariantCulture)
             : null;
     }
 }

@@ -203,6 +203,47 @@
               Click="OnReportBug" />
     </StackPanel>
 
+    <!-- Roadmap §12: repository MCP files, read-only, from folders the user chose. -->
+    <StackPanel Style="{StaticResource Row}">
+      <TextBlock Style="{StaticResource Label}" Text="Project folders" />
+      <TextBlock x:Name="ProjectFoldersHint" Style="{StaticResource Hint}" Margin="0,0,0,10" />
+      <ItemsControl x:Name="ProjectFolderList">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border BorderBrush="#33000000" BorderThickness="1" CornerRadius="4"
+                    Padding="10" Margin="0,0,0,8">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Row="0" Grid.Column="0" Margin="0,0,8,6"
+                         ToolTip="Folder name"
+                         AutomationProperties.Name="Folder name"
+                         Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Grid.Row="0" Grid.Column="1" Content="Remove" Padding="10,3" Margin="0,0,0,6"
+                        ToolTip="Stop reading this folder. Nothing in it is changed."
+                        Tag="{Binding}" Click="OnRemoveProjectFolder" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                           FontFamily="Consolas" FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                           Text="{Binding Path}" />
+                <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,4,0,0"
+                           FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                           Text="{Binding FilesSummary}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <Button Content="Add Project Folder…" HorizontalAlignment="Left" Padding="12,4"
+              Click="OnAddProjectFolder" />
+    </StackPanel>
+
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
       <Button Content="Cancel" Padding="16,5" Margin="0,0,8,0" IsCancel="True" />
       <Button Content="Save" Padding="16,5" IsDefault="True" Click="OnSave" />

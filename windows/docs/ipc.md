@@ -204,11 +204,13 @@ followed by the user's dynamic read-only custom sources. A custom source id is
 | `iconAsset` | Asset name, resolved by the UI |
 | `state` | `ready` \| `noConfig` \| `orphanedConfig` \| `notInstalled` |
 | `configPathDisplay` | For display and tooltips only — never parsed |
-| `configFormatDisplay` | `JSON` or `TOML` for built-ins; `Auto-detected · read-only` for custom sources |
+| `configFormatDisplay` | `JSON` or `TOML` for built-ins; `Auto-detected · read-only` for custom sources; `JSON · read-only` for a repository file |
 | `offSwitchSummary` | What switching a server off does to this client's file, in prose. Composed native-side from the client's enablement strategy and its other sources, so a client with two of them answers the question twice (§7.8) |
 | `serverCount` | |
 | `schemaQuirks` | How this client differs; surfaced in the client screen (§7.8) |
 | `isReadOnly` | `true` for custom sources; mutation destinations filter on this capability rather than platform |
+| `isRepositoryFile` | True for a project file (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`) in a folder chosen under Settings → Project folders (roadmap §12). Always read-only, with a `custom.<uuid>` id that is stable per folder and file. A server whose every configured client is one of these is left out of `health.checkAll`, and the page leaves it out of Check visible; the UI says so on its Health section |
+| `toolLoading` | `{ mode, note }` — `mode` is `deferred` (the client is documented to hold MCP tool definitions behind tool search, so a session starts with names), `all` or `unknown`; `note` says what is documented, or null. Only built-in clients are ever anything but `unknown` (roadmap §16) |
 | `configurationScope` | `global` \| `profile` \| `workspace` |
 | `scopeLabel` | Optional display label for a profile or workspace; otherwise null |
 | `toolBudget` | `{ toolCount, maskedToolCount, unmeasuredServerIDs, limit, state, pastLimitSummary }` — see below |
@@ -276,6 +278,7 @@ No payload. Servers merged across clients: one entry per normalized name.
 | `toolsOff` | Client id → names of the server's known tools that client's own file keeps off (§7.11). Clients with no rules are absent |
 | `lockedTools` | Client id → `{ tool: rule }` for tools kept off by a broader rule (a glob, a whole-server deny) that switching one tool cannot undo |
 | `packageSafety` | The last `doctor.checkPackageSafety` result while it still describes what the server launches, or null |
+| `toolNameTokens` | cl100k tokens for the names of the tools last seen — the part a client with `toolLoading.mode` `deferred` still sends before a tool search. A lower bound; null before a passing check (roadmap §16) |
 
 `provenance` is inferred from the existing definition without contacting a
 registry. `latestVersion` and `latestCheckedAt` are filled only by the explicit
@@ -387,7 +390,14 @@ server can be in Gateway mode in several clients. Those findings — codes
 configs, the route file and the last 24 hours of the activity journal, never from
 Credential Manager, and only for servers that still have a route.
 `contractAlerts` contains tool names and model-facing contract
-change summaries. Neither contains environment values or tool-call payloads.
+change summaries. Each change carries two labels besides its one-word
+`severity`: `compatibility` (`compatible` | `breaking` | `unknown`) with
+`compatibilityReason`, and `security` (`none` | `review`) with
+`securityReason`. `severity` is derived from them: `breaking` only when calls
+can fail, `warning` for a change worth reading or one Kytto cannot judge, `info`
+otherwise. All four are null on a change recorded before 1.0.9.5, and the UI
+then shows `severity` alone. Reasons are plain text. Neither contains
+environment values or tool-call payloads.
 
 Each `contractAlerts[].changes[]` entry is `{ kind, severity, toolName, summary,
 details }`. `details` is `null` for an added or removed tool and for a change

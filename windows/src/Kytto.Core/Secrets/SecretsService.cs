@@ -266,7 +266,7 @@ public sealed class SecretsService(
 
         // Held copies first, keeping what each said: if one cannot be changed, or
         // the files then fail to commit, every copy goes back the way it was.
-        var parksWritten = new List<ParkStore.Entry>();
+        var parksWritten = new List<(ParkStore.Entry Previous, string Written)>();
         try
         {
             foreach (var usage in parkedUsages)
@@ -276,28 +276,38 @@ public sealed class SecretsService(
                 var text = ReplacingEnvironmentValue(
                     JsonDocument.Parse(entry.SourceText), [], record.Key, newValue,
                     _descriptors.FirstOrDefault(descriptor => descriptor.Id == entry.ClientID)?.ServerSchema.EnvironmentKey ?? "env");
-                parksWritten.Add(entry);
                 parkStore.Park(entry.ClientID, entry.ServerName, text);
+                parksWritten.Add((entry, text));
                 updated.Add(usage);
             }
         }
-        catch
+        catch (Exception error)
         {
-            RestoreParks(parksWritten);
+            var failures = RestoreParks(parksWritten);
+            if (failures.Count > 0) throw SecretsException.RollbackFailed(failures, [], error);
             throw;
         }
 
         // Rotation means one value everywhere. Preparing every file before the
         // first write, then committing them together, keeps that promise if a later
-        // target fails: ConfigWriter restores the earlier files byte for byte (§6).
+        // target fails: ConfigWriter restores the earlier files byte for byte (§6),
+        // and only while they still hold what it wrote (AUD-03).
         IReadOnlyList<WriteReceipt> receipts;
         try
         {
             receipts = writer.Commit(prepared.Select(target => target.Write).ToArray());
         }
-        catch
+        catch (Exception error)
         {
-            RestoreParks(parksWritten);
+            var failures = RestoreParks(parksWritten);
+            if (failures.Count > 0)
+            {
+                var transaction = error as ConfigTransactionException;
+                throw SecretsException.RollbackFailed(
+                    [.. transaction?.Paths ?? [], .. failures],
+                    transaction?.BackupIds ?? [],
+                    error);
+            }
             throw;
         }
         var backupIds = new List<string>();
@@ -327,21 +337,34 @@ public sealed class SecretsService(
         return new RotationResult(record.Key, updated, backupIds);
     }
 
-    private void RestoreParks(IReadOnlyList<ParkStore.Entry> entries)
+    /// <summary>Puts held copies back; what could not be put back, for the error.</summary>
+    /// <remarks>
+    /// Only a copy that still holds what this rotation wrote goes back. Anything else
+    /// was changed after it, and putting the old text over that would erase newer
+    /// work to undo older work (AUD-03).
+    /// </remarks>
+    private List<string> RestoreParks(IReadOnlyList<(ParkStore.Entry Previous, string Written)> entries)
     {
-        foreach (var entry in entries.Reverse())
+        var failures = new List<string>();
+        foreach (var (previous, written) in entries.Reverse())
         {
+            var name = $"{previous.ClientID.Raw()} (switched-off copy of {previous.ServerName}";
             try
             {
-                parkStore?.Park(entry.ClientID, entry.ServerName, entry.SourceText);
+                if (parkStore?.Parked(previous.ClientID, previous.ServerName)?.SourceText != written)
+                {
+                    failures.Add(name + ", changed since; left as it is)");
+                    continue;
+                }
+                parkStore.Park(previous.ClientID, previous.ServerName, previous.SourceText);
             }
             catch (Exception error) when (
                 error is IOException or UnauthorizedAccessException or InvalidDataException)
             {
-                // The original error is the one worth reporting; the store refusing a
-                // second write as well leaves nothing better to do here.
+                failures.Add(name + ")");
             }
         }
+        return failures;
     }
 
     /// <summary>

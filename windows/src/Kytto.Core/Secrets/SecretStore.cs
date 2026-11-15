@@ -173,10 +173,35 @@ public sealed class InMemorySecretStore : ISecretStore
         _values.Keys.ToHashSet(StringComparer.Ordinal);
 }
 
-public sealed class SecretsException(string message) : Exception(message)
+public sealed class SecretsException(string message, Exception? innerException = null)
+    : Exception(message, innerException)
 {
+    /// <summary>What a failed rotation could not put back, for <see cref="RollbackFailed"/>.</summary>
+    public IReadOnlyList<string> Paths { get; private init; } = [];
+
+    /// <summary>The backups taken before the rotation wrote anything.</summary>
+    public IReadOnlyList<string> BackupIds { get; private init; } = [];
+
     public static SecretsException NotFound() =>
         new("That secret is no longer in any configuration.");
+
+    /// <summary>
+    /// A rotation failed and could not be undone everywhere. What is listed was left as
+    /// it is — usually because something saved it after the rotation did (AUD-03).
+    /// </summary>
+    public static SecretsException RollbackFailed(
+        IReadOnlyList<string> paths,
+        IReadOnlyList<string> backupIds,
+        Exception cause) =>
+        new(
+            $"The rotation failed ({cause.Message}) and could not be undone everywhere: " +
+            string.Join(", ", paths) +
+            (backupIds.Count > 0 ? ". Backups taken before the change: " + string.Join(", ", backupIds) : "") + ".",
+            cause)
+        {
+            Paths = paths,
+            BackupIds = backupIds,
+        };
 
     public static SecretsException EmptyValue() =>
         new("A secret cannot be set to an empty value.");

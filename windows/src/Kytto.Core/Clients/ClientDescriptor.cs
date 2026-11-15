@@ -330,6 +330,12 @@ public sealed record ClientDescriptor(
     public bool RestartsWithApp { get; init; }
 
     /// <summary>
+    /// Whether the client sends every MCP tool definition up front or defers them
+    /// behind tool search (roadmap §16). Unknown until documented.
+    /// </summary>
+    public ToolLoading ToolLoading { get; init; } = ToolLoading.Unknown;
+
+    /// <summary>
     /// What a restart does not reach, for a client that restarts with its app but also runs
     /// from a terminal; null when there is nothing to say.
     /// </summary>

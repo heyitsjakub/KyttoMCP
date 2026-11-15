@@ -82,6 +82,22 @@ public sealed class JsonNode
 
     public double? NumberValue => Kind == JsonKind.Number ? (double)_payload! : null;
 
+    /// <summary>
+    /// The number as an <c>int</c>, or null when it is not finite, has a fraction or
+    /// does not fit.
+    /// </summary>
+    /// <remarks>
+    /// A plain <c>(int)</c> cast never throws here, it saturates: <c>1e100</c> read as
+    /// <c>int.MaxValue</c> and <c>-32601.5</c> as <c>-32601</c>, "method not found".
+    /// A server's error code that is not an integer is a protocol failure, not a
+    /// number to round (AUD-01).
+    /// </remarks>
+    public int? IntegerValue =>
+        NumberValue is { } value && double.IsFinite(value) && Math.Floor(value) == value &&
+        value >= int.MinValue && value <= int.MaxValue
+            ? (int)value
+            : null;
+
     public bool? BoolValue => Kind == JsonKind.Bool ? (bool)_payload! : null;
 
     public bool IsNull => Kind == JsonKind.Null;

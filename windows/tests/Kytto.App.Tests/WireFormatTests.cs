@@ -1,5 +1,8 @@
 using System.Text.Json;
 using Kytto.App.Ipc;
+using Kytto.Core;
+using Kytto.Core.Clients;
+using Kytto.Core.Settings;
 using Kytto.Core.Health;
 using Kytto.Core.Portable;
 
@@ -89,7 +92,8 @@ public class WireFormatTests
         Assert.Equal(
             ["id", "name", "transport", "commandSummary", "command", "args", "env",
              "url", "enabledIn", "originKind", "isBundled", "source", "hasRelativePath",
-             "health", "tokenWeight", "provenance", "toolsOff", "lockedTools", "packageSafety"],
+             "health", "tokenWeight", "provenance", "toolsOff", "lockedTools", "packageSafety",
+             "toolNameTokens"],
             KeysOf(encoded));
         Assert.Equal(
             ["kind", "displayName", "version", "readOnly"],
@@ -465,7 +469,7 @@ public class WireFormatTests
             ["id", "displayName", "shortName", "iconAsset", "state", "configPathDisplay",
              "configFormatDisplay", "offSwitchSummary", "serverCount", "schemaQuirks",
              "isReadOnly", "configurationScope", "scopeLabel", "toolBudget", "toolSwitchSummary",
-             "canRestart", "restartCaveat"],
+             "canRestart", "restartCaveat", "isRepositoryFile", "toolLoading"],
             KeysOf(encoded));
         var budget = encoded.GetProperty("toolBudget");
         Assert.Equal(
@@ -478,6 +482,35 @@ public class WireFormatTests
         var uncapped = Encode(NoToolBudget);
         Assert.Equal(JsonValueKind.Null, uncapped.GetProperty("limit").ValueKind);
         Assert.Equal(JsonValueKind.Null, uncapped.GetProperty("state").ValueKind);
+    }
+
+    /// <summary>
+    /// Roadmap §16 and §12: the client screen's second tile reads <c>toolLoading.mode</c>,
+    /// and the Health note reads <c>isRepositoryFile</c>. Only a built-in client can be
+    /// documented to defer; a repository file inherits nothing.
+    /// </summary>
+    [Fact]
+    public void AClientSaysHowItLoadsToolsAndWhetherItIsARepositoryFile()
+    {
+        static DiscoveredClient Client(ClientKey id, bool readOnly, bool repository) => new(
+            id, "Client", "client-custom", true, true, "path", "JSON", "Off.", 1, "Quirks.", readOnly,
+            ConfigurationScope.Workspace, "shop", IsRepositoryFile: repository);
+        static ClientToolBudget Budget(ClientKey id) => new(id, 0, 0, [], null, null);
+
+        var claudeCode = Encode(Client(ClientId.ClaudeCode, false, false).ToDto(Budget(ClientId.ClaudeCode)));
+        Assert.Equal(["mode", "note"], KeysOf(claudeCode.GetProperty("toolLoading")));
+        Assert.Equal("deferred", claudeCode.GetProperty("toolLoading").GetProperty("mode").GetString());
+        Assert.Contains("tool search", claudeCode.GetProperty("toolLoading").GetProperty("note").GetString(), StringComparison.Ordinal);
+        Assert.False(claudeCode.GetProperty("isRepositoryFile").GetBoolean());
+
+        var cursor = Encode(Client(ClientId.Cursor, false, false).ToDto(Budget(ClientId.Cursor)));
+        Assert.Equal("unknown", cursor.GetProperty("toolLoading").GetProperty("mode").GetString());
+        Assert.Equal(JsonValueKind.Null, cursor.GetProperty("toolLoading").GetProperty("note").ValueKind);
+
+        var repositoryId = ClientKey.Custom(Guid.NewGuid());
+        var repository = Encode(Client(repositoryId, true, true).ToDto(Budget(repositoryId)));
+        Assert.True(repository.GetProperty("isRepositoryFile").GetBoolean());
+        Assert.Equal("unknown", repository.GetProperty("toolLoading").GetProperty("mode").GetString());
     }
 
     [Fact]
@@ -675,7 +708,19 @@ public class WireFormatTests
         Assert.Equal(["serverID", "serverName", "changedAt", "changes", "reviewToken"], KeysOf(encoded));
         Assert.Equal(ContractGuard.ReviewToken(changes), encoded.GetProperty("reviewToken").GetString());
         var wire = encoded.GetProperty("changes");
-        Assert.Equal(["kind", "severity", "toolName", "summary", "details"], KeysOf(wire[0]));
+        Assert.Equal(
+            ["kind", "severity", "toolName", "summary", "details",
+             "compatibility", "compatibilityReason", "security", "securityReason"],
+            KeysOf(wire[0]));
+        // The two labels of roadmap §18, in the spellings serverDetail.js reads.
+        var labelled = wire.EnumerateArray().First(change => change.GetProperty("kind").GetString() == "toolAdded");
+        Assert.Equal("compatible", labelled.GetProperty("compatibility").GetString());
+        Assert.Equal("review", labelled.GetProperty("security").GetString());
+        Assert.Equal("warning", labelled.GetProperty("severity").GetString());
+        var gone = wire.EnumerateArray().First(change => change.GetProperty("kind").GetString() == "toolRemoved");
+        Assert.Equal("breaking", gone.GetProperty("compatibility").GetString());
+        Assert.Equal("none", gone.GetProperty("security").GetString());
+        Assert.Equal(JsonValueKind.Null, gone.GetProperty("securityReason").ValueKind);
 
         // A removed or added tool has no field details, written as null and not omitted.
         var removed = wire.EnumerateArray().First(change => change.GetProperty("kind").GetString() == "toolRemoved");
@@ -696,8 +741,11 @@ public class WireFormatTests
         Assert.Contains("actual enforcement", guard.GetProperty("explanation").GetString(), StringComparison.Ordinal);
 
         // A change recorded before 1.0.8 has no details; it still encodes, as null.
+        // One from before 1.0.9.5 has no labels either, and the UI shows its severity.
         var legacy = Encode(new ContractChangeDto("inputSchemaChanged", "breaking", "write", "Input schema changed"));
         Assert.Equal(JsonValueKind.Null, legacy.GetProperty("details").ValueKind);
+        Assert.Equal(JsonValueKind.Null, legacy.GetProperty("compatibility").ValueKind);
+        Assert.Equal(JsonValueKind.Null, legacy.GetProperty("security").ValueKind);
     }
 
     /// <summary>

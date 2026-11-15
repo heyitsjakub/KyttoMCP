@@ -1259,10 +1259,18 @@ internal sealed partial class AppModel : IDisposable
         }
         try
         {
+            // A server found only in a repository file is never started without the user
+            // asking for that one server (roadmap §12): a committed `.mcp.json` is exactly
+            // where an attacker would put a command.
+            var repositoryClients = _current.Clients
+                .Where(client => client.IsRepositoryFile)
+                .Select(client => client.Id)
+                .ToHashSet();
             var servers = _current.Servers
                 .Where(server => server.Transport == Transport.Http ||
                                  (server.Transport == Transport.Stdio &&
                                   server.Health?.Status != HealthStatus.NeedsAuthorization))
+                .Where(server => !ProjectFolders.IsRepositoryOnly(server, repositoryClients))
                 .ToArray();
 
             var interrupted = 0;
@@ -1583,7 +1591,8 @@ internal sealed partial class AppModel : IDisposable
             .ToArray(),
         metadata: _metadata.All(),
         pathOverrides: Settings.ClientPathOverrides,
-        customSources: Settings.CustomConfigSources);
+        customSources: Settings.CustomConfigSources,
+        projectFolders: Settings.ProjectFolders);
 
     private DiscoveryResult Discover(bool pendingChange = false)
     {

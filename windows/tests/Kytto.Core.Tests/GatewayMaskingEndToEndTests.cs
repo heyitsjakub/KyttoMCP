@@ -187,6 +187,53 @@ public sealed class GatewayMaskingEndToEndTests
         Assert.Empty(Tools(replies, 2));
     }
 
+    /// <summary>
+    /// AUD-07 through the real helper and a real Python server, which reports the name
+    /// its own parser read. The lone-surrogate id is the Windows-only form: the filter
+    /// threw, and the helper forwarded everything it had buffered, hidden call
+    /// included.
+    /// </summary>
+    [Fact]
+    public void AnAmbiguousCallNeverReachesTheServerAsAHiddenTool()
+    {
+        RequireHelper();
+        var replies = Converse(
+            ["read_file"],
+            [
+                .. Handshake,
+                """{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read_file","name":"write_file","arguments":{}}}""",
+                """{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"write_file","name":"read_file","arguments":{}}}""",
+                """[{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_file","name":"write_file"}}]""",
+                """{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"read_file","name":"write_file"}}""",
+                """{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":7}}""",
+                """{"jsonrpc":"2.0","id":"\ud800","method":"tools/call","params":{"name":"write_file"}}""",
+                "not json",
+                """{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"read_file","arguments":{}}}""",
+            ]);
+
+        foreach (var id in new[] { 2, 3, 5, 6 })
+        {
+            var reply = Reply(replies, id);
+            Assert.False(reply.TryGetProperty("result", out _), $"request {id} reached the server");
+            Assert.True(reply.TryGetProperty("error", out _));
+        }
+        Assert.DoesNotContain(replies, reply =>
+            reply.ValueKind == JsonValueKind.Object &&
+            reply.TryGetProperty("result", out var result) &&
+            result.TryGetProperty("called", out var called) &&
+            called.ValueKind == JsonValueKind.String &&
+            called.GetString() == "write_file");
+        Assert.DoesNotContain(replies, reply =>
+            reply.ValueKind == JsonValueKind.Object &&
+            reply.TryGetProperty("result", out var result) &&
+            result.TryGetProperty("called", out var called) &&
+            called.ValueKind == JsonValueKind.Number);
+
+        // The session survived all of it: the allowed call still reaches the server.
+        var allowed = Reply(replies, 9);
+        Assert.Equal("read_file", allowed.GetProperty("result").GetProperty("called").GetString());
+    }
+
     /// <summary>Masking must not become a filter on everything else the server offers.</summary>
     [Fact]
     public void PromptsAndResourcesAreNotTouched()

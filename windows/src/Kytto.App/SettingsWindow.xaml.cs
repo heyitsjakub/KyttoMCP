@@ -19,6 +19,7 @@ public partial class SettingsWindow : Window
     private readonly ISupportLinkLauncher _supportLinks;
     private readonly List<OverrideRow> _overrides = [];
     private readonly List<CustomSourceRow> _customSources = [];
+    private readonly List<ProjectFolderRow> _projectFolders = [];
 
     /// <summary>One client's path override, bound to a row in the list.</summary>
     private sealed class OverrideRow
@@ -37,6 +38,29 @@ public partial class SettingsWindow : Window
         public string ScopeLabel { get; set; } = "";
         public IReadOnlyList<ConfigurationScope> ScopeOptions { get; } =
             Enum.GetValues<ConfigurationScope>();
+    }
+
+    private sealed class ProjectFolderRow
+    {
+        public required Guid Id { get; init; }
+        public required string Path { get; init; }
+        public string Label { get; set; } = "";
+
+        /// <summary>Which of the known files the folder has right now.</summary>
+        public string FilesSummary
+        {
+            get
+            {
+                var folder = new ProjectFolder(Id, Path, Label);
+                var found = ProjectFolders.Files
+                    .Where(file => File.Exists(ProjectFolders.PathOf(folder, file)))
+                    .Select(file => file.Name)
+                    .ToArray();
+                return found.Length == 0
+                    ? "No MCP files here yet. Kytto watches for them, so one added later appears on its own."
+                    : "Reading " + string.Join(", ", found) + ".";
+            }
+        }
     }
 
     internal SettingsWindow(AppModel model, ISupportLinkLauncher? supportLinks = null)
@@ -97,6 +121,16 @@ public partial class SettingsWindow : Window
             });
         }
         CustomSourceList.ItemsSource = _customSources;
+
+        foreach (var folder in settings.ProjectFolders)
+        {
+            _projectFolders.Add(new ProjectFolderRow { Id = folder.Id, Path = folder.Path, Label = folder.Label });
+        }
+        ProjectFolderList.ItemsSource = _projectFolders;
+        ProjectFoldersHint.Text =
+            $"Kytto reads only {ProjectFolders.FileNames} at the top of each folder you add — never subfolders, " +
+            "never other files, and never a folder you did not choose. These files are read-only. A server found " +
+            "only in one is left out of Check all, because a check runs its command on this computer.";
     }
 
     internal static string? ValidTrayClient(string? raw) =>
@@ -159,6 +193,33 @@ public partial class SettingsWindow : Window
             Scope = ConfigurationScope.Global,
         });
         CustomSourceList.Items.Refresh();
+    }
+
+    private void OnAddProjectFolder(object sender, RoutedEventArgs args)
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = $"Choose a project folder. Kytto reads only {ProjectFolders.FileNames} in it, and never changes them.",
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog(this) != true) return;
+
+        var path = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(dialog.FolderName));
+        if (_projectFolders.Any(row => string.Equals(row.Path, path, StringComparison.OrdinalIgnoreCase))) return;
+        _projectFolders.Add(new ProjectFolderRow
+        {
+            Id = Guid.NewGuid(),
+            Path = path,
+            Label = System.IO.Path.GetFileName(path) is { Length: > 0 } name ? name : path,
+        });
+        ProjectFolderList.Items.Refresh();
+    }
+
+    private void OnRemoveProjectFolder(object sender, RoutedEventArgs args)
+    {
+        if (sender is not Button { Tag: ProjectFolderRow row }) return;
+        _projectFolders.Remove(row);
+        ProjectFolderList.Items.Refresh();
     }
 
     private void OnDetachCustomSource(object sender, RoutedEventArgs args)
@@ -228,6 +289,9 @@ public partial class SettingsWindow : Window
                 TrayClient = string.IsNullOrEmpty(trayClient) ? null : trayClient,
                 ClientPathOverrides = overrides,
                 CustomConfigSources = customSources,
+                ProjectFolders = _projectFolders
+                    .Select(row => new ProjectFolder(row.Id, row.Path, row.Label.Trim()))
+                    .ToArray(),
                 LaunchAtLogin = LoginBox.IsChecked == true,
             });
         }

@@ -36,7 +36,8 @@ preview records:
 - `tools/call` name and JSON-RPC request id,
 - completion latency, success and JSON-RPC error code,
 - a `tools/call` the helper refused because the route hides that tool
-  (`tool.call.refused`, by name and request id),
+  (`tool.call.refused`, by name and request id), or a message it refused
+  because it could not read it in one way, recorded as `(unreadable request)`,
 - whether a session ended because the server stopped while its client was still
   attached (`session.ended` with `unexpected: true`),
 - a session the helper could not start at all (`session.failed` with a reason
@@ -73,7 +74,16 @@ definition byte for byte and deletes the route credentials.
 
 A route can also be narrowed to an exact list of tools (§7.11). Only then does
 the helper stop being a transparent relay: it filters `tools/list` results and
-refuses calls to hidden tools itself.
+refuses calls to hidden tools itself. On such a route it also refuses a client
+message it cannot read in exactly one way — not JSON (`-32700`), a repeated key
+at any depth (`-32600`), or a `tools/call` without one string `params.name`
+(`-32602`) — and answers with the request's id where there is a single one to
+echo. The helper decides with one JSON parser and the server reads the same bytes
+with another; a message the two could read differently, such as
+`{"name":"write_file","name":"read_file"}`, would otherwise be approved as one
+tool and run as the other. Text that cannot be decoded (an unpaired surrogate
+escape, a byte that is not UTF-8) is read with U+FFFD in its place, so it can
+never make the filter throw and leave buffered input to be forwarded unread.
 
 ## When something the route depends on goes away
 

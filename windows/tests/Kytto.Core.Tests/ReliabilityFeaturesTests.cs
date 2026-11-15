@@ -183,8 +183,27 @@ public sealed class ReliabilityFeaturesTests : IDisposable
             [new ToolSummary("t", null, original)],
             [new ToolSummary("t", null, changed)]);
 
-        Assert.Contains(changes, item => item.Kind == ContractChangeKind.InputSchemaChanged &&
-                                         item.Severity == ContractChangeSeverity.Breaking);
+        Assert.Contains(changes, item => item.Kind == ContractChangeKind.InputSchemaChanged);
+    }
+
+    /// <summary>
+    /// A changed type still breaks calls. The same values in another order are still a
+    /// change, but accept the same calls (roadmap §18).
+    /// </summary>
+    [Fact]
+    public void ARetypedPropertyBreaksAndAReorderedValueListDoesNot()
+    {
+        const string original = """{"type":"object","properties":{"mode":{"enum":["a","b"]},"n":{"type":"integer"}}}""";
+        ContractChange Change(string after) => Assert.Single(ContractGuard.Changes(
+            [new ToolSummary("t", null, original)],
+            [new ToolSummary("t", null, after)]));
+
+        Assert.Equal(
+            ContractChangeSeverity.Breaking,
+            Change("""{"properties":{"n":{"type":"string"},"mode":{"enum":["a","b"]}},"type":"object"}""").Severity);
+        Assert.Equal(
+            ContractCompatibility.Compatible,
+            Change("""{"type":"object","properties":{"mode":{"enum":["b","a"]},"n":{"type":"integer"}}}""").Compatibility);
     }
 
     [Fact]

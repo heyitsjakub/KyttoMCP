@@ -50,7 +50,7 @@ export function renderServerForm(state) {
         'The executable to run. Give a full path if it is not on the system PATH.',
       ),
     );
-    body.push(argumentsEditor(form.draft.args));
+    body.push(argumentsEditor(form.draft.args, form.editingArg));
   } else {
     body.push(
       field(
@@ -135,7 +135,9 @@ function transportPicker(current) {
   return group;
 }
 
-function argumentsEditor(args) {
+/// `editingIndex` is the argument still being typed in: its hint waits until the
+/// field is left, so a space typed on the way to `--port` is not flagged mid-word.
+function argumentsEditor(args, editingIndex) {
   const section = el('section', 'detail-section');
   section.append(el('h3', null, 'Arguments'));
 
@@ -156,6 +158,15 @@ function argumentsEditor(args) {
       }),
     );
     list.append(row);
+    // Each row is one argument, passed exactly as typed: ` --port` is not the
+    // option `--port`, and the server usually refuses to start. Spaces can be
+    // real argument data, so this points it out rather than trimming.
+    if (index !== editingIndex && argument.trim() !== argument && argument.trim() !== '') {
+      const hint = el('div', 'editor-row argument-whitespace');
+      hint.append(el('p', 'field-hint', 'This argument starts or ends with a space, and is passed with it. Most programs will not recognize it as an option.'));
+      hint.append(button('Remove spaces', 'draft-arg-trim', { className: 'button subtle', dataset: { index: String(index) } }));
+      list.append(hint);
+    }
   });
   section.append(list);
   section.append(button('Add argument', 'draft-arg-add', { className: 'button subtle' }));

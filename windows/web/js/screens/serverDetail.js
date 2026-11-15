@@ -3,7 +3,7 @@
 
 import { el, button, busyButton, sheet, definitionList, formatTokens, clientIcon } from '../dom.js';
 import { packageSafetyAction } from './doctor.js';
-import { serverIsReadOnly, toolKey } from '../state.js';
+import { isRepositoryOnly, serverIsReadOnly, toolKey } from '../state.js';
 // Remote Doctor (§7.3, §7.10): field-level contract changes and the remote sign-in.
 import { contractFieldDetails } from './contractDetails.js';
 import { remoteAuthControls, remoteNotCheckedText } from './remoteAuth.js';
@@ -291,6 +291,27 @@ function listPhrase(items) {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
 
+/// Two separate questions about a change (roadmap §18): will existing calls
+/// still work, and is there something here a person should read. A change
+/// recorded before the labels existed has neither and shows its summary only.
+const COMPATIBILITY_LABELS = {
+  compatible: 'Compatible',
+  breaking: 'Breaking',
+  unknown: 'Compatibility unknown',
+};
+
+function contractLabels(change) {
+  if (!change.compatibility && !change.security) return null;
+  const row = el('span', 'contract-labels');
+  if (change.compatibility) {
+    row.append(el('span', `badge contract-compat ${change.compatibility}`, COMPATIBILITY_LABELS[change.compatibility] ?? change.compatibility));
+  }
+  if (change.security === 'review') {
+    row.append(el('span', 'badge contract-security', 'Security: review'));
+  }
+  return row;
+}
+
 function contractSection(state, server) {
   const alert = (state.contractAlerts ?? []).find((entry) => entry.serverID === server.id);
   // Imported fingerprints are evidence waiting for a check made here (§7.13).
@@ -307,7 +328,14 @@ function contractSection(state, server) {
     for (const change of alert.changes) {
       const item = el('li', `contract-change ${change.severity}`);
       item.append(el('strong', 'mono', change.toolName));
-      item.append(el('span', null, change.summary));
+      const summary = el('div', 'contract-summary');
+      summary.append(el('span', null, change.summary));
+      const labels = contractLabels(change);
+      if (labels) summary.append(labels);
+      for (const reason of [change.compatibilityReason, change.securityReason]) {
+        if (reason) summary.append(el('p', 'field-hint contract-reason', reason));
+      }
+      item.append(summary);
       // Before/after of each changed field; null for an added or removed tool.
       const details = contractFieldDetails(change);
       if (details) item.append(details);
@@ -335,6 +363,7 @@ function contractSection(state, server) {
   return section;
 }
 
+
 /// Health, token weight, the tool list, and the server's own error output (§7.3).
 function healthSection(state, server) {
   const section = el('section', 'detail-section');
@@ -359,6 +388,11 @@ function healthSection(state, server) {
     }),
   );
   section.append(heading);
+
+  if (isRepositoryOnly(server)) {
+    section.append(el('p', 'field-hint repository-note',
+      'Found only in a repository file. Check all and Check visible leave it out, because a check runs its command on this computer. Look at where the project got it before choosing Check now.'));
+  }
 
   // Sign in / Forget for a Streamable HTTP server, when native reports `health.oauth`.
   const remoteAuth = remoteAuthControls(state, server);

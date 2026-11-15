@@ -55,6 +55,17 @@ public sealed class McpHttpClient
 
     public McpHttpClient() { }
 
+    /// <summary>A JSON-RPC error's code, for the HTTP and stdio clients alike.</summary>
+    /// <remarks>
+    /// A missing code reads as 0, as before; one that is present but not an integer
+    /// Kytto can hold is a protocol failure rather than a number to convert (AUD-01).
+    /// </remarks>
+    internal static int ErrorCode(JsonNode error, Func<string, Exception> failure)
+    {
+        if (error["code"] is not { } raw) return 0;
+        return raw.IntegerValue ?? throw failure("the JSON-RPC error code is not an integer");
+    }
+
     /// <param name="transport">A transport to use instead of the network; owned by the caller.</param>
     public McpHttpClient(IRemoteHttpTransport transport) => _transport = transport;
 
@@ -419,7 +430,7 @@ public sealed class McpHttpClient
                 if (RemoteJson.TryParse(message) is not { } document || !RemoteJson.IsResponseTo(document, expected)) continue;
                 if (document.Root["error"] is { } rpcError)
                 {
-                    return new Answer.RpcError((int)(rpcError["code"]?.NumberValue ?? 0), SupportedIn(rpcError));
+                    return new Answer.RpcError(ErrorCode(rpcError, RemoteHttpException.Protocol), SupportedIn(rpcError));
                 }
                 if (document.Root["result"]?.Members is null)
                 {
@@ -463,9 +474,9 @@ public sealed class McpHttpClient
             {
                 if (RemoteJson.TryParse(message) is { } document &&
                     document.Root["error"] is { } error &&
-                    error["code"]?.NumberValue is { } code)
+                    error["code"]?.IntegerValue is { } code)
                 {
-                    return ((int)code, SupportedIn(error));
+                    return (code, SupportedIn(error));
                 }
             }
             return null;

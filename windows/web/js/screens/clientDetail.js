@@ -13,6 +13,7 @@ import { el, button, clientIcon, definitionList, formatTokens } from '../dom.js'
 import { changedIn } from '../anim.js';
 import {
   cellKey,
+  clientNameTokenTotal,
   clientTokenTotal,
   contextWindow,
   serversIn,
@@ -54,9 +55,11 @@ export function renderClient(state) {
   const status = client.isReadOnly
     ? {
         badge: 'read only',
-        note: client.state === 'noConfig'
-          ? 'The selected source file is missing. Kytto will keep the attachment visible and will not recreate the file.'
-          : 'Kytto discovers servers in this attached source and watches it for external changes. It never edits, deletes or recreates the file.',
+        note: client.isRepositoryFile
+          ? 'Kytto reads this repository file and watches it for changes. It never edits, deletes or recreates it.'
+          : client.state === 'noConfig'
+            ? 'The selected source file is missing. Kytto will keep the attachment visible and will not recreate the file.'
+            : 'Kytto discovers servers in this attached source and watches it for external changes. It never edits, deletes or recreates the file.',
       }
     : client.state === 'notInstalled'
       ? {
@@ -67,6 +70,8 @@ export function renderClient(state) {
 
   panel.append(header(client, status));
   panel.append(stats(state, client));
+  const loading = contextLoadingNote(client);
+  if (loading) panel.append(loading);
   if (status.note) panel.append(el('p', 'panel-note', status.note));
   const limit = toolLimit(state, client);
   if (limit) panel.append(limit);
@@ -167,12 +172,24 @@ function stats(state, client) {
     row.append(
       stat(
         `${approximate ? '~' : ''}${formatTokens(total)}${incomplete ? '+' : ''}`,
-        `${incomplete ? 'known tokens' : 'tokens'} · ${share.toFixed(share < 10 ? 1 : 0)}%${incomplete ? '+' : ''} of context`,
+        `${incomplete ? 'known tokens' : 'tokens'} if every tool loads · ${share.toFixed(share < 10 ? 1 : 0)}%${incomplete ? '+' : ''} of context`,
         heavy ? 'heavy' : null,
       ),
     );
   } else {
     row.append(stat('—', 'context cost not measured'));
+  }
+
+  // The second number exists only where the client is documented to defer
+  // definitions behind tool search (roadmap §16). Elsewhere there is no
+  // reliable figure to put here, and the note under the tiles says so.
+  if (client.toolLoading?.mode === 'deferred') {
+    const names = clientNameTokenTotal(client.id);
+    row.append(
+      names.known > 0
+        ? stat(`≥${formatTokens(names.total)}`, `tokens before a tool search${names.known < names.on ? ', known servers' : ''} · tool names`)
+        : stat('—', 'before a tool search · not measured'),
+    );
   }
 
   // What the client hands its model, against its cap where it has one. Amber
@@ -193,6 +210,23 @@ function stats(state, client) {
   row.append(stat(String(pending), pending === 1 ? 'change awaiting restart' : 'changes awaiting restart'));
 
   return row;
+}
+
+/// Where the context figures come from, in one sentence, so an estimate is
+/// never read as a measurement of a session (roadmap §16).
+function contextLoadingNote(client) {
+  const mode = client.toolLoading?.mode ?? 'unknown';
+  const sessions = 'What a particular session actually loaded is not measured.';
+  if (mode === 'deferred') {
+    return el('p', 'panel-note context-loading',
+      `${client.toolLoading.note} The second figure counts only those names, so it is a lower bound. ${sessions}`);
+  }
+  if (mode === 'all') {
+    return el('p', 'panel-note context-loading', `${client.toolLoading.note} ${sessions}`);
+  }
+  if (client.isReadOnly) return null;
+  return el('p', 'panel-note context-loading',
+    `Kytto has not verified whether ${client.displayName} sends every tool definition up front or waits for a search, so it shows only the cost if every tool loads. ${sessions}`);
 }
 
 /// Near or past a client's tool cap, said where the user is deciding what to

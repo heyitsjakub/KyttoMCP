@@ -34,7 +34,13 @@ public class ContractFieldDiffTests
         Assert.Equal("""["confirm"]""", required.Before);
         Assert.Equal("[]", required.After);
         Assert.Contains("actual enforcement", required.Explanation, StringComparison.Ordinal);
-        Assert.Equal(ContractChangeSeverity.Breaking, change.Severity);
+        // Nothing a call sends is rejected now, but leaving dry_run out now runs for
+        // real: not "compatible", and a reason to look (roadmap §18).
+        Assert.Equal(ContractCompatibility.Unknown, change.Compatibility);
+        Assert.Contains("dry_run", change.CompatibilityReason, StringComparison.Ordinal);
+        Assert.Equal(ContractSecurityRelevance.Review, change.Security);
+        Assert.Contains("dry-run", change.SecurityReason, StringComparison.Ordinal);
+        Assert.Equal(ContractChangeSeverity.Warning, change.Severity);
     }
 
     [Theory]

@@ -51,12 +51,30 @@ public interface IConfigFileWriter
 {
     void Write(byte[] data, string path);
     void Delete(string path);
+
+    /// <summary>
+    /// Writes only while the destination still holds <paramref name="expectedDigest"/>
+    /// — or, for null, still does not exist (AUD-02).
+    /// </summary>
+    /// <remarks>
+    /// The default checks and then writes, which is what a test double needs; the real
+    /// writer checks after staging, immediately before the swap.
+    /// </remarks>
+    /// <exception cref="TargetChangedException">The destination changed.</exception>
+    void Write(byte[] data, string path, string? expectedDigest)
+    {
+        if (Digest.OfFile(path) != expectedDigest) throw new TargetChangedException(path);
+        Write(data, path);
+    }
 }
 
 public sealed class AtomicConfigFileWriter : IConfigFileWriter
 {
     // Through a symbolic link, to the file it names: the link is the user's.
     public void Write(byte[] data, string path) => AtomicWriter.Write(data, path, throughLinks: true);
+
+    public void Write(byte[] data, string path, string? expectedDigest) =>
+        AtomicWriter.Write(data, path, throughLinks: true, new AtomicWriter.Precondition(expectedDigest));
 
     /// <summary>Rolls back a file a failed transaction created.</summary>
     /// <remarks>
@@ -85,9 +103,13 @@ public sealed class ConfigWriteException(string message) : Exception(message)
 public sealed class ConfigTransactionException(
     string message,
     IReadOnlyList<string> paths,
-    Exception innerException) : Exception(message, innerException)
+    Exception innerException,
+    IReadOnlyList<string>? backupIds = null) : Exception(message, innerException)
 {
     public IReadOnlyList<string> Paths { get; } = paths;
+
+    /// <summary>The backups taken before the failed write: the way back by hand (AUD-03).</summary>
+    public IReadOnlyList<string> BackupIds { get; } = backupIds ?? [];
 }
 
 /// <summary>A fully parsed and validated config edit which has not written yet.</summary>
@@ -182,8 +204,21 @@ public sealed class ConfigWriter
         Func<TDocument, string> transform)
         where TDocument : IConfigDocument<TDocument>
     {
-        var exists = File.Exists(path);
-        var currentDigest = Digest.OfFile(path);
+        // Read once. The digest check, the transform, the backup and the final conflict
+        // check all refer to these bytes; reading the file again for any of them is how
+        // an edit made in between could be checked as one version and written over as
+        // another (AUD-02).
+        byte[]? originalBytes;
+        try
+        {
+            originalBytes = File.Exists(path) ? File.ReadAllBytes(path) : null;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            originalBytes = null;
+        }
+        var exists = originalBytes is not null;
+        var currentDigest = originalBytes is null ? null : Digest.Of(originalBytes);
 
         if (currentDigest != expectedDigest)
         {
@@ -191,13 +226,11 @@ public sealed class ConfigWriter
         }
 
         string source;
-        byte[]? originalBytes = null;
         if (exists)
         {
             try
             {
-                originalBytes = File.ReadAllBytes(path);
-                source = new UTF8Encoding(false, throwOnInvalidBytes: true).GetString(originalBytes);
+                source = new UTF8Encoding(false, throwOnInvalidBytes: true).GetString(originalBytes!);
             }
             catch (DecoderFallbackException)
             {
@@ -285,10 +318,14 @@ public sealed class ConfigWriter
             }
         }
 
+        // The bytes each edit started from, not whatever the file holds now: the
+        // backup must describe what the transform read (AUD-02).
         var backupIds = new Dictionary<PreparedConfigWrite, string?>();
         foreach (var write in writes.Where(candidate => candidate.HasChanges))
         {
-            backupIds[write] = _backups.BackUp(write.Path, write.ClientID, write.PathDisplay)?.Id;
+            backupIds[write] = write.OriginalBytes is { } original
+                ? _backups.BackUp(write.Path, write.ClientID, write.PathDisplay, original)?.Id
+                : null;
         }
 
         var attempted = new List<PreparedConfigWrite>();
@@ -296,14 +333,22 @@ public sealed class ConfigWriter
         {
             foreach (var write in writes.Where(candidate => candidate.HasChanges))
             {
-                if (Digest.OfFile(write.Path) != write.OriginalDigest)
-                {
-                    throw ConfigWriteException.ChangedOnDisk(write.PathDisplay);
-                }
                 // Record before entering the injected primitive: it may fail after
                 // replacing the destination, and that still needs rollback.
                 attempted.Add(write);
-                _fileWriter.Write(write.UpdatedBytes, write.Path);
+                // Another program does not take Kytto's lock, so the file is checked
+                // once more at the last moment: it must still hold what was read, or
+                // still not exist. A save in between is refused, not overwritten.
+                try
+                {
+                    _fileWriter.Write(write.UpdatedBytes, write.Path, write.OriginalDigest);
+                }
+                catch (TargetChangedException)
+                {
+                    // Nothing of this one was written; only the earlier ones roll back.
+                    attempted.Remove(write);
+                    throw ConfigWriteException.ChangedOnDisk(write.PathDisplay);
+                }
             }
         }
         catch (Exception error)
@@ -311,11 +356,14 @@ public sealed class ConfigWriter
             var incomplete = RollBack(attempted);
             if (incomplete.Count > 0)
             {
+                var backups = backupIds.Values.OfType<string>().ToArray();
                 throw new ConfigTransactionException(
                     $"CRITICAL: the operation failed: {error.Message} " +
-                    "Rollback could not safely restore: " + string.Join(", ", incomplete),
+                    "Rollback could not safely restore: " + string.Join(", ", incomplete) +
+                    (backups.Length > 0 ? ". Backups taken before the change: " + string.Join(", ", backups) : ""),
                     incomplete,
-                    error);
+                    error,
+                    backups);
             }
             ExceptionDispatchInfo.Capture(error).Throw();
             throw;
@@ -339,16 +387,17 @@ public sealed class ConfigWriter
                 if (current == write.OriginalDigest) continue;
 
                 // Never overwrite a newer external change. Only the exact bytes
-                // this transaction produced are ours to undo (§6.4).
+                // this transaction produced are ours to undo (§6.4, AUD-03).
                 if (current != write.UpdatedDigest)
                 {
-                    incomplete.Add(write.PathDisplay);
+                    incomplete.Add($"{write.PathDisplay} (changed by another app since; left as it is)");
                     continue;
                 }
 
                 if (write.Existed)
                 {
-                    _fileWriter.Write(write.OriginalBytes!, write.Path);
+                    // And checked again at the swap, for a save that lands in between.
+                    _fileWriter.Write(write.OriginalBytes!, write.Path, write.UpdatedDigest);
                 }
                 else
                 {

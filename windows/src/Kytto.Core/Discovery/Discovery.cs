@@ -31,7 +31,9 @@ public sealed record DiscoveredClient(
     string ScopeLabel,
     string? ShortName = null,
     /// <summary>The client's tool cap, carried from its descriptor. Null when it has none.</summary>
-    ClientToolLimit? ToolLimit = null);
+    ClientToolLimit? ToolLimit = null,
+    /// <summary>A project file in a folder the user chose; see <see cref="ProjectFolder"/>.</summary>
+    bool IsRepositoryFile = false);
 
 public sealed record DiscoveryResult(
     IReadOnlyList<DiscoveredClient> Clients,
@@ -81,7 +83,8 @@ public sealed class Discovery
         IReadOnlyList<ParkedEntry>? parked = null,
         IReadOnlyDictionary<string, ServerMetadata>? metadata = null,
         IReadOnlyDictionary<string, string>? pathOverrides = null,
-        IReadOnlyList<CustomConfigSource>? customSources = null)
+        IReadOnlyList<CustomConfigSource>? customSources = null,
+        IReadOnlyList<ProjectFolder>? projectFolders = null)
     {
         _home = home;
         _locator = locator;
@@ -90,8 +93,14 @@ public sealed class Discovery
         _parked = parked ?? [];
         _metadata = metadata ?? new Dictionary<string, ServerMetadata>();
         _resolver = new ClientPathResolver(home, pathOverrides);
-        _customSources = customSources ?? [];
+        _projectFolders = projectFolders ?? [];
+        // Each project file is one more read-only source, after the ones the user
+        // attached by hand. Looked up now: a file committed since the last pass
+        // gets its column on this one.
+        _customSources = [.. customSources ?? [], .. _projectFolders.SelectMany(folder => ProjectFolders.Sources(folder))];
     }
+
+    private readonly IReadOnlyList<ProjectFolder> _projectFolders;
 
     /// <summary>Every file or installed-package tree whose contents Kytto reads.</summary>
     /// <remarks>
@@ -157,6 +166,11 @@ public sealed class Discovery
         foreach (var source in _customSources)
         {
             AddFile(source.Path);
+        }
+        // Including the files a folder does not have yet, so committing one shows it.
+        foreach (var path in _projectFolders.SelectMany(ProjectFolders.CandidatePaths))
+        {
+            AddFile(path);
         }
         return result.Values.OrderBy(target => target.Path, StringComparer.Ordinal).ToArray();
 
@@ -408,14 +422,18 @@ public sealed class Discovery
                 IsInstalled: true,
                 ConfigExists: outcome.SourceExists,
                 ConfigPathDisplay: source.Path,
-                ConfigFormatDisplay: "Auto-detected · read-only",
-                OffSwitchSummary: "This custom source is read-only. Kytto never changes its file.",
+                ConfigFormatDisplay: source.IsRepositoryFile ? "JSON · read-only" : "Auto-detected · read-only",
+                OffSwitchSummary: source.IsRepositoryFile
+                    ? "This repository file is read-only. Kytto never changes it."
+                    : "This custom source is read-only. Kytto never changes its file.",
                 ServerCount: outcome.Servers.Count,
-                SchemaQuirks: "Custom source: JSON/JSONC or TOML is auto-detected from its contents. " +
+                SchemaQuirks: source.Quirks ?? "Custom source: JSON/JSONC or TOML is auto-detected from its contents. " +
                     "Kytto discovers supported top-level server maps and never changes this file.",
                 IsReadOnly: true,
                 ConfigurationScope: source.Scope,
-                ScopeLabel: source.ScopeLabel ?? ""));
+                ScopeLabel: source.ScopeLabel ?? "",
+                ShortName: source.ShortName,
+                IsRepositoryFile: source.IsRepositoryFile));
         }
 
         // Bring back anything Kytto parked. It is not in a config file any more, but
@@ -486,6 +504,7 @@ public sealed class Discovery
             {
                 server.Health = metadata.Health;
                 server.LastPassingTools = metadata.KnownTools;
+                server.LastPassingCheckedAt = metadata.LastPassingCheckedAt;
                 server.TokenWeight = metadata.TokenWeight;
                 if (metadata.Provenance is { } provenance &&
                     string.Equals(provenance.SourceKind, server.Provenance.SourceKind, StringComparison.Ordinal) &&

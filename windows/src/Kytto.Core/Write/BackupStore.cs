@@ -57,11 +57,20 @@ public sealed class BackupStore(KyttoPaths paths, int retentionPerClient = Backu
     /// Copies a file aside and prunes anything past the retention limit. Null when
     /// there was nothing to back up yet.
     /// </summary>
-    public Backup? BackUp(string path, ClientId client, string pathDisplay)
+    public Backup? BackUp(string path, ClientId client, string pathDisplay) =>
+        BackUp(path, client, pathDisplay, snapshot: null);
+
+    /// <param name="snapshot">
+    /// The bytes to keep, when the caller has already read the file and is about to
+    /// act on exactly those bytes. The backup then describes what the edit started
+    /// from, not whatever the file held a moment later (AUD-02). Null reads the file
+    /// now.
+    /// </param>
+    public Backup? BackUp(string path, ClientId client, string pathDisplay, byte[]? snapshot)
     {
         lock (_lock)
         {
-            if (!File.Exists(path)) return null;
+            if (snapshot is null && !File.Exists(path)) return null;
 
             // Private before anything is written into it, and the whole chain rather
             // than the leaf: these copies hold every `env` block the config did, API
@@ -79,7 +88,7 @@ public sealed class BackupStore(KyttoPaths paths, int retentionPerClient = Backu
                 destination = Path.Combine(directory, name);
             }
 
-            var data = File.ReadAllBytes(path);
+            var data = snapshot ?? File.ReadAllBytes(path);
             AtomicWriter.Write(data, destination);
 
             // The path the backup came from is not recoverable from the file name once
@@ -247,14 +256,35 @@ public sealed class BackupStore(KyttoPaths paths, int retentionPerClient = Backu
         // pre-restore backup, no temporary file, no stream.
         var target = RestoreTarget(backup, resolver);
 
-        if (enforceExpected && Digest.OfFile(target) != expectedCurrentDigest)
+        // Read once: the check, the pre-restore backup and the final swap all describe
+        // these bytes (AUD-02).
+        var written = AtomicWriter.ResolvingLinks(target);
+        byte[]? current;
+        try
+        {
+            current = File.Exists(written) ? File.ReadAllBytes(written) : null;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            current = null;
+        }
+        var currentDigest = current is null ? null : Digest.Of(current);
+
+        if (enforceExpected && currentDigest != expectedCurrentDigest)
         {
             throw ConfigWriteException.ChangedOnDisk(backup.OriginalPathDisplay);
         }
 
         var data = File.ReadAllBytes(backup.Path);
-        BackUp(target, backup.ClientID, backup.OriginalPathDisplay);
-        AtomicWriter.Write(data, target, throughLinks: true);
+        if (current is not null) BackUp(target, backup.ClientID, backup.OriginalPathDisplay, current);
+        try
+        {
+            AtomicWriter.Write(data, target, throughLinks: true, new AtomicWriter.Precondition(currentDigest));
+        }
+        catch (TargetChangedException)
+        {
+            throw ConfigWriteException.ChangedOnDisk(backup.OriginalPathDisplay);
+        }
     }
 
     /// <summary>Keeps the newest <see cref="RetentionPerClient"/> backups of each file.</summary>

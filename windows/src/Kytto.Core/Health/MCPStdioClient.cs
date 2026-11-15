@@ -199,7 +199,7 @@ public sealed class McpStdioClient
     {
         try
         {
-            session.Process.WriteLine(Request(DiscoverId, "server/discover", null, modern: true));
+            session.Process.WriteLine(Request(DiscoverId, "server/discover", null, modern: true), deadline);
         }
         catch (Exception error) when (IsClosedPipe(error))
         {
@@ -273,7 +273,7 @@ public sealed class McpStdioClient
                 ["protocolVersion"] = version,
                 ["capabilities"] = new Dictionary<string, object?>(),
                 ["clientInfo"] = ClientInfo,
-            }, modern: false));
+            }, modern: false), deadline);
             var reply = Read(1, session, deadline);
             if (reply.Result is { } document)
             {
@@ -293,7 +293,7 @@ public sealed class McpStdioClient
             throw McpException.ServerError(reply.Code, reply.Message);
         }
 
-        session.Process.WriteLine("""{"jsonrpc":"2.0","method":"notifications/initialized"}""");
+        session.Process.WriteLine("""{"jsonrpc":"2.0","method":"notifications/initialized"}""", deadline);
         return Listing(
             CapabilityNames(initialize),
             initialize.ValueAt("result", "serverInfo", "name")?.StringValue,
@@ -387,11 +387,15 @@ public sealed class McpStdioClient
                 if (root.Member("id") is { Value.IsNull: false } requestId)
                 {
                     var echoed = document.Slice(requestId.Value.Span);
+                    // A server that stopped reading cannot hold this write past the
+                    // check's deadline (AUD-04); one that closed its input is still
+                    // read to the end.
                     try
                     {
                         session.Process.WriteLine(
                             "{\"jsonrpc\":\"2.0\",\"id\":" + echoed +
-                            ",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}");
+                            ",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}",
+                            deadline);
                     }
                     catch (Exception closed) when (IsClosedPipe(closed))
                     {
@@ -417,7 +421,7 @@ public sealed class McpStdioClient
             {
                 return new Reply(
                     null,
-                    (int)(error["code"]?.NumberValue ?? 0),
+                    McpHttpClient.ErrorCode(error, McpException.Protocol),
                     error["message"]?.StringValue ?? "no message",
                     error.ValueAt("data", "supported")?.Elements?
                         .Select(element => element.StringValue).OfType<string>().ToArray() ?? []);
@@ -454,7 +458,7 @@ public sealed class McpStdioClient
         IReadOnlyList<JsonDocument> pages = [];
         try
         {
-            session.Process.WriteLine(Request(2, "tools/list", null, modern));
+            session.Process.WriteLine(Request(2, "tools/list", null, modern), deadline);
             var first = ReadResponse(2, session, deadline);
             pages = MorePages(first, modern, session, deadline, notes);
         }
@@ -508,7 +512,7 @@ public sealed class McpStdioClient
             var id = 100 + pages.Count;
             try
             {
-                session.Process.WriteLine(Request(id, "tools/list", new Dictionary<string, object?> { ["cursor"] = cursor }, modern));
+                session.Process.WriteLine(Request(id, "tools/list", new Dictionary<string, object?> { ["cursor"] = cursor }, modern), deadline);
                 var page = ReadResponse(id, session, deadline);
                 if (page.ValueAt("result", "tools")?.Elements is null)
                 {
@@ -540,7 +544,7 @@ public sealed class McpStdioClient
     {
         try
         {
-            session.Process.WriteLine(Request(id, $"{kind}/list", null, modern));
+            session.Process.WriteLine(Request(id, $"{kind}/list", null, modern), deadline);
             var response = ReadResponse(id, session, deadline);
             var result = response.ValueAt("result");
             var count = result?[kind]?.Elements?.Count;

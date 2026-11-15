@@ -29,7 +29,10 @@ internal sealed partial class AppModel
         pathOverrides: Settings.ClientPathOverrides,
         // A file the user attached for reading is theirs, and an export is not allowed
         // to land on it any more than on a live client config.
-        additionalProtectedPaths: Settings.CustomConfigSources.Select(source => source.Path).ToArray(),
+        // The same for a repository file in a project folder.
+        additionalProtectedPaths: Settings.CustomConfigSources.Select(source => source.Path)
+            .Concat(Settings.ProjectFolders.SelectMany(ProjectFolders.CandidatePaths))
+            .ToArray(),
         // What the matrix shows a client under each name, plugins and extensions included:
         // a config entry beside one of those would shadow it (§4).
         existingServers: () => _current.Servers);
@@ -85,14 +88,17 @@ internal sealed partial class AppModel
     /// </summary>
     /// <summary>
     /// Whether a settings change moves where Kytto reads or watches clients from: a path
-    /// override or a custom source. Only those need discovery run again (audit W-07).
+    /// override, a custom source or a project folder. Only those need discovery run again
+    /// (audit W-07).
     /// </summary>
     private static bool ReadTargetsChanged(KyttoSettings previous, KyttoSettings updated)
     {
         var sameOverrides = previous.ClientPathOverrides.Count == updated.ClientPathOverrides.Count &&
             previous.ClientPathOverrides.All(pair =>
                 updated.ClientPathOverrides.TryGetValue(pair.Key, out var path) && path == pair.Value);
-        return !sameOverrides || !previous.CustomConfigSources.SequenceEqual(updated.CustomConfigSources);
+        return !sameOverrides ||
+               !previous.CustomConfigSources.SequenceEqual(updated.CustomConfigSources) ||
+               !previous.ProjectFolders.SequenceEqual(updated.ProjectFolders);
     }
 
     private void ResetPortableSetupIfReconfigured(KyttoSettings previous, KyttoSettings updated)

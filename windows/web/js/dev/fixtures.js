@@ -20,6 +20,8 @@ const UNDETECTED_CLIENT =
   typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('undetected');
 
 const CUSTOM_SOURCE_ID = 'custom.1f0d32d9-88e7-40b8-9b8e-2f38edc4a7d1';
+// A folder the user chose in Settings → Project folders (roadmap §12).
+const REPOSITORY_SOURCE_ID = 'custom.8c1e6f0a-3b4d-5e2f-9a7b-6c5d4e3f2a1b';
 const CLAUDE_PROJECTS = [
   ['custom.4359a513-6f21-4e56-8a9f-0b269c376b65', 'api', 'C:\\Users\\you\\source\\repos\\api'],
   ['custom.a5a0c75b-717d-4ef3-b1fb-9bb75ea23a4c', 'docs', 'C:\\Users\\you\\source\\repos\\docs'],
@@ -80,6 +82,7 @@ const CLIENTS = [
   },
   {
     id: 'claudeCode',
+    toolLoading: { mode: 'deferred', note: 'Claude Code defers MCP tools behind tool search by default, so a session starts with tool names and loads a full definition when the model searches for it.' },
     displayName: 'Claude Code',
     iconAsset: 'client-claude-code',
     state: 'ready',
@@ -118,6 +121,7 @@ const CLIENTS = [
   },
   {
     id: 'codex',
+    toolLoading: { mode: 'deferred', note: 'Codex defers MCP tools behind tool search where the model supports it. With a model that does not, every definition loads.' },
     displayName: 'Codex',
     iconAsset: 'client-codex',
     state: 'ready',
@@ -144,9 +148,30 @@ const CLIENTS = [
     scopeLabel: 'Demo project',
   },
   ...CLAUDE_PROJECTS,
+  // The repository's own `.cursor/mcp.json`, read-only, the way a committed file
+  // arrives with a clone.
+  {
+    id: REPOSITORY_SOURCE_ID,
+    displayName: 'shop · .cursor/mcp.json',
+    shortName: '.cursor/mcp.json',
+    iconAsset: 'client-custom',
+    state: 'ready',
+    isReadOnly: true,
+    isRepositoryFile: true,
+    configurationScope: 'workspace',
+    scopeLabel: 'shop',
+    configPathDisplay: 'C:\\Users\\you\\source\\repos\\shop\\.cursor\\mcp.json',
+    configFormatDisplay: 'JSON · read-only',
+    offSwitchSummary: 'This repository file is read-only. Kytto never changes it.',
+    serverCount: 1,
+    schemaQuirks:
+      'A repository file in shop, read by Cursor when that folder is open. Kytto only reads it and never writes to it. A server found only here is left out of Check all: a check starts the server\u2019s command on this computer, so it runs only when you ask.',
+  },
 ].map((client) => ({
   shortName: null,
   isReadOnly: false,
+  isRepositoryFile: false,
+  toolLoading: { mode: 'unknown', note: null },
   configurationScope: 'global',
   scopeLabel: null,
   ...client,
@@ -168,6 +193,7 @@ const server = (name, overrides = {}) => ({
     vsCode: 'absent',
     codex: 'absent',
     [CUSTOM_SOURCE_ID]: 'absent',
+    [REPOSITORY_SOURCE_ID]: 'absent',
     ...Object.fromEntries(CLAUDE_PROJECTS.map((project) => [project.id, 'absent'])),
   },
   originKind: 'extension',
@@ -175,6 +201,10 @@ const server = (name, overrides = {}) => ({
   hasRelativePath: false,
   health: null,
   tokenWeight: null,
+  // Native counts each tool name with cl100k; a name is a few tokens.
+  toolNameTokens: (overrides.health?.tools ?? []).length
+    ? overrides.health.tools.reduce((sum, tool) => sum + Math.max(1, Math.ceil(tool.name.length / 3)), 0)
+    : null,
   ...overrides,
   // What native reports for provenance. Spelled like the wire: `kind` is one of
   // config | custom | extension | plugin (§7.1.1).
@@ -300,6 +330,10 @@ const world = {
       changes: [
         {
           kind: 'descriptionChanged', severity: 'warning', toolName: 'read_file', summary: 'Model-facing description changed',
+          compatibility: 'compatible',
+          compatibilityReason: 'Wording does not change which arguments a call accepts.',
+          security: 'review',
+          securityReason: 'The model reads this text as instructions. A changed description is not malicious by itself; check that it still only describes the tool.',
           details: [{
             path: 'description',
             before: 'Read the contents of a file.',
@@ -308,8 +342,12 @@ const world = {
           }],
         },
         {
-          kind: 'inputSchemaChanged', severity: 'breaking', toolName: 'write_file',
-          summary: 'Input schema changed — review compatibility and safeguards',
+          kind: 'inputSchemaChanged', severity: 'warning', toolName: 'write_file',
+          summary: 'Input schema changed — compatibility unknown',
+          compatibility: 'unknown',
+          compatibilityReason: 'The default of “dry_run” changed: calls that leave it out now behave differently.',
+          security: 'review',
+          securityReason: 'A confirmation or dry-run field changed (“confirm”, “dry_run”). That can change how the model asks for a guarded action; Kytto cannot see whether the server still enforces it.',
           details: [
             {
               path: 'inputSchema/properties/dry_run/default',
@@ -324,6 +362,21 @@ const world = {
               explanation: 'A confirmation or dry-run field changed. This may alter how the model requests a guarded action; verify the server\'s actual enforcement.',
             },
           ],
+        },
+        {
+          kind: 'inputSchemaChanged', severity: 'warning', toolName: 'search_files',
+          summary: 'Input schema changed — existing calls still fit',
+          compatibility: 'compatible',
+          compatibilityReason: 'Only optional arguments were added; existing calls still fit.',
+          security: 'review',
+          securityReason: 'New argument “uploadUrl” may ask the model for files, credentials or a place to send data.',
+          details: [{ path: 'inputSchema/properties/uploadUrl', before: null, after: '{"type":"string"}', explanation: null }],
+        },
+        {
+          kind: 'toolRemoved', severity: 'breaking', toolName: 'move_file', summary: 'Tool removed',
+          compatibility: 'breaking',
+          compatibilityReason: 'Anything that calls this tool will now fail.',
+          security: 'none',
         },
       ],
     },
@@ -369,6 +422,13 @@ const world = {
     { id: 'fixture-minimal', name: 'Minimal', serverIDs: [], tokenBudget: null },
   ],
   servers: [
+    // Only in a repository file: nothing outside the project vouches for it.
+    server('repo-helper', {
+      originKind: 'configFile',
+      isBundled: false,
+      commandSummary: 'npx -y mcp-repo-helper',
+      enabledIn: { claudeDesktop: 'absent', claudeCode: 'absent', cursor: 'absent', vsCode: 'absent', codex: 'absent', [REPOSITORY_SOURCE_ID]: 'enabled' },
+    }),
     server('Affinity', {
       enabledIn: { claudeDesktop: 'enabled', claudeCode: 'absent', cursor: 'absent', vsCode: 'absent', codex: 'absent' },
     }),
@@ -1599,6 +1659,9 @@ const HANDLERS = {
 
   'health.checkAll': () => {
     for (const entry of world.servers) {
+      // Native leaves a server found only in a repository file out (roadmap §12).
+      const configured = Object.entries(entry.enabledIn).filter(([, value]) => value !== 'absent').map(([id]) => id);
+      if (configured.length > 0 && configured.every((id) => id === REPOSITORY_SOURCE_ID)) continue;
       if (entry.transport === 'http') {
         remoteCheck(entry);
         continue;

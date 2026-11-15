@@ -164,6 +164,9 @@ public static class ClientRegistry
                 Darwin: "~/.claude/settings.json",
                 Windows: @"%USERPROFILE%\.claude\settings.json"),
             Path: ["permissions", "deny"]),
+        ToolLoading = ToolLoading.Deferred(
+            "Claude Code defers MCP tools behind tool search by default, so a session starts with tool " +
+            "names and loads a full definition when the model searches for it."),
     };
 
     // MARK: - Cursor
@@ -299,6 +302,9 @@ public static class ClientRegistry
         ToolLimit: null)
     {
         ToolSwitch = new ToolSwitch.EntryLists(Deny: "disabled_tools", Allow: "enabled_tools"),
+        ToolLoading = ToolLoading.Deferred(
+            "Codex defers MCP tools behind tool search where the model supports it. With a model that " +
+            "does not, every definition loads."),
     };
 
     // MARK: - Google Antigravity

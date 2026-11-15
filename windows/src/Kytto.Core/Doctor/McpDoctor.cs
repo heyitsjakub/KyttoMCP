@@ -1,3 +1,4 @@
+using System.Globalization;
 using Kytto.Core.Clients;
 using Kytto.Core.Health;
 using Kytto.Core.Model;
@@ -209,7 +210,7 @@ public static class McpDoctor
         // instruction in a description — every other check in this file would call
         // that healthy (§7.10). The last passing contract, not this check's: a failed
         // check lists no tools, and failing must not be a way to make a finding go away.
-        findings.AddRange(ToolSafetyScanner.Scan(server.KnownTools).Select(Finding));
+        findings.AddRange(ToolSafetyFindings(server));
         findings.AddRange(DeprecatedFeatureFindings(health));
 
         if (health.Status == HealthStatus.Passed &&
@@ -288,8 +289,30 @@ public static class McpDoctor
         }
 
         findings.AddRange(DeprecatedFeatureFindings(server.Health));
-        findings.AddRange(ToolSafetyScanner.Scan(server.KnownTools).Select(Finding));
+        findings.AddRange(ToolSafetyFindings(server));
         return findings;
+    }
+
+    /// <summary>Tool Safety findings for the contract Kytto last saw.</summary>
+    /// <remarks>
+    /// After a failed check that is the last <em>passing</em> check's contract — a
+    /// failure must not hide a finding — and the finding says so, with the date where
+    /// it is recorded. Otherwise an old finding reads as something the check that just
+    /// failed found (roadmap §20).
+    /// </remarks>
+    internal static IReadOnlyList<DoctorFinding> ToolSafetyFindings(Server server)
+    {
+        var findings = ToolSafetyScanner.Scan(server.KnownTools).Select(Finding).ToArray();
+        if (server.Health is not { } health || health.Status == HealthStatus.Passed || findings.Length == 0)
+        {
+            return findings;
+        }
+        var when = server.LastPassingCheckedAt is { } checkedAt
+            ? $"the last passing check ({checkedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)})"
+            : "an earlier passing check";
+        var note = $" This finding comes from {when}. The latest check did not pass, so the tools were " +
+                   "not read again; they are what the server last offered.";
+        return findings.Select(finding => finding with { Detail = finding.Detail + note }).ToArray();
     }
 
     /// <summary>Features the 2026-07-28 revision deprecates, seen during the last check.</summary>
@@ -386,6 +409,7 @@ public static class McpDoctor
         ToolRiskKind.InstructionOverride => "the description instructs the model",
         ToolRiskKind.ImpersonatedAuthority => "the description imitates a system message",
         ToolRiskKind.CredentialInterest => "a read-only tool names credential material",
+        ToolRiskKind.ConsentBypass => "the description tells the model not to ask you",
         _ => "the tool name is claimed by another server",
     };
 

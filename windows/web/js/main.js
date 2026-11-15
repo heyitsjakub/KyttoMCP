@@ -13,6 +13,7 @@ import {
   matrixUndoPlan,
   clientNames,
   visibleServers,
+  isRepositoryOnly,
   setToolOpen,
 } from './state.js';
 import { render as renderMatrix, restartableClientIds } from './screens/matrix.js';
@@ -1816,8 +1817,20 @@ async function checkAll() {
 /// stops looking at anything that is not on it.
 async function checkVisible() {
   if (getState().healthProgress || getState().checking.size > 0) return;
-  const servers = visibleServers().map((server) => ({ id: server.id, name: server.name }));
-  if (servers.length === 0) return;
+  const visible = visibleServers();
+  // Like Check all, a batch never starts a server only a repository file names
+  // (roadmap §12); its own Check now still does.
+  const servers = visible
+    .filter((server) => !isRepositoryOnly(server))
+    .map((server) => ({ id: server.id, name: server.name }));
+  const repositoryOnly = visible.length - servers.length;
+  const leftOut = repositoryOnly === 0
+    ? null
+    : `${repositoryOnly} found only in a repository file ${repositoryOnly === 1 ? 'was' : 'were'} left out; check ${repositoryOnly === 1 ? 'it' : 'them'} from ${repositoryOnly === 1 ? 'its' : 'their'} own page.`;
+  if (servers.length === 0) {
+    if (leftOut) setState({ notice: { kind: 'info', message: `Nothing was checked. ${leftOut}` } });
+    return;
+  }
 
   const alertsBefore = contractAlertKeys();
   const failed = [];
@@ -1837,6 +1850,7 @@ async function checkVisible() {
       }
     }
     const messages = [`Checked ${servers.length} visible server${servers.length === 1 ? '' : 's'}.`];
+    if (leftOut) messages.push(leftOut);
     if (failed.length > 0) messages.push(`${failed.length} failed; open their details for the reason.`);
     if (waiting.length > 0) messages.push(`${waiting.length} ${waiting.length === 1 ? 'requires' : 'require'} sign-in.`);
     const contract = contractNotice(newContractAlerts(alertsBefore));
@@ -2370,6 +2384,9 @@ root.addEventListener('click', async (event) => {
     case 'draft-arg-remove':
       updateDraft({ args: sheet.draft.args.filter((_, i) => i !== Number(target.dataset.index)) });
       break;
+    case 'draft-arg-trim':
+      updateDraft({ args: sheet.draft.args.map((arg, i) => (i === Number(target.dataset.index) ? arg.trim() : arg)) });
+      break;
     case 'draft-env-add':
       updateDraft({ env: [...sheet.draft.env, { key: '', value: '' }] });
       break;
@@ -2446,8 +2463,10 @@ root.addEventListener('input', (event) => {
       break;
     case 'draft-arg': {
       const args = [...sheet.draft.args];
-      args[Number(event.target.dataset.index)] = value;
-      updateDraft({ args });
+      const index = Number(event.target.dataset.index);
+      args[index] = value;
+      // Marked as being typed in, so a stray-space hint waits for `change`.
+      updateSheet({ draft: { ...sheet.draft, args }, errors: [], editingArg: index });
       break;
     }
     case 'draft-env-key': {
@@ -2478,11 +2497,33 @@ root.addEventListener('input', (event) => {
   }
 });
 
+// Leaving an argument field is when a stray space around it is shown. Neither
+// event says so on its own here: every keystroke re-renders the form, the browser
+// fires `change` on the input that render removed, and focus moves to a fresh
+// input that may then be left without any `change` at all. So both events only
+// schedule a look, after the render, at where focus actually is.
+function leaveArgumentFieldLater(index) {
+  window.setTimeout(() => {
+    const sheet = getState().sheet;
+    if (sheet?.editingArg === undefined || sheet?.editingArg === null) return;
+    const active = document.activeElement;
+    if (active?.dataset?.action === 'draft-arg' && active.dataset.index === index) return;
+    updateSheet({ editingArg: null });
+  }, 0);
+}
+
+root.addEventListener('focusout', (event) => {
+  if (event.target.dataset?.action === 'draft-arg') leaveArgumentFieldLater(event.target.dataset.index);
+});
+
 root.addEventListener('change', (event) => {
   const sheet = getState().sheet;
   // The matrix filters are `<select>`s: the page reacts to the committed value,
   // after the native menu has closed, never to keystrokes inside it (§10.1).
-  if (event.target.dataset.action === 'scope-filter') {
+  if (event.target.dataset.action === 'draft-arg' && sheet?.draft) {
+    // Typing stays quiet so a space on the way to `--port` is not flagged mid-word.
+    leaveArgumentFieldLater(event.target.dataset.index);
+  } else if (event.target.dataset.action === 'scope-filter') {
     setState({ scopeFilter: event.target.value });
   } else if (event.target.dataset.action === 'source-filter') {
     setState({ sourceFilter: event.target.value });
