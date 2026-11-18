@@ -19,9 +19,11 @@ being true.
 
 `docs/ipc.md` is the web↔native contract. It was written for the macOS app first
 and this port reimplements it, so it is meant to state intent that holds on both
-platforms. **If Windows ever needs the web layer changed, something in that doc
-described an implementation instead of an intent — that is worth finding rather
-than patching (§3.2).**
+platforms. The web layer is shared, so where the two backends answer a command
+in a different shape the translation lives in `../web/js/compat.js`.
+**If Windows ever needs the web layer changed in another way, something in that
+doc described an implementation instead of an intent — that is worth finding
+rather than patching (§3.2).**
 
 ## Commands
 
@@ -29,7 +31,7 @@ than patching (§3.2).**
 dotnet build                                  # solution is KyttoMCP.slnx
 dotnet test                                   # the safety net
 dotnet test tests/Kytto.Core.Tests --filter 'FullyQualifiedName~TomlRoundTrip'
-cd web && npm test                            # web-layer tests (Node's built-in runner)
+cd ../web && npm test                         # web-layer tests (Node's built-in runner)
 
 src/Kytto.App/bin/Debug/net10.0-windows/Kytto.exe
 ```
@@ -37,7 +39,7 @@ src/Kytto.App/bin/Debug/net10.0-windows/Kytto.exe
 The app holds `Kytto.exe` open, so `Stop-Process -Name Kytto` before rebuilding.
 
 In a Debug build `WebHost.WebRoot()` walks up from the binary and prefers the
-repository's own `web/`, so editing CSS or JS and reloading needs no rebuild.
+repository's own `web/` (the one shared with macOS), so editing CSS or JS and reloading needs no rebuild.
 
 ## Architecture
 
@@ -53,16 +55,16 @@ src/Kytto.Core/    Everything that is not UI: parsing, the client registry,
                    and so "no WPF in here" stays mechanical rather than remembered.
 src/Kytto.Gateway/ kytto-mcp-proxy.exe, the optional stdio gateway helper
                    (docs/gateway.md).
-web/               Vanilla HTML/CSS/JS, ES modules, no build step. Ported from
-                   the macOS app's web layer; the two have since diverged, so
-                   treat this copy as its own code.
+../web/            Vanilla HTML/CSS/JS, ES modules, no build step. Shared with
+                   the macOS app: a change here reaches both, so read
+                   ../web/README.md first.
 docs/design.md     Scope and design; what the `§` references in code point at.
 docs/ipc.md        The web↔native contract. Every command has a row here.
 ```
 
 ### The IPC boundary
 
-`src/Kytto.App/Ipc/CommandRouter.cs` is the only channel; `web/js/ipc.js` is the
+`src/Kytto.App/Ipc/CommandRouter.cs` is the only channel; `../web/js/ipc.js` is the
 only door on the other side. Rules that are load-bearing rather than stylistic:
 
 - Commands describe **intent**, not implementation (`secrets.store`, never
@@ -86,7 +88,7 @@ wrong key does not throw — the UI reads `undefined` and renders a blank cell �
 
 Everything else is a translation. These two are decisions:
 
-- **`web/css/app.css` declares `app-region: drag` on `.drag-strip`**, which the
+- **`../web/css/app.css` declares `app-region: drag` on `.drag-strip`**, which the
   macOS build does not need. WPF's WebView2 is an `HwndHost`, so nothing WPF draws
   can sit above it — the page has to declare where the caption area is, or the
   window stops being draggable. WebKit ignores the declaration. The caption
@@ -152,12 +154,12 @@ against is a TOML table spliced into a JSON file.
 
 ### The web layer
 
-Read `web/README.md` — it carries the house rules and they are enforced by review,
+Read `../web/README.md` — it carries the house rules and they are enforced by review,
 not by tooling. The short version: one state object, one `setState`, one render;
 never mutate the DOM from a handler; never read state back out of the DOM; never
 `innerHTML` with data from a config file; one delegated listener per event type.
 
-`web/dev.html` runs the entire UI against `js/dev/fixtures.js` with no native code.
+`../web/dev.html` runs the entire UI against `js/dev/fixtures.js` with no native code.
 **Anything that works in `index.html` but not in `dev.html` has reached around
 `ipc.js`, and that is a bug.**
 

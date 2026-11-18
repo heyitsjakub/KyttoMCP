@@ -48,7 +48,7 @@
 		AC1F9E49301BD38700EA50D4 /* KyttoMCP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KyttoMCP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AC1F9E56301BD38800EA50D4 /* KyttoMCPTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KyttoMCPTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AC1F9E60301BD38800EA50D4 /* KyttoMCPUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KyttoMCPUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		AC1F9E80301BD38800EA50D4 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; path = web; sourceTree = "<group>"; };
+		AC1F9E80301BD38800EA50D4 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; name = web; path = ../web; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */

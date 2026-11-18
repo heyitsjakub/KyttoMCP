@@ -9,6 +9,13 @@ without a backup.
 
 ## [Unreleased]
 
+**Both platforms**
+
+- The macOS and Windows apps now load one shared web UI (`web/`). On macOS this
+  brings the Windows interface's accessibility work, the read-only custom sources,
+  Contract Guard details and remote sign-in; the update banner now shows download
+  progress on both.
+
 ## [1.0.9.5] — 2026-11-14
 
 Fixes from a security and reliability audit, and the requests that came up most

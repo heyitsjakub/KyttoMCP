@@ -81,7 +81,7 @@
     dev.html and its fixtures are the browser harness and stay out of the app.
   -->
   <ItemGroup>
-    <Content Include="..\..\web\**\*" Exclude="..\..\web\dev.html;..\..\web\js\dev\**;..\..\web\README.md">
+    <Content Include="..\..\..\web\**\*" Exclude="..\..\..\web\dev.html;..\..\..\web\js\dev\**;..\..\..\web\README.md">
       <Link>web\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

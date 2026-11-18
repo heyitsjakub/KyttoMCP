@@ -18,8 +18,10 @@ cd macos/KyttoCore && swift test     # macOS, Xcode 16+
 cd windows && dotnet test            # Windows, .NET 10 SDK
 ```
 
-The two web layers share an origin but have diverged, so a UI change on one
-platform does not carry over to the other automatically.
+Both apps load the same web UI from [`web/`](web), so a UI change reaches macOS
+and Windows together. Run `cd web && npm test`, and check it against the backend
+you can run; where the two backends answer a command differently,
+`web/js/compat.js` is the one place that translates.
 
 ## House rules
 

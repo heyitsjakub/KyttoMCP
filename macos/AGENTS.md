@@ -4,7 +4,7 @@
 
 Kytto MCP is a macOS control panel for MCP server configurations. `KyttoMCP/` is the SwiftUI/AppKit shell: menus, window chrome, `WKWebView`, and the IPC router. Keep configuration, discovery, writing, health checks, client definitions, and secrets in the SwiftPM library under `KyttoCore/Sources/KyttoCore/`; it must remain independent of AppKit.
 
-`web/` is a vanilla HTML/CSS/JavaScript ES-module UI with no build step. `web/js/ipc.js` is its only native boundary; add each command to `docs/ipc.md` in the same change. Put screen renderers in `web/js/screens/`, shared DOM helpers in `web/js/dom.js`, and styles in `web/css/app.css`. `README.md` is the product and design source of truth; preserve its section-reference convention (`§6.3`) in code comments.
+`../web/` (shared with the Windows app) is a vanilla HTML/CSS/JavaScript ES-module UI with no build step. `web/js/ipc.js` is its only native boundary; add each command to `docs/ipc.md` in the same change. Put screen renderers in `web/js/screens/`, shared DOM helpers in `web/js/dom.js`, and styles in `web/css/app.css`. `README.md` is the product and design source of truth; preserve its section-reference convention (`§6.3`) in code comments.
 
 ## Build, Test & Development
 
@@ -23,7 +23,7 @@ xcodebuild -project KyttoMCP.xcodeproj -scheme KyttoMCP \
   -configuration Debug -destination 'platform=macOS' build
 ```
 
-For UI-only work, use `cd web && python3 -m http.server 8765`, then open `http://localhost:8765/dev.html`. Do not use `file://`: ES modules require the static server. The Xcode project treats `web/` as a folder reference, so new web files bundle automatically.
+For UI-only work, use `cd ../web && python3 -m http.server 8765`, then open `http://localhost:8765/dev.html`. Do not use `file://`: ES modules require the static server. The Xcode project treats `web/` as a folder reference, so new web files bundle automatically.
 
 ## Style & Safety Rules
 

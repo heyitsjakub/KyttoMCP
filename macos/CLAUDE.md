@@ -30,14 +30,15 @@ xcodebuild -project KyttoMCP.xcodeproj -scheme KyttoMCP -configuration Debug \
   -destination 'platform=macOS' build
 
 # The web UI against fixtures, with no native code at all.
-cd web && python3 -m http.server 8765   # then open http://localhost:8765/dev.html
+cd ../web && python3 -m http.server 8765   # then open http://localhost:8765/dev.html
 ```
 
 A static server is required for `dev.html`: browsers treat every `file://`
 document as an opaque origin and refuse to load ES modules across one.
 
-`web/` is a **folder reference** in the Xcode project, so new files under it are
-bundled automatically — no project edit needed.
+`../web/` (shared with the Windows app) is a **folder reference** in the Xcode
+project, so new files under it are bundled automatically — no project edit
+needed.
 
 ## Architecture
 
@@ -51,13 +52,14 @@ KyttoMCP/          AppKit + SwiftUI shell. Window, menus, menu bar item,
 KyttoCore/         Everything that is not UI: parsing, the client registry,
                    discovery, the write pipeline, health checks, secrets.
                    A separate SwiftPM package so the risky tests run fast.
-web/               Vanilla HTML/CSS/JS, ES modules, no build step.
+../web/            Vanilla HTML/CSS/JS, ES modules, no build step. Shared with
+                   the Windows app: read ../web/README.md before changing it.
 docs/ipc.md        The web↔native contract. Every command has a row here.
 ```
 
 ### The IPC boundary
 
-`KyttoMCP/IPC/CommandRouter.swift` is the only channel. `web/js/ipc.js` is the
+`KyttoMCP/IPC/CommandRouter.swift` is the only channel. `../web/js/ipc.js` is the
 only door on the other side. Rules that are load-bearing rather than stylistic:
 
 - Commands describe **intent**, not implementation (`secrets.store`, never
@@ -131,13 +133,13 @@ guards against is a TOML table spliced into a JSON file.
 
 ### The web layer
 
-Read `web/README.md` — it carries the house rules and they are enforced by
+Read `../web/README.md` — it carries the house rules and they are enforced by
 review, not by tooling. The short version: one state object, one `setState`, one
 render; never mutate the DOM from a handler; never read state back out of the
 DOM; never `innerHTML` with data from a config file; one delegated listener per
 event type.
 
-`web/dev.html` runs the entire UI against `js/dev/fixtures.js` with no native
+`../web/dev.html` runs the entire UI against `js/dev/fixtures.js` with no native
 code. It stands in for the throwaway Windows shell §3.2 asks for. **Anything that
 works in `index.html` but not in `dev.html` has reached around `ipc.js`, and that
 is a bug.** Keep the fixtures honest — they model states that actually occur
@@ -161,7 +163,7 @@ its accessibility tree and can click through a flow in the background:
   `get_window_state` for the screenshot and the tree, and `run_steps` to click
   through a flow. Point it at an isolated home (`KYTTO_TEST_HOME=<scratch dir>`)
   whenever a step could write, so no real client config is touched.
-- **The web harness:** `cd web && python3 -m http.server 8765`, open
+- **The web harness:** `cd ../web && python3 -m http.server 8765`, open
   `http://localhost:8765/dev.html` in a browser with `launch_app` (`urls`), and
   read and press its buttons through the accessibility tree
   (`get_window_state` with `query`, then `run_steps` with the element token).

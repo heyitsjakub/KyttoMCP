@@ -10,7 +10,7 @@ must not reference WPF. `src/Kytto.Gateway/` builds `kytto-mcp-proxy.exe`, the
 optional stdio gateway helper described in `docs/gateway.md`.
 
 `web/` is a vanilla HTML/CSS/JavaScript ES-module UI with no build step,
-originally ported from the macOS app's web layer. `web/js/ipc.js` is its only
+shared with the macOS app (`../web/`). `web/js/ipc.js` is its only
 native boundary; add each command to `docs/ipc.md` in the same change. Put screen
 renderers in `web/js/screens/`, shared DOM helpers in `web/js/dom.js`, and styles
 in `web/css/app.css`. `docs/design.md` is the product and design source of truth;
@@ -23,7 +23,7 @@ renumber its sections.
 dotnet build
 dotnet test
 dotnet test tests/Kytto.Core.Tests --filter 'FullyQualifiedName~TomlRoundTrip'
-cd web && npm test
+cd ../web && npm test
 ```
 
 `Stop-Process -Name Kytto` before rebuilding — a running app holds the exe open.

@@ -180,7 +180,7 @@ git clone https://github.com/heyitsjakub/KyttoMCP.git
 cd KyttoMCP/windows
 dotnet build                                   # solution: KyttoMCP.slnx
 dotnet test
-cd web && npm test                             # web-layer tests
+cd ../web && npm test                          # web-layer tests
 
 src/Kytto.App/bin/Debug/net10.0-windows/Kytto.exe
 ```
@@ -200,7 +200,7 @@ src/Kytto.App/       WPF + WebView2 shell: window, tray item, settings, IPC rout
 src/Kytto.Core/      Everything that is not UI: parsing, client registry, discovery,
                      the write pipeline, health checks, secrets, updates
 src/Kytto.Gateway/   kytto-mcp-proxy.exe, the optional stdio gateway helper
-web/                 The UI: vanilla HTML/CSS/JS, ES modules, no build step
+../web/                The UI, shared with the macOS app: vanilla HTML/CSS/JS, no build step
 tests/               xUnit tests for Kytto.Core and Kytto.App
 scripts/             Release script and installer definition
 docs/                Design document, IPC contract, gateway, release process, release notes
@@ -224,9 +224,8 @@ docs/                Design document, IPC contract, gateway, release process, re
 
 Kytto started as a macOS app (Swift + WKWebView); this folder is the Windows
 port, built against the same design document and the same IPC contract. The
-macOS app lives next to it in [`../macos`](../macos). The web layers of the two
-builds share their origin but have since diverged; bringing them back to one
-shared `web/` is welcome work. Releases, the changelog and the issue tracker are
+macOS app lives next to it in [`../macos`](../macos). Both apps load the same
+web UI from [`../web`](../web). Releases, the changelog and the issue tracker are
 at the [repository root](../README.md).
 
 ## License

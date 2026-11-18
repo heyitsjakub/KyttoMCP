@@ -55,7 +55,7 @@ account at all, `scripts/make-dmg.sh` builds the Release app ad-hoc signed
 The web UI can also run in a browser against fixtures, with no native code at all:
 
 ```sh
-cd web && python3 -m http.server 8765
+cd ../web && python3 -m http.server 8765
 # open http://localhost:8765/dev.html
 ```
 
@@ -73,7 +73,7 @@ xcodebuild -project KyttoMCP.xcodeproj -scheme KyttoMCP \
   -destination 'platform=macOS' test
 
 # Web UI contract tests.
-node --test web/js/dev/ui-contract.test.js
+node --test ../web/js/dev/ui-contract.test.js
 ```
 
 ## Project layout
@@ -84,8 +84,8 @@ KyttoMCP/          AppKit + SwiftUI shell: window, menus, menu bar item,
 KyttoCore/         SwiftPM package with everything that is not UI: parsing,
                    the client registry, discovery, the write pipeline, health
                    checks, secrets, and the kytto-mcp-proxy gateway helper.
-web/               The UI — vanilla HTML/CSS/JS, ES modules, no build step.
-                   House rules in web/README.md.
+../web/            The UI, shared with the Windows app — vanilla HTML/CSS/JS,
+                   ES modules, no build step. House rules in ../web/README.md.
 KyttoMCPTests/     App tests (Swift Testing).
 KyttoMCPUITests/   UI automation (XCTest).
 docs/ipc.md        The web ↔ native contract. Every command has an entry.

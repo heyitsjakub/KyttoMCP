@@ -45,7 +45,7 @@ public sealed class SupportLinksTests
     [Fact]
     public void TheWebLayerSpellsTheSameTwoAddresses()
     {
-        var script = File.ReadAllText(Path.Combine(RepositoryRoot(), "web", "js", "support.js"));
+        var script = File.ReadAllText(Path.Combine(RepositoryRoot(), "..", "web", "js", "support.js"));
 
         Assert.Contains($"'{SupportLinks.BugReportAddress}'", script, StringComparison.Ordinal);
         Assert.Contains($"'{SupportLinks.GitHubIssueAddress}'", script, StringComparison.Ordinal);

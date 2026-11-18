@@ -167,8 +167,9 @@ cd KyttoMCP/macos/KyttoCore && swift test
 cd KyttoMCP/windows && dotnet test
 ```
 
-The two web layers share their origin but have diverged; bringing them back to
-one shared `web/` is welcome work.
+Both apps load the same UI from [`web/`](web); the few places where the two
+native backends answer a command differently are translated in one file,
+`web/js/compat.js`.
 
 ### Build the macOS app without a developer account
 
