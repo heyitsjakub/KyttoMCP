@@ -64,6 +64,13 @@ public struct ServerProvenance: Equatable, Sendable {
     public let readOnly: Bool
 }
 
+/// The file and exact key read during discovery, including the workspace key for a scoped map.
+public struct DefinitionLocation: Equatable, Sendable {
+    public let file: URL
+    public let name: String
+    public let claudeLocalWorkspace: String?
+}
+
 /// One client's copy of a definition, as that client actually has it.
 ///
 /// The matrix merges a name into one row, which is the whole point of it — but
@@ -74,6 +81,8 @@ public struct ServerProvenance: Equatable, Sendable {
 /// one. Drift is not an edge case in a tool whose subject is several copies of
 /// the same configuration, so each copy is kept.
 public struct ClientDefinition: Equatable, Sendable {
+    /// Only a definition actually read from a configuration file has a location.
+    public var location: DefinitionLocation?
     public let transport: Transport
     public let command: String?
     public let args: [String]
@@ -328,7 +337,10 @@ public struct Server: Identifiable, Sendable, Equatable {
     /// flags `@modelcontextprotocol/server-github`, and a warning that cries
     /// wolf on half the matrix is worse than no warning at all.
     public var hasRelativePath: Bool {
-        guard transport == .stdio else { return false }
+        transport == .stdio && Self.hasRelativeLaunchPath(command: command, args: args)
+    }
+
+    static func hasRelativeLaunchPath(command: String?, args: [String]) -> Bool {
         if let command, !command.isEmpty, Self.containsSeparator(command),
            !Self.isAbsolute(command) {
             return true

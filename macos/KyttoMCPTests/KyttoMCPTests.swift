@@ -13,6 +13,54 @@ import WebKit
 
 struct KyttoMCPTests {
 
+    @Test("filtering and editing keep native text fields and return keyboard focus")
+    @MainActor
+    func typingAndClosingSheet() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.setURLSchemeHandler(KyttoSchemeHandler(), forURLScheme: KyttoSchemeHandler.scheme)
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.load(URLRequest(url: try #require(URL(string: "kytto://app/dev.html"))))
+
+        let ready = "document.querySelector('[data-action=filter]') !== null"
+        for _ in 0..<100 {
+            if (try? await webView.evaluateJavaScript(ready)) as? Bool == true { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try #require(try await webView.evaluateJavaScript(ready) as? Bool == true)
+
+        let result = try await webView.evaluateJavaScript("""
+            (() => {
+                const control = action => document.querySelector('[data-action="' + action + '"]');
+                const type = (field, value) => {
+                    field.focus();
+                    field.value = value;
+                    field.dispatchEvent(new Event('input', { bubbles: true }));
+                };
+                const filter = control('filter');
+                type(filter, 'github');
+                const filterKept = filter === document.activeElement && filter === control('filter');
+                const workspace = document.querySelector('#body');
+                const opener = control('add-server');
+                opener.focus();
+                opener.click();
+                control('form-manual').click();
+                const name = control('draft-name');
+                type(name, 'sample');
+                const fieldKept = name === document.activeElement && name === control('draft-name');
+                control('draft-arg-add').click();
+                const draftKept = control('draft-name').value === 'sample';
+                const workspaceKept = workspace === document.querySelector('#body') && workspace.inert && opener.closest('[inert]') !== null;
+                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                const focusReturned = document.activeElement === control('add-server') && control('filter').value === 'github';
+                return { filterKept, fieldKept, draftKept, workspaceKept, focusReturned };
+            })()
+            """)
+        let checks = try #require(result as? [String: Bool])
+        for (behavior, passed) in checks {
+            #expect(passed, "Failed: \(behavior)")
+        }
+    }
+
     @Test("interface recovery survives content-process termination without a working page")
     @MainActor
     func terminatedWebContentShowsNativeRecovery() {

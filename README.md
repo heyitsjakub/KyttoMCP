@@ -5,7 +5,7 @@
 Free and **open source** under the MIT License — the full source of both the macOS
 and the Windows app lives in this repository. Read it, build it, or send a pull request.
 
-[![Version](https://img.shields.io/badge/beta-1.0.9.5-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
+[![Version](https://img.shields.io/badge/beta-1.0.9.6-blue)](https://github.com/heyitsjakub/KyttoMCP/releases)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)](https://kytto.jakubhecht.sk/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 [![Open source](https://img.shields.io/badge/open%20source-yes-brightgreen)](#source-code)
@@ -99,11 +99,11 @@ For supported stdio servers, preview a local Gateway route, move the direct defi
 | Devin Desktop (formerly Windsurf) | Supported |
 | OpenCode | Supported |
 
-Custom sources are read-only and are not an additional writable client. Project folders (since 1.0.9.5) show the MCP files a repository commits — `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` — in folders you choose, read-only; a server found only there is never checked unless you ask, because a check starts it. Want another built-in client supported? [Open an issue](https://github.com/heyitsjakub/KyttoMCP/issues) — the roadmap is driven by what people actually ask for.
+Custom sources are read-only and are not an additional writable client. Project folders (since 1.0.9.5) show the MCP files a repository commits — `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` — in folders you choose, read-only; a server found only there is never checked unless you ask, because a check starts it. In 1.0.9.6, the server inspector lists configuration files and scopes, shows Claude Code project priority, previews imports into writable clients with Undo, and keeps masked reviews of launch changes made outside Kytto. Want another built-in client supported? [Open an issue](https://github.com/heyitsjakub/KyttoMCP/issues) — the roadmap is driven by what people actually ask for.
 
 ## Install
 
-Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.5 for macOS ([v1.0.9.5](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.5)) and Beta 1.0.9.5 for Windows ([v1.0.9.5-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.5-windows)).
+Download from [kytto.jakubhecht.sk](https://kytto.jakubhecht.sk/) or from GitHub Releases: Beta 1.0.9.6 for macOS ([v1.0.9.6](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.6)) and Beta 1.0.9.6 for Windows ([v1.0.9.6-windows](https://github.com/heyitsjakub/KyttoMCP/releases/tag/v1.0.9.6-windows)).
 
 ### macOS
 
@@ -121,12 +121,12 @@ Run the setup file. Microsoft Defender SmartScreen will appear for the same reas
 
 ```sh
 # macOS
-shasum -a 256 KyttoMCP-1.0.9.5.dmg
-# 45f2481c3a5a1954940f3a475d06e7fe72b37159684fb2b838fdc144078dd0c2
+shasum -a 256 KyttoMCP-1.0.9.6.dmg
+# 3382f22b2a69f9400598ac5908407d67c739276b832e60ca78bcbb4f1dd3ace7
 
 # Windows (PowerShell)
-Get-FileHash Kytto-Setup-win-x64-1.0.9.5.exe -Algorithm SHA256
-# 1e5e02713547d0eccd4cbe05188fbb621d487edee5df95f955f0725e2123711d
+Get-FileHash Kytto-Setup-win-x64-1.0.9.6.exe -Algorithm SHA256
+# b013ef869fd0bb99b15940dc55149de9c3e24722bc69d2b1e91d8f484fc3648d
 ```
 
 ## Local by design

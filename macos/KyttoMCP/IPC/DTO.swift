@@ -435,6 +435,9 @@ struct StateDTO: Encodable {
     let pendingContractImports: PendingContractImportsDTO
     /// Servers whose clients do not agree on what they run. One entry per server,
     /// only when there is a disagreement.
+    let definitions: [String: DefinitionInventory]
+    let launchReviews: [LaunchReviews.Alert]
+    let launchReviewStorageError: String?
     let drift: [ServerDriftDTO]
 
     @MainActor
@@ -456,6 +459,9 @@ struct StateDTO: Encodable {
         doctorReports = model.doctorReports().map(DoctorServerReportDTO.init)
         contractAlerts = model.contractAlerts().map(ContractAlertDTO.init)
         pendingContractImports = PendingContractImportsDTO(model)
+        definitions = DefinitionInventory.inventories(in: result, folders: model.settings.projectFolders)
+        launchReviews = model.launchReviews.alerts
+        launchReviewStorageError = model.launchReviews.storageError
         drift = ServerDrift.detect(in: result.servers).map(ServerDriftDTO.init)
     }
 }

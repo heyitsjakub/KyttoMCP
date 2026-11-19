@@ -514,6 +514,44 @@ internal static partial class CommandRegistry
             return Authored(model.RemoveServerFrom(payload.ServerID, clientId), model);
         });
 
+        // MARK: - Definition sources, project copies and launch reviews (§22)
+
+        // Each reads the files again first, as macOS does: a preview is of the files as
+        // they are, and an acknowledgement is of the latest observed change. A pass
+        // that changed what the page shows is pushed the way a watcher event would be,
+        // since the watcher's own pass will then find nothing new.
+        async Task RefreshObservedFilesAsync()
+        {
+            if (await model.ReloadInBackgroundAsync())
+            {
+                await router.EmitAsync("configs.changed", model.ToStateDto());
+            }
+        }
+
+        router.Register<ProjectCopyPayload, ProjectCopyPreviewDto>("servers.projectCopyPreview", async payload =>
+        {
+            if (string.IsNullOrWhiteSpace(payload.SourceClientID) ||
+                ClientIds.FromRaw(payload.TargetClientID) is not { } target)
+            {
+                throw ProjectCopyException.Unavailable();
+            }
+            await RefreshObservedFilesAsync();
+            return model.PreviewProjectCopy(payload.ServerID, new ClientKey(payload.SourceClientID), target).ToDto();
+        });
+
+        router.Register<ReviewTokenPayload, AuthoringResultDto>("servers.applyProjectCopy", async payload =>
+        {
+            await RefreshObservedFilesAsync();
+            return Authored(model.ApplyProjectCopy(payload.Token), model);
+        });
+
+        router.Register<ReviewTokenPayload, StateDto>("launch.acknowledge", async payload =>
+        {
+            await RefreshObservedFilesAsync();
+            model.AcknowledgeLaunchReview(payload.Token);
+            return model.ToStateDto();
+        });
+
         // MARK: - Backups, the visible half of the trust story (§6.5)
 
         router.Register<BackupsListPayload, IReadOnlyList<BackupDto>>("backups.list", payload =>
@@ -724,7 +762,7 @@ internal static partial class CommandRegistry
                 "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking", "gateway.repair",
                 "doctor", "activity", "contract-guard", "context-optimizer", "drift",
                 "updates", "provenance", "package-safety", "agent-import", "library", "skills",
-                "client-restart",
+                "client-restart", "project-copy",
                 // Only what the shell can actually do: see CommandRegistry.Remote.cs.
                 .. RemoteCapabilities,
                 "portable-setup",
@@ -888,6 +926,10 @@ internal sealed record UpdateServerPayload(string ServerID, ServerDraftPayload D
 internal sealed record DeleteServerPayload(string ServerID);
 
 internal sealed record RemoveFromClientPayload(string ServerID, string ClientID);
+
+internal sealed record ProjectCopyPayload(string ServerID, string SourceClientID, string TargetClientID);
+
+internal sealed record ReviewTokenPayload(string Token);
 
 internal sealed record HealthCheckPayload(string ServerID);
 

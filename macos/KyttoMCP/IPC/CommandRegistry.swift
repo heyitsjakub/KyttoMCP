@@ -162,6 +162,19 @@ enum CommandRegistry {
             return StateDTO(model)
         }
 
+        router.register("servers.projectCopyPreview") { (payload: ProjectCopyPayload) -> ProjectDefinitionCopy.Preview in
+            guard let source = ClientID(rawValue: payload.sourceClientID),
+                  let target = ClientID(rawValue: payload.targetClientID) else { throw ProjectCopyError.unavailable }
+            return try await model.previewProjectCopy(serverID: payload.serverID, source: source, target: target)
+        }
+        router.register("servers.applyProjectCopy") { (payload: ReviewTokenPayload) -> AuthoringResultDTO in
+            AuthoringResultDTO(try await model.applyProjectCopy(token: payload.token), model: model)
+        }
+        router.register("launch.acknowledge") { (payload: ReviewTokenPayload) -> StateDTO in
+            try await model.acknowledgeLaunchReview(token: payload.token)
+            return StateDTO(model)
+        }
+
         // MARK: - Drift
 
         router.register("servers.unifyPreview") { (payload: UnifyPayload) -> UnifyPreviewDTO in
@@ -575,7 +588,7 @@ enum CommandRegistry {
             build: info?["CFBundleVersion"] as? String ?? "0",
             // The UI enables features by asking for a capability, never by
             // guessing from the platform (§3.2). M4 adds `secrets`, M5 `health`.
-            capabilities: ["config.read", "config.write", "backups", "authoring", "catalog", "health", "health.http", "health.oauth", "portable-setup", "provenance", "package-safety", "secrets", "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking", "gateway.repair", "doctor", "activity", "contract-guard", "context-optimizer", "drift", "updates", "library", "agent-import", "skills", "client-restart"],
+            capabilities: ["config.read", "config.write", "backups", "authoring", "catalog", "health", "health.http", "health.oauth", "portable-setup", "provenance", "package-safety", "secrets", "profiles", "inspector", "clipboard", "gateway.stdio", "gateway.masking", "gateway.repair", "doctor", "activity", "contract-guard", "context-optimizer", "drift", "updates", "library", "agent-import", "skills", "client-restart", "project-copy"],
             platformDisplayName: "macOS",
             secretStoreDisplayName: "Keychain"
         )
@@ -592,6 +605,14 @@ enum CommandRegistry {
 }
 
 // MARK: - Payloads
+
+struct ProjectCopyPayload: Decodable {
+    let serverID: String
+    let sourceClientID: String
+    let targetClientID: String
+}
+
+struct ReviewTokenPayload: Decodable { let token: String }
 
 struct SetEnabledPayload: Decodable {
     let serverID: String

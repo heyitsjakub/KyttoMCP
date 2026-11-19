@@ -1,6 +1,7 @@
 // Bootstrap: load state from native, render, and route every interaction
 // through one delegated listener (§3.1).
 
+import { copyTargets, projectSources } from './screens/definitionSources.js';
 import { invoke, on, isStubbed } from './ipc.js';
 import {
   setState,
@@ -15,6 +16,7 @@ import {
   visibleServers,
   isRepositoryOnly,
   setToolOpen,
+  recordSheetInput,
 } from './state.js';
 import { render as renderMatrix, restartableClientIds } from './screens/matrix.js';
 import { diagnosticReport } from './screens/serverDetail.js';
@@ -60,18 +62,16 @@ async function commitSidebarWidth(width) {
   }
 }
 
-// A render replaces the entire tree. Remembering the focused control is what
-// makes keyboard editing survive state-driven renders, while a newly opened
-// sheet deliberately takes focus and returns it to its invoker when it closes.
-setRenderer(() => {
+// Remember the focused control before replacing its part of the screen.
+setRenderer((state, changes) => {
   const focused = focusSnapshot();
-  const subject = focusSubject(getState().sheet);
+  const subject = focusSubject(state.sheet);
   const opening = subject !== null && renderedSheetSubject === null;
   const replacing = subject !== null && renderedSheetSubject !== null && subject !== renderedSheetSubject;
   const closing = subject === null && renderedSheetSubject !== null;
 
   if (opening) returnFocus = focused;
-  renderMatrix(root);
+  renderMatrix(root, changes);
 
   if (opening || replacing) {
     focusSheet();
@@ -117,7 +117,7 @@ function restoreFocus(snapshot) {
   if (!snapshot?.dataset.action) return false;
   // With a dialog open, focus belongs inside it: a control behind the backdrop is
   // not somewhere keyboard focus may land.
-  if (!snapshot.insideSheet && root.querySelector('.sheet')) return false;
+  if (!snapshot.insideSheet && getState().sheet) return false;
   // Keys that describe a control's current state rather than which control it is.
   // A toggle's `data-enabled` flips on every write and a check button's label goes
   // "Checking…" and back, so matching on them lost focus after the very action the
@@ -142,6 +142,7 @@ function restoreFocus(snapshot) {
     matches.find((node) => snapshot.text === null || node.textContent === snapshot.text) ??
     matches[0];
   if (!(candidate instanceof HTMLElement)) return false;
+  if (candidate === document.activeElement) return true;
 
   candidate.focus({ preventScroll: true });
   if (
@@ -1044,6 +1045,43 @@ async function undoToolSwitch(serverId, clientId, disabledTools) {
   } catch (error) {
     if (reportFailure(error)) await refresh();
   }
+}
+
+function openProjectCopy(state, serverId, targetId) {
+  const sources = projectSources(state, serverId);
+  const targets = copyTargets(state);
+  if (!sources.length || !targets.length) return;
+  const server = state.servers.find((entry) => entry.id === serverId);
+  const vacant = targets.find((client) => (server?.enabledIn[client.id] ?? 'absent') === 'absent');
+  setState({ sheet: { kind: 'projectCopy', serverId, sourceId: sources[0].clientID,
+    targetId: targetId ?? vacant?.id ?? targets[0].id, busy: false, error: null, preview: null } });
+}
+
+async function previewProjectCopy() {
+  const current = getState().sheet;
+  if (current?.kind !== 'projectCopy' || current.busy) return;
+  const request = beginSheetRequest({ error: null, preview: null });
+  try {
+    const preview = await invoke('servers.projectCopyPreview', {
+      serverID: current.serverId, sourceClientID: current.sourceId, targetClientID: current.targetId,
+    });
+    if (sheetStillOpen(request)) updateSheet({ preview, busy: false });
+  } catch (error) { failSheetRequest(request, error); }
+}
+
+async function applyProjectCopy() {
+  const current = getState().sheet;
+  if (current?.kind !== 'projectCopy' || current.busy || !current.preview?.token) return;
+  const request = beginSheetRequest();
+  try {
+    const result = await invoke('servers.applyProjectCopy', { token: current.preview.token });
+    applyState(result.state);
+    const notice = { kind: 'info', message: `Imported “${result.serverName}” into ${current.preview.targetFile}.`,
+      undo: { previousState: 'absent', serverId: current.serverId, clientId: current.targetId } };
+    if (sheetStillOpen(request)) setState({ sheet: null });
+    setState({ notice });
+    await refreshAfterMutation(['Backups'], notice);
+  } catch (error) { failSheetRequest(request, error, { preview: null, error: error.message }); }
 }
 
 // MARK: - Drift
@@ -2008,7 +2046,12 @@ root.addEventListener('click', async (event) => {
       const client = state.clients.find((entry) => entry.id === target.dataset.clientId);
       if (target.disabled || target.classList.contains('busy') || client?.isReadOnly || client?.state === 'notInstalled') break;
       const previousState = target.dataset.state ?? (target.dataset.enabled === 'true' ? 'enabled' : 'disabled');
-      if (needsMatrixWriteConfirmation(state.settings, client)) {
+      const hasProjectSource = previousState === 'absent' && projectSources(state, target.dataset.serverId).length > 0;
+      if (hasProjectSource && state.definitions[target.dataset.serverId].copies[0]?.repository) {
+        openProjectCopy(state, target.dataset.serverId, client.id);
+        break;
+      }
+      if (hasProjectSource || needsMatrixWriteConfirmation(state.settings, client)) {
         setState({
           sheet: {
             kind: 'confirmMatrixWrite',
@@ -2166,6 +2209,20 @@ root.addEventListener('click', async (event) => {
       } finally {
         setState({ acknowledgingContract: null });
       }
+      break;
+    case 'open-project-copy':
+      openProjectCopy(state, target.dataset.serverId, target.dataset.clientId);
+      break;
+    case 'preview-project-copy':
+      await previewProjectCopy();
+      break;
+    case 'apply-project-copy':
+      await applyProjectCopy();
+      break;
+    case 'acknowledge-launch':
+      try {
+        applyState(await invoke('launch.acknowledge', { token: target.dataset.token }));
+      } catch (error) { await refresh(); reportFailure(error); }
       break;
     case 'unify-server':
       await openUnifyPreview(target.dataset.serverId, target.dataset.clientId);
@@ -2455,68 +2512,75 @@ root.addEventListener('input', (event) => {
   const state = getState();
   const sheet = state.sheet;
   const value = event.target.value;
+  const editDraft = (fields, extra = {}, redraw = false) => {
+    recordSheetInput({ draft: { ...sheet.draft, ...fields }, errors: [], ...extra }, redraw || sheet.errors.length > 0);
+  };
   switch (action) {
     case 'filter': {
       setState({ filter: value });
       break;
     }
     case 'draft-name':
-      updateDraft({ name: value });
+      editDraft({ name: value });
       break;
     case 'draft-command':
-      updateDraft({ command: value });
+      editDraft({ command: value });
       break;
     case 'draft-url':
-      updateDraft({ url: value });
+      editDraft({ url: value });
       break;
     case 'draft-arg': {
       const args = [...sheet.draft.args];
       const index = Number(event.target.dataset.index);
       args[index] = value;
       // Marked as being typed in, so a stray-space hint waits for `change`.
-      updateSheet({ draft: { ...sheet.draft, args }, errors: [], editingArg: index });
+      const previous = sheet.draft.args[index];
+      const hadHint = sheet.editingArg !== index && previous.trim() !== '' && previous !== previous.trim();
+      editDraft({ args }, { editingArg: index }, hadHint);
       break;
     }
     case 'draft-env-key': {
       const env = [...sheet.draft.env];
-      env[Number(event.target.dataset.index)] = { ...env[Number(event.target.dataset.index)], key: value };
-      updateDraft({ env });
+      const index = Number(event.target.dataset.index);
+      const oldHint = sheet.envHints?.[env[index].key];
+      env[index] = { ...env[index], key: value };
+      editDraft({ env }, {}, oldHint !== sheet.envHints?.[value]);
       break;
     }
     case 'draft-env-value': {
       const env = [...sheet.draft.env];
       env[Number(event.target.dataset.index)] = { ...env[Number(event.target.dataset.index)], value };
-      updateDraft({ env });
+      editDraft({ env });
       break;
     }
     case 'rotate-value':
-      updateSheet({ value });
+      recordSheetInput({ value });
       break;
     case 'profile-name':
-      updateSheet({ name: value });
+      recordSheetInput({ name: value });
       break;
-    case 'profile-budget':
+    case 'profile-budget': {
       // Whole, non-negative tokens; the native payload is an integer.
-      updateSheet({ tokenBudget: value === '' || !Number.isFinite(Number(value)) ? null : Math.max(0, Math.round(Number(value))) });
+      const tokenBudget = value === '' || !Number.isFinite(Number(value)) ? null : Math.max(0, Math.round(Number(value)));
+      recordSheetInput({ tokenBudget }, value !== String(tokenBudget ?? ''));
       break;
+    }
     case 'agent-import-json':
-      updateSheet({ json: value, preview: null, error: null });
+      recordSheetInput({ json: value, preview: null, error: null }, Boolean(sheet.preview || sheet.error));
       break;
   }
 });
 
-// Leaving an argument field is when a stray space around it is shown. Neither
-// event says so on its own here: every keystroke re-renders the form, the browser
-// fires `change` on the input that render removed, and focus moves to a fresh
-// input that may then be left without any `change` at all. So both events only
-// schedule a look, after the render, at where focus actually is.
+// A native refresh can replace a field mid-edit. Check focus after the
+// replacement so a stray-space hint only appears when the user really leaves.
 function leaveArgumentFieldLater(index) {
   window.setTimeout(() => {
     const sheet = getState().sheet;
-    if (sheet?.editingArg === undefined || sheet?.editingArg === null) return;
+    if (sheet?.editingArg !== Number(index)) return;
     const active = document.activeElement;
     if (active?.dataset?.action === 'draft-arg' && active.dataset.index === index) return;
-    updateSheet({ editingArg: null });
+    const argument = sheet.draft.args[sheet.editingArg];
+    recordSheetInput({ editingArg: null }, Boolean(argument?.trim() && argument !== argument.trim()));
   }, 0);
 }
 
@@ -2531,6 +2595,9 @@ root.addEventListener('change', (event) => {
   if (event.target.dataset.action === 'draft-arg' && sheet?.draft) {
     // Typing stays quiet so a space on the way to `--port` is not flagged mid-word.
     leaveArgumentFieldLater(event.target.dataset.index);
+  } else if (['project-copy-source', 'project-copy-target'].includes(event.target.dataset.action) && sheet?.kind === 'projectCopy' && !sheet.busy) {
+    const key = event.target.dataset.action === 'project-copy-source' ? 'sourceId' : 'targetId';
+    updateSheet({ [key]: event.target.value, preview: null, error: null });
   } else if (event.target.dataset.action === 'scope-filter') {
     setState({ scopeFilter: event.target.value });
   } else if (event.target.dataset.action === 'source-filter') {

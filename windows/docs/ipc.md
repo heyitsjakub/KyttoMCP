@@ -91,7 +91,9 @@ authoring surfaces. `portable-setup` is advertised because the native file choos
 and masked-input window exist, and enables the Export and Import actions on the
 Profiles screen (§7.13). `client-restart` is advertised when the shell can quit and
 reopen a desktop client (issue #14): "Restart now" is offered only for clients whose
-`canRestart` is true, and only with this capability.
+`canRestart` is true, and only with this capability. `project-copy` enables
+importing a repository definition into a writable client
+(`servers.projectCopyPreview`, `servers.applyProjectCopy`).
 
 `package-safety` is advertised where `doctor.checkPackageSafety` can reach osv.dev
 and the npm registry; the UI shows the "Check package safety" button only with it.
@@ -456,6 +458,47 @@ key, and the difference is stated as a fact about it.
 `canBeSource` is false for an extension bundle or a plugin. Those take part in
 the comparison, because a name shared by a bundle and a config entry is exactly
 the confusion worth surfacing, and they are never something to copy out of (§4).
+
+`definitions` maps a server id to every file-backed copy of it:
+
+```json
+{ "demo": { "copies": [{ "clientID": "claudeCode", "name": "Demo",
+    "file": "C:\\Users\\example\\.claude.json", "scope": "User",
+    "repository": false, "transport": "stdio" }],
+  "priorities": [{ "workspace": "C:\\work\\demo", "winner": "custom.<uuid>",
+    "candidates": ["custom.<uuid>", "claudeCode"] }],
+  "overlapsScopes": true } }
+```
+
+A parked copy, an extension and a plugin have no file anyone wrote and are not
+listed. `scope` is display text: `User` for Claude Code's own map, `Local · <project>`
+for a project entry in `~/.claude.json`, `Project · <folder>` for a chosen folder's
+`.mcp.json`, otherwise the client's scope and label. `priorities` follows the
+[Claude Code scope hierarchy](https://code.claude.com/docs/en/mcp#scope-hierarchy-and-precedence)
+— local, then project, then user — and has an entry only where enabled copies share
+a workspace and an exact server key; every other client's priority is unknown and
+not guessed. `overlapsScopes` is true when there is more than one copy and one of
+them is a workspace scope.
+
+`launchReviews` lists launch fields that changed in a known file while Kytto was
+not the one writing it — a file whose digest still matches what Kytto last recorded
+is never reported:
+
+```json
+[{ "token": "…", "serverID": "solo", "clientID": "cursor",
+   "file": "C:\\Users\\example\\.cursor\\mcp.json", "scope": "Global",
+   "observedAt": "2026-11-19T10:00:00Z",
+   "fields": [{ "name": "Command", "before": "Set (masked)", "after": "Set (masked)" },
+              { "name": "Arguments", "before": "1 masked", "after": "0 masked" }] }]
+```
+
+Fields are `Command`, `Arguments`, `Environment`, `Endpoint` and `Transport`, as
+masked summaries; no value is stored or sent. Comparison starts with the first read
+of each session. Pending reviews are saved to `launch-reviews.json` in Kytto's data
+folder and survive relaunch; further changes before an acknowledgement update the
+same review, keep each field's first `before` and get a new token.
+`launchReviewStorageError` is a fixed sentence when that file could not be read
+(it is then left untouched) or saved, and null otherwise.
 
 ### `doctor.previewFix` → `DoctorFixPreviewDTO`
 
@@ -1433,6 +1476,60 @@ the point. Off is a state a client supports, and every client keeps enough to
 switch back on — so a cell never returns to `absent` by being switched off. This
 is the server ceasing to be that client's business. Fails with `notFound` if the
 client did not have it, and refuses bundled servers like `servers.delete` does.
+Only the copy in the named client counts: an extension elsewhere in the row does
+not stop an ordinary entry being removed. This is also the Undo of
+`servers.applyProjectCopy`.
+
+### `servers.projectCopyPreview` → `ProjectCopyPreviewDTO`
+
+```json
+{ "serverID": "demo", "sourceClientID": "custom.<uuid>", "targetClientID": "cursor" }
+```
+
+Capability `project-copy`. Reads the files again, then reviews one definition from a
+repository file (`.mcp.json`, `.cursor/mcp.json` or `.vscode/mcp.json` in a chosen
+project folder) for one writable client. Writes nothing.
+
+```json
+{ "token": "opaque, single use, or null", "sourceFile": "C:\\work\\demo\\.mcp.json",
+  "targetFile": "C:\\Users\\example\\.cursor\\mcp.json", "transport": "stdio",
+  "environmentKeys": ["REF", "TOKEN"], "unresolvedVariables": ["SOURCE_TOKEN"],
+  "warnings": ["…"], "blockers": [] }
+```
+
+Both files are display strings. Environment **names** only; a value in the
+repository file is copied natively and never crosses. `unresolvedVariables` are the
+`${VAR}`, `${env:VAR}` and `$VAR` references the entry makes, plus keys with an empty
+value. Anything the importer cannot carry over faithfully is a blocker, and a
+blocked preview has a null `token`: settings beyond command, arguments, environment,
+`type` and URL (headers, a working directory…), project inputs or workspace
+substitutions, a Gateway route, surrounding whitespace, a name the destination
+already holds, a destination that is itself a project file, an SSE or remote
+environment the destination cannot keep. Opening a preview discards the previous
+token.
+
+### `servers.applyProjectCopy` → `AuthoringResultDTO`
+
+```json
+{ "token": "…" }
+```
+
+Reads the files again and rebuilds the plan; if the source, the destination, the
+resolved destination path or the selection changed since the preview, it fails with
+`appState` and writes nothing. Otherwise it creates one definition through
+`servers.create`'s pipeline — backup, splice, atomic write — and never replaces an
+entry of the same name. The token is spent either way. Undo is
+`servers.removeFromClient` for the destination.
+
+### `launch.acknowledge` → `StateDTO`
+
+```json
+{ "token": "…" }
+```
+
+Reads the files again, then acknowledges exactly the launch review that carries this
+token. A review that changed since it was shown has a new token, and the old one
+fails with `appState`. Changes only Kytto's own record.
 
 ### `backups.list` → `BackupDTO[]`
 
@@ -1660,3 +1757,26 @@ Every `GatewayRouteDTO` carries `exposedTools` — the array, or null when the
 route exposes everything. Tool names are model-facing identifiers rather than
 secrets, so unlike a route's definition and environment they cross this
 boundary.
+
+### Definition sources, project copies and launch reviews
+
+Implemented on Windows since 1.0.9.6, with the payloads the
+[macOS IPC reference](../../macos/docs/ipc.md#definition-sources-project-copies-and-launch-reviews)
+describes. The commands are listed with the others above
+([`servers.projectCopyPreview`](#serversprojectcopypreview--projectcopypreviewdto),
+[`servers.applyProjectCopy`](#serversapplyprojectcopy--authoringresultdto),
+[`launch.acknowledge`](#launchacknowledge--statedto)); the `definitions`,
+`launchReviews` and `launchReviewStorageError` fields are under
+[`state.get`](#stateget--statedto).
+
+What is particular to Windows:
+
+- Claude Code spells a project key in `~/.claude.json` with forward slashes, and a
+  folder chosen in Kytto is a full path with backslashes. They are compared as the
+  same workspace — separators, letter case and a trailing separator aside — so a
+  local scope and a folder's `.mcp.json` meet in one priority entry. The entry
+  names the folder as it was chosen.
+- Restoring a backup records the restored file's digest before the next read, as
+  every other Kytto write does, so a restore never raises a launch review.
+- A Gateway route is recognised by its helper, `kytto-mcp-proxy` with or without
+  `.exe`, launched with `--route`.

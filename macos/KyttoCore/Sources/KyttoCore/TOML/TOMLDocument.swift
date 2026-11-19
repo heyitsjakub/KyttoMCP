@@ -200,6 +200,7 @@ public struct TOMLParseError: Error, Equatable, Sendable {
         /// keys already defined it. Codex refuses such a file.
         case duplicateTable
         case duplicateKey
+        case nestingTooDeep
     }
 
     public let kind: Kind
@@ -224,6 +225,7 @@ extension TOMLParseError: CustomStringConvertible {
         case .unterminatedTableHeader: what = "unterminated table header"
         case .duplicateTable: what = "a table is defined more than once"
         case .duplicateKey: what = "a key is defined more than once"
+        case .nestingTooDeep: what = "values nested too deeply"
         }
         return "\(what) at line \(line), column \(column)"
     }
@@ -239,6 +241,8 @@ extension TOMLParseError: CustomStringConvertible {
 /// consumes real values rather than splitting on newlines, and a `[` is only a
 /// table header when it is found where a header can be.
 struct TOMLParser {
+    // Discovery parses client files on a worker thread with a limited stack.
+    private static let maximumContainerDepth = 64
     private let bytes: [UInt8]
     private var index: Int = 0
 
@@ -413,7 +417,7 @@ struct TOMLParser {
 
     // MARK: Pairs
 
-    private mutating func parsePair() throws -> TOMLPair {
+    private mutating func parsePair(depth: Int = 0) throws -> TOMLPair {
         let start = index
         let key = try parseDottedKey()
         let keySpan = TOMLSpan(start: start, end: index)
@@ -425,13 +429,13 @@ struct TOMLParser {
         index += 1
         skipInlineSpace()
 
-        let value = try parseValue()
+        let value = try parseValue(depth: depth)
         return TOMLPair(key: key, keySpan: keySpan, value: value, span: TOMLSpan(start: start, end: value.span.end))
     }
 
     // MARK: Values
 
-    private mutating func parseValue() throws -> TOMLValue {
+    private mutating func parseValue(depth: Int) throws -> TOMLValue {
         guard index < bytes.count else { throw error(.unexpectedEndOfInput) }
         let start = index
 
@@ -441,11 +445,13 @@ struct TOMLParser {
             return TOMLValue(kind: .string(text), span: TOMLSpan(start: start, end: index))
 
         case UInt8(ascii: "["):
-            let elements = try parseArray()
+            guard depth < Self.maximumContainerDepth else { throw error(.nestingTooDeep) }
+            let elements = try parseArray(depth: depth + 1)
             return TOMLValue(kind: .array(elements), span: TOMLSpan(start: start, end: index))
 
         case UInt8(ascii: "{"):
-            let pairs = try parseInlineTable()
+            guard depth < Self.maximumContainerDepth else { throw error(.nestingTooDeep) }
+            let pairs = try parseInlineTable(depth: depth + 1)
             return TOMLValue(kind: .inlineTable(pairs), span: TOMLSpan(start: start, end: index))
 
         default:
@@ -479,7 +485,7 @@ struct TOMLParser {
         }
     }
 
-    private mutating func parseArray() throws -> [TOMLValue] {
+    private mutating func parseArray(depth: Int) throws -> [TOMLValue] {
         index += 1 // [
         var elements: [TOMLValue] = []
 
@@ -492,7 +498,7 @@ struct TOMLParser {
                 return elements
             }
 
-            elements.append(try parseValue())
+            elements.append(try parseValue(depth: depth))
             skipTrivia()
 
             guard index < bytes.count else { throw error(.unterminatedArray) }
@@ -504,7 +510,7 @@ struct TOMLParser {
         }
     }
 
-    private mutating func parseInlineTable() throws -> [TOMLPair] {
+    private mutating func parseInlineTable(depth: Int) throws -> [TOMLPair] {
         index += 1 // {
         var pairs: [TOMLPair] = []
 
@@ -517,7 +523,7 @@ struct TOMLParser {
                 return pairs
             }
 
-            pairs.append(try parsePair())
+            pairs.append(try parsePair(depth: depth))
             skipTrivia()
 
             guard index < bytes.count else { throw error(.unterminatedInlineTable) }

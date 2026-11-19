@@ -73,8 +73,9 @@ stylesheet there and looked at in a real browser through `dev.html`.
   `app.info` and the UI branches on that (§3.2).
 - An animation confirms something happened; it never carries information. With
   motion off the screen says the same thing, immediately.
-- Entrance animations go through `anim.js`. A render rebuilds the whole tree, so
-  a keyframe attached unconditionally replays on every unrelated state change —
-  and a write is several state changes in a row, which cuts one off milliseconds
-  after it starts. `anim.js` answers both: what is actually new, and for how
-  long it stays new.
+- Entrance animations go through `anim.js`. Apply the class only on the render
+  that introduces the change. Reapplying it to a replacement node restarts the
+  animation from the beginning.
+- Keep a text field mounted while it is being edited. A sheet can record input
+  quietly when the field already shows the new value. Redraw when another
+  control, a hint or a validation message depends on the edit.

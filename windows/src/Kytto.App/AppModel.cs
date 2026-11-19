@@ -78,6 +78,7 @@ internal sealed partial class AppModel : IDisposable
     private readonly Dictionary<ClientId, Dictionary<string, string>> _restartBaselines = [];
     private readonly Dictionary<ClientId, Dictionary<string, string>> _restartObserved = [];
     private readonly HashSet<ClientId> _dismissedRestarts = [];
+    private readonly LaunchReviews _launchReviews;
     private DiscoveryResult _current;
     private ConfigWatcher? _watcher;
 
@@ -145,6 +146,7 @@ internal sealed partial class AppModel : IDisposable
         _updateDownloadLauncher = updateDownloadLauncher ?? new WindowsUpdateDownloadLauncher();
         _authorizationPageLauncher = authorizationPageLauncher ?? new WindowsAuthorizationPageLauncher();
         Backups = new BackupStore(_paths, Settings.BackupRetention);
+        _launchReviews = new LaunchReviews(_paths);
         _current = Discover();
         var startupRoutes = _gatewayRoutes.All();
         foreach (var client in ClientIds.All)
@@ -1389,6 +1391,9 @@ internal sealed partial class AppModel : IDisposable
         // restore — which backs up the current file and may prune this one.
         var restoredNames = Backups.ServerNames(backup, resolver) ?? [];
         Backups.RestoreChecked(backup, _ledger.DigestFor(target), resolver);
+        // Kytto wrote this file, so the next read must not report it as a launch
+        // change someone else made (§22). Every other write records its own digest.
+        _ledger.Record(target, Digest.OfFile(target));
 
         // A server the restored file defines is in that file again, so a copy Kytto
         // was holding for it is stale and would draw it as off. Only those: a held
@@ -1596,8 +1601,13 @@ internal sealed partial class AppModel : IDisposable
 
     private DiscoveryResult Discover(bool pendingChange = false)
     {
-        var discovery = BuildDiscovery((path, digest) => _ledger.Record(path, digest));
+        // Collected first and recorded after the pass: a launch review compares what
+        // this pass read with what Kytto had recorded before it (§22).
+        var digests = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var discovery = BuildDiscovery((path, digest) => digests[path] = digest);
         var result = discovery.Run();
+        _launchReviews.Observe(result, _ledger.DigestFor, digests);
+        foreach (var (path, digest) in digests) _ledger.Record(path, digest);
 
         // Started after the first read, so the ledger is primed before anything can
         // report a change against it.

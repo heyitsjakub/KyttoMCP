@@ -12,6 +12,19 @@ public class TomlRoundTripTests
 {
     private static TomlDocument Document() => TomlDocument.Parse(Fixture.CodexConfig.Text());
 
+    [Fact]
+    public void NestedArraysAndInlineTablesShareADepthLimit()
+    {
+        var value = string.Concat(Enumerable.Repeat("[{ child = ", 32)) + "1" +
+            string.Concat(Enumerable.Repeat("}]", 32));
+        TomlDocument.Parse($"first = {value}\nsecond = {value}");
+        foreach (var deeper in new[] { $"[{value}]", $"{{ child = {value} }}" })
+        {
+            var error = Assert.Throws<TomlParseException>(() => TomlDocument.Parse($"value = {deeper}"));
+            Assert.Equal(TomlParseErrorKind.NestingTooDeep, error.Kind);
+        }
+    }
+
     /// <summary>The assertion that matters most: everything else is where it was.</summary>
     private static void ExpectUntouchedSurroundings(string updated)
     {

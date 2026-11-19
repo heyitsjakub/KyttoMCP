@@ -268,6 +268,7 @@ public sealed class Discovery
                         existing.EnabledIn[descriptor.Id] = found.Enablement;
                         existing.DefinitionsByClient[descriptor.Id] =
                             ClientDefinition.From(found.Server);
+                        if (found.Location is { } location) existing.Locations[descriptor.Id] = location;
                         if (found.Server.ToolFilters.TryGetValue(descriptor.Id, out var toolFilter))
                         {
                             existing.ToolFilters[descriptor.Id] = toolFilter;
@@ -280,6 +281,7 @@ public sealed class Discovery
                         server.EnabledIn[descriptor.Id] = found.Enablement;
                         server.DefinitionsByClient[descriptor.Id] =
                             ClientDefinition.From(found.Server);
+                        if (found.Location is { } location) server.Locations[descriptor.Id] = location;
                         merged[key] = server;
                         order.Add(key);
                     }
@@ -330,6 +332,7 @@ public sealed class Discovery
                         existing.EnabledIn[projectID] = found.Enablement;
                         existing.DefinitionsByClient[projectID] =
                             ClientDefinition.From(found.Server);
+                        if (found.Location is { } location) existing.Locations[projectID] = location;
                     }
                     else
                     {
@@ -337,6 +340,7 @@ public sealed class Discovery
                         server.EnabledIn[projectID] = found.Enablement;
                         server.DefinitionsByClient[projectID] =
                             ClientDefinition.From(found.Server);
+                        if (found.Location is { } location) server.Locations[projectID] = location;
                         merged[key] = server;
                         order.Add(key);
                     }
@@ -405,11 +409,13 @@ public sealed class Discovery
                 {
                     existing.EnabledIn[source.ClientID] = Enablement.Enabled;
                     existing.DefinitionsByClient[source.ClientID] = ClientDefinition.From(server);
+                    existing.Locations[source.ClientID] = new DefinitionLocation(source.Path, server.Name);
                 }
                 else
                 {
                     server.EnabledIn[source.ClientID] = Enablement.Enabled;
                     server.DefinitionsByClient[source.ClientID] = ClientDefinition.From(server);
+                    server.Locations[source.ClientID] = new DefinitionLocation(source.Path, server.Name);
                     merged[key] = server;
                     order.Add(key);
                 }
@@ -571,7 +577,12 @@ public sealed class Discovery
 
     // MARK: - Reading sources
 
-    private sealed record FoundServer(string Name, Server Server, Enablement Enablement);
+    /// <param name="Location">The file and key it was read from; null for installed software.</param>
+    private sealed record FoundServer(
+        string Name,
+        Server Server,
+        Enablement Enablement,
+        DefinitionLocation? Location = null);
 
     private sealed class SourceOutcome
     {
@@ -750,7 +761,8 @@ public sealed class Discovery
             outcome.Servers.Add(new FoundServer(
                 member.Key,
                 server,
-                flagSaysOff || denied.Contains(Server.Identity(member.Key)) ? Enablement.Disabled : Enablement.Enabled));
+                flagSaysOff || denied.Contains(Server.Identity(member.Key)) ? Enablement.Disabled : Enablement.Enabled,
+                new DefinitionLocation(path, member.Key)));
         }
 
         return outcome;
@@ -785,6 +797,7 @@ public sealed class Discovery
             return;
         }
 
+        var file = _resolver.ResolveServerMap(map.File, descriptor.Id);
         var seen = new HashSet<ClientKey>();
         foreach (var project in projectMembers.OrderBy(member => member.Key, StringComparer.Ordinal))
         {
@@ -850,7 +863,9 @@ public sealed class Discovery
                     isBundled: false,
                     sourceText: document.Slice(member.Value.Span),
                     isReadOnly: true);
-                found.Add(new FoundServer(member.Key, server, Enablement.Enabled));
+                found.Add(new FoundServer(
+                    member.Key, server, Enablement.Enabled,
+                    new DefinitionLocation(file, member.Key, project.Key)));
             }
 
             outcome.Projects.Add(new ProjectSource(projectID, project.Key, found));
@@ -991,7 +1006,8 @@ public sealed class Discovery
                 outcome.Servers.Add(new FoundServer(
                     name,
                     inlineServer,
-                    inlineEnabled ? Enablement.Enabled : Enablement.Disabled));
+                    inlineEnabled ? Enablement.Enabled : Enablement.Disabled,
+                    new DefinitionLocation(path, name)));
                 continue;
             }
 
@@ -1012,7 +1028,8 @@ public sealed class Discovery
             // reports a server with no `enabled` key as enabled.
             var isEnabled = flagKey is null || table.Value(flagKey)?.BoolValue != false;
             outcome.Servers.Add(new FoundServer(
-                name, server, isEnabled ? Enablement.Enabled : Enablement.Disabled));
+                name, server, isEnabled ? Enablement.Enabled : Enablement.Disabled,
+                new DefinitionLocation(path, name)));
         }
 
         return outcome;

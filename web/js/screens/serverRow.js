@@ -79,6 +79,10 @@ export function toggle(state, server, client, value, flipped) {
     button.classList.add('unportable');
     button.title = RELATIVE_PATH_HINT;
   }
+  if (!button.disabled && value === 'absent' && state.app?.capabilities?.includes('project-copy') &&
+      state.definitions?.[server.id]?.copies.some((copy) => copy.repository)) {
+    button.title = 'Choose a definition and review the destination before adding this server.';
+  }
 
   if (state.busyCells.has(cellKey(server.id, client.id))) {
     // Not `disabled`: a disabled control drops focus, and the write this cell is
@@ -196,6 +200,16 @@ export function serverOpener(state, server, settled) {
   // One row, several files, and they do not agree. The row has to print one
   // command and cannot print all of them, so it says that the one on screen is
   // not the whole story — the detail sheet has room for the rest.
+  if (state.definitions?.[server.id]?.overlapsScopes) {
+    const badge = el('span', 'badge drift', 'multiple scopes');
+    badge.title = 'Open server details to compare configuration files and scope priority.';
+    title.append(badge);
+  }
+  if (state.launchReviews?.some((alert) => alert.serverID === server.id)) {
+    const badge = el('span', 'badge contract-changed', 'launch changed');
+    badge.title = 'Open server details to review externally changed launch fields.';
+    title.append(badge);
+  }
   if ((state.drift ?? []).some((entry) => entry.serverID === server.id)) {
     const badge = el('span', 'badge drift', 'differs');
     badge.title = 'This server is configured differently in different clients. Open it to compare.';

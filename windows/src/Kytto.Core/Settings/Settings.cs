@@ -26,6 +26,9 @@ public sealed class KyttoPaths(string? root = null)
     public string GatewayRoutesFile => Path.Combine(Root, "gateway-routes.json");
     public string GatewayEventsFile => Path.Combine(Root, "gateway-events.jsonl");
 
+    /// <summary>Masked launch reviews not yet acknowledged; never a definition or a value.</summary>
+    public string LaunchReviewsFile => Path.Combine(Root, "launch-reviews.json");
+
     /// <summary>Private staging area for a verified update package.</summary>
     public string UpdateStagingDirectory => Path.Combine(Root, "Updates");
 
@@ -56,6 +59,14 @@ public static class ConfigurationScopes
         ConfigurationScope.Profile => "profile",
         ConfigurationScope.Workspace => "workspace",
         _ => "global",
+    };
+
+    /// <summary>The scope as a word on screen, as macOS capitalizes its raw value.</summary>
+    public static string DisplayName(this ConfigurationScope scope) => scope switch
+    {
+        ConfigurationScope.Profile => "Profile",
+        ConfigurationScope.Workspace => "Workspace",
+        _ => "Global",
     };
 }
 

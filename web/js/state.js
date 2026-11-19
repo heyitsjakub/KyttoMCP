@@ -211,16 +211,16 @@ export function setState(changes) {
     state.leavingRestarts = null;
   }
 
-  render(state);
+  render(state, changes);
 
   if (exits.length > 0) {
     for (const key of exits) {
       const serial = (exitSerials.get(key) ?? 0) + 1;
       exitSerials.set(key, serial);
       window.setTimeout(() => {
-        if (serial !== exitSerials.get(key)) return;
+        if (serial !== exitSerials.get(key) || !state[key]) return;
         state[key] = null;
-        render(state);
+        render(state, { [key]: null });
       }, EXIT_HOLD);
     }
   }
@@ -259,6 +259,16 @@ export function setToolOpen(serverId, toolName, open) {
   const key = toolKey(serverId, toolName);
   if (open) state.openTools.add(key);
   else state.openTools.delete(key);
+}
+
+// A text field already displays the edit that sent the input event. Keep its
+// native selection, composition and undo history until another control needs
+// a different projection (for example, clearing an invalid import preview).
+export function recordSheetInput(changes, redraw = false) {
+  if (!state.sheet) return;
+  const sheet = { ...state.sheet, ...changes };
+  if (redraw) setState({ sheet });
+  else state.sheet = sheet;
 }
 
 export const toolKey = (serverId, toolName) => `${serverId}::${toolName}`;

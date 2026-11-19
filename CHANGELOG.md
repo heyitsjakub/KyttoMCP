@@ -9,12 +9,49 @@ without a backup.
 
 ## [Unreleased]
 
+## [1.0.9.6] — 2026-11-19
+
+Released for macOS and Windows on 2026-11-19.
+
+**Download**
+
+| Platform | File | Size | SHA-256 |
+|---|---|---:|---|
+| macOS (universal) | `KyttoMCP-1.0.9.6.dmg` | 6.6 MB | `3382f22b2a69f9400598ac5908407d67c739276b832e60ca78bcbb4f1dd3ace7` |
+| Windows x64 | `Kytto-Setup-win-x64-1.0.9.6.exe` | 78.7 MB | `b013ef869fd0bb99b15940dc55149de9c3e24722bc69d2b1e91d8f484fc3648d` |
+
 **Both platforms**
 
 - The macOS and Windows apps now load one shared web UI (`web/`). On macOS this
   brings the Windows interface's accessibility work, the read-only custom sources,
   Contract Guard details and remote sign-in; the update banner now shows download
   progress on both.
+- Typing in the server filter keeps the search field and its cursor in place.
+  Editing a dialog keeps the matrix behind it still. Closing the dialog from
+  the keyboard returns focus to the control that opened it.
+- Refreshing the same rows, notices or first-run screen no longer replays their
+  entrance animations.
+- Reading a TOML file with more than 64 nested arrays or inline tables now
+  reports a parse error before discovery can run out of stack space.
+
+**macOS**
+
+- The server inspector lists configuration files and scopes. Overlapping project definitions have a matrix badge. Claude Code shows which enabled definition takes priority in a given workspace.
+- Import one selected project definition into a writable client. The preview shows both files, environment variable names and settings that the destination cannot preserve. A successful import supports Undo.
+- Changes observed in a known file’s command, arguments, environment or endpoint raise a masked review in the matrix. Pending reviews are saved locally until acknowledged.
+
+**Windows**
+
+- The Windows app runs on the shared web UI, checked in the real window.
+- The three macOS additions above work on Windows too: configuration files and
+  scopes in the server inspector with Claude Code's priority, importing one project
+  definition into a writable client with a preview and Undo, and masked reviews of
+  launch changes made outside Kytto. A Claude Code project that `~/.claude.json`
+  spells with forward slashes is recognised as the same folder chosen in Kytto.
+- Restoring a backup is never reported as an outside change.
+- Adding a server never takes over an entry of the same name that is already in
+  the file, and removing a server from one client works when the same name is an
+  installed extension in another.
 
 ## [1.0.9.5] — 2026-11-14
 

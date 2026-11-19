@@ -2,6 +2,7 @@
 // masked, transport, per-client enablement, and the way to edit or delete.
 
 import { el, button, busyButton, sheet, definitionList, formatTokens, clientIcon } from '../dom.js';
+import { definitionSources, launchReview } from './definitionSources.js';
 import { packageSafetyAction } from './doctor.js';
 import { isRepositoryOnly, serverIsReadOnly, toolKey } from '../state.js';
 // Remote Doctor (§7.3, §7.10): field-level contract changes and the remote sign-in.
@@ -72,7 +73,10 @@ function serverDetailParts(state, serverId) {
   const server = state.servers.find((entry) => entry.id === serverId);
   if (!server) return null;
 
-  const body = [];
+  const body = (state.launchReviews ?? []).filter((alert) => alert.serverID === serverId)
+    .map((alert) => launchReview(state, alert));
+  const sources = definitionSources(state, server);
+  if (sources) body.push(sources);
 
   body.push(
     definitionList([

@@ -22,6 +22,8 @@ final class AppModel {
     }
     private let home: URL
     private let ledger = DigestLedger()
+    let launchReviews: LaunchReviews
+    private var pendingProjectCopy: ProjectDefinitionCopy?
     private let paths: KyttoPaths
     private let parkStore: ParkStore
     private let metadata: MetadataStore
@@ -99,6 +101,7 @@ final class AppModel {
         #endif
         self.home = home ?? testHome ?? FileManager.default.homeDirectoryForCurrentUser
         paths = KyttoPaths(home: self.home)
+        launchReviews = LaunchReviews(paths: paths)
         settingsStore = SettingsStore(paths: paths)
         profileStore = ProfileStore(paths: paths)
         gatewayRoutes = GatewayRouteStore(paths: paths)
@@ -287,8 +290,9 @@ final class AppModel {
         // Any background pass still reading started before this one; its
         // result is older and must not replace this.
         reloadGeneration += 1
-        let output = Self.discover(discoveryInput(), ledger: ledger)
-        apply(output, alwaysNotify: true)
+        let passLedger = DigestLedger()
+        let output = Self.discover(discoveryInput(), ledger: passLedger)
+        apply(output, ledger: passLedger, alwaysNotify: true)
         return output.result
     }
 
@@ -325,8 +329,7 @@ final class AppModel {
         // reading. Both are newer than what it read; the write's own watcher
         // event brings another pass.
         guard generation == reloadGeneration, revision == ledger.revision else { return false }
-        ledger.adopt(passLedger)
-        return apply(output, alwaysNotify: false)
+        return apply(output, ledger: passLedger, alwaysNotify: false)
     }
 
     /// Installs a discovery result. Returns whether anything the window or the
@@ -334,7 +337,9 @@ final class AppModel {
     /// usual outcome when Claude Code rewrites its file after a message — costs
     /// no redraw.
     @discardableResult
-    private func apply(_ output: DiscoveryOutput, alwaysNotify: Bool) -> Bool {
+    private func apply(_ output: DiscoveryOutput, ledger passLedger: DigestLedger, alwaysNotify: Bool) -> Bool {
+        launchReviews.observe(output.result, prior: ledger, incoming: passLedger)
+        ledger.adopt(passLedger)
         let previous = cached
         let previousRestarts = pendingRestarts
         let previousDismissed = dismissedRestartClients
@@ -1551,6 +1556,36 @@ final class AppModel {
         return result
     }
 
+    private func projectCopy(serverID: String, source: ClientID, target: ClientID) throws -> ProjectDefinitionCopy {
+        let result = current()
+        guard let server = result.servers.first(where: { $0.id == serverID }) else { throw ProjectCopyError.unavailable }
+        return try ProjectDefinitionCopy(server: server, source: source, target: target, result: result,
+                                         home: home, settings: settings, ledger: ledger)
+    }
+
+    func previewProjectCopy(serverID: String, source: ClientID, target: ClientID) async throws -> ProjectDefinitionCopy.Preview {
+        await refreshObservedFiles()
+        pendingProjectCopy = nil
+        let plan = try projectCopy(serverID: serverID, source: source, target: target)
+        if plan.preview.token != nil { pendingProjectCopy = plan }
+        return plan.preview
+    }
+
+    func applyProjectCopy(token: String) async throws -> AuthoringResult {
+        guard let plan = pendingProjectCopy, plan.preview.token == token else { throw ProjectCopyError.stale }
+        pendingProjectCopy = nil
+        await refreshObservedFiles()
+        let current = try projectCopy(serverID: plan.serverID, source: plan.source, target: plan.target)
+        guard plan.matches(current) else { throw ProjectCopyError.stale }
+        return try createServer(current.draft, in: [plan.target])
+    }
+
+    func acknowledgeLaunchReview(token: String) async throws {
+        await refreshObservedFiles()
+        try launchReviews.acknowledge(token)
+        onStateChanged?()
+    }
+
     func createServer(_ draft: ServerDraft, in clients: [ClientID]) throws -> AuthoringResult {
         let result = try authoring.create(draft, in: clients, existing: current().servers)
         noteRestarts(result)
@@ -1822,13 +1857,14 @@ final class AppModel {
         // always records the new digests; the window is redrawn only when what
         // it shows actually changed, and once per pass however many events
         // that pass answered.
-        Task { [weak self] in
-            guard let self else { return }
-            let outcome = await reloads.request()
-            guard outcome.changed, outcome.pass > lastPushedExternalPass else { return }
-            lastPushedExternalPass = outcome.pass
-            onExternalChange?()
-        }
+        Task { [weak self] in await self?.refreshObservedFiles() }
+    }
+
+    private func refreshObservedFiles() async {
+        let outcome = await reloads.request()
+        guard outcome.changed, outcome.pass > lastPushedExternalPass else { return }
+        lastPushedExternalPass = outcome.pass
+        onExternalChange?()
     }
 
     enum AppError: LocalizedError {

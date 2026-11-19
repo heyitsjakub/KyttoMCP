@@ -1420,3 +1420,12 @@ browser through the shell's external-navigation policy. No error message,
 configuration, log, version or device information is included in the URL.
 The native interface-failure surface can reload the bundled page and open both
 links even when the content process or bridge is unavailable.
+
+### Definition sources, project copies and launch reviews
+
+`state.get` includes `definitions[serverID]` with the file, name, client, scope and transport for each file-backed copy. Its `priorities` describe enabled Claude Code copies in a particular workspace. Other clients have unknown priority. The order follows the [Claude Code scope hierarchy](https://code.claude.com/docs/en/mcp#scope-hierarchy-and-precedence).
+
+- `servers.projectCopyPreview { serverID, sourceClientID, targetClientID }` requires the `project-copy` capability. Returns both file paths, transport, environment key names, unresolved variable names, warnings and blockers. The importer handles command, arguments, environment and HTTP/SSE endpoints. Additional settings such as headers, working directories and project inputs are listed as blockers. An applicable preview includes a single-use `token`.
+- `servers.applyProjectCopy { token }` creates one definition through normal authoring and returns its authoring result and state. A changed source, destination or selection requires another preview. Undo uses `servers.removeFromClient` for that destination.
+- `state.get.launchReviews` contains local observations with the affected server, client, file, scope, observation time, masked field summaries and an acknowledgement token. The running app compares successive file reads. Outstanding reviews survive relaunch. `launchReviewStorageError` reports a persistence problem.
+- `launch.acknowledge { token }` acknowledges exactly the version reviewed and returns state. It changes Kytto’s review record only.

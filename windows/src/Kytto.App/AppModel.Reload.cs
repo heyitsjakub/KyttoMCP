@@ -56,6 +56,7 @@ internal sealed partial class AppModel
                 // the file now is. Run again rather than apply it.
                 if (generation != Volatile.Read(ref _reloadGeneration)) continue;
 
+                _launchReviews.Observe(result, _ledger.DigestFor, digests);
                 foreach (var (path, digest) in digests) _ledger.Record(path, digest);
                 ArmWatcher(discovery, pendingChange: _watcher?.HasPendingChange ?? false);
                 _current = result;

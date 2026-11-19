@@ -59,6 +59,18 @@ const rowIds = () => all('tr[data-server-id]').map((row) => row.dataset.serverId
 
 // MARK: - Rendering
 
+test('a second render of the same content does not restart entrance animations', async () => {
+  await load({ notice: { kind: 'info', message: 'Saved changes' } });
+  const notice = () => draw().querySelector('.notice');
+  assert.ok(notice().classList.contains('is-entering'));
+  assert.equal(notice().classList.contains('is-entering'), false);
+
+  setState({ settings: { ...getState().settings, hasCompletedOnboarding: false } });
+  const welcome = () => draw().querySelector('.onboarding');
+  assert.ok(welcome().classList.contains('is-entering'));
+  assert.equal(welcome().classList.contains('is-entering'), false);
+});
+
 test('the matrix is a heading, three native filters and a list beside an inspector', async () => {
   await load();
   const workspace = first('.matrix-workspace');
@@ -439,4 +451,25 @@ test('the fixtures carry every source form and refuse to write a plugin', async 
 
   const info = await stub('app.info');
   assert.ok(info.capabilities.includes('library') && info.capabilities.includes('skills'));
+});
+
+test('project imports and masked reviews are reachable from server details', async () => {
+  await load({ selectedServerId: 'repo-helper' });
+  const inspector = first('.server-inspector');
+  assert.ok(inspector.querySelector('[data-action="acknowledge-launch"]'));
+  assert.ok(inspector.querySelector('[data-action="open-project-copy"]'));
+  const state = getState();
+  const source = state.definitions['repo-helper'].copies.find((copy) => copy.repository);
+  const preview = await stub('servers.projectCopyPreview', {
+    serverID: 'repo-helper', sourceClientID: source.clientID, targetClientID: 'cursor',
+  });
+  setState({ sheet: { kind: 'projectCopy', sourceId: source.clientID, targetId: 'cursor', serverId: 'repo-helper', preview } });
+  assert.ok(first('.sheet [data-action="apply-project-copy"]'));
+  setState({ sheet: { ...getState().sheet, preview: { ...preview, token: null, blockers: ['Name conflict'] } } });
+  assert.equal(first('.sheet [data-action="apply-project-copy"]'), null);
+  assert.equal(first('.sheet .failure-message').textContent, 'Name conflict');
+
+  const olderHost = renderServerInspector({ ...state, app: { capabilities: [] }, definitions: {}, launchReviews: [] }, 'repo-helper');
+  assert.equal(olderHost.querySelector('[data-action="open-project-copy"]'), null);
+  assert.equal(olderHost.querySelector('[data-action="acknowledge-launch"]'), null);
 });

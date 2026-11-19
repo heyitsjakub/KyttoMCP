@@ -5,7 +5,7 @@
 // page. The catalog is a starting point that drops the user into the same form.
 
 import { el, button, input, field, sheet } from '../dom.js';
-import { appendedIn, contractedIn, stagger } from '../anim.js';
+import { previousEditorLength, stagger } from '../anim.js';
 
 export function renderServerForm(state) {
   const form = state.sheet;
@@ -142,11 +142,11 @@ function argumentsEditor(args, editingIndex) {
   section.append(el('h3', null, 'Arguments'));
 
   const list = el('div', 'row-editor');
-  const appended = appendedIn('draft-arguments', args.length, 240);
-  if (contractedIn('draft-arguments', args.length)) list.classList.add('is-compacting');
+  const previousLength = previousEditorLength('draft-arguments', args.length);
+  if (args.length < previousLength) list.classList.add('is-compacting');
   args.forEach((argument, index) => {
     const row = el('div', 'editor-row');
-    if (appended.has(index)) {
+    if (index >= previousLength) {
       row.classList.add('is-entering');
       row.style.animationDelay = stagger(index, 12, 60);
     }
@@ -178,11 +178,11 @@ function environmentEditor(env, hints) {
   section.append(el('h3', null, 'Environment'));
 
   const list = el('div', 'row-editor');
-  const appended = appendedIn('draft-environment', env.length, 240);
-  if (contractedIn('draft-environment', env.length)) list.classList.add('is-compacting');
+  const previousLength = previousEditorLength('draft-environment', env.length);
+  if (env.length < previousLength) list.classList.add('is-compacting');
   env.forEach((entry, index) => {
     const row = el('div', 'editor-row');
-    if (appended.has(index)) {
+    if (index >= previousLength) {
       row.classList.add('is-entering');
       row.style.animationDelay = stagger(index, 12, 60);
     }

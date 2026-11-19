@@ -102,7 +102,10 @@ public sealed class ServerAuthoring(
         var problems = draft.Validate(TakenNames(clients, existing));
         if (problems.Count > 0) throw AuthoringException.Invalid(problems);
 
-        return Write(draft, clients, oldName: null);
+        // A new server never takes over an entry the file already holds under the
+        // same name, even one discovery could not show (a twin it skipped, a write
+        // that landed since the last read).
+        return Write(draft, clients, oldName: null, requireAbsent: true);
     }
 
     // MARK: - Update
@@ -426,7 +429,13 @@ public sealed class ServerAuthoring(
     private AuthoringResult Remove(Server server, IReadOnlyList<ClientId> clients)
     {
         if (server.IsPlugin) throw AuthoringException.PluginNotEditable(server.Name);
-        if (server.IsBundled) throw AuthoringException.NotEditable(server.Name);
+        // Each client's own copy, not the row's: an extension in one client does not
+        // make an ordinary entry in another one uneditable.
+        if (clients.Any(clientId =>
+                server.DefinitionsByClient.GetValueOrDefault(clientId)?.IsBundled ?? server.IsBundled))
+        {
+            throw AuthoringException.NotEditable(server.Name);
+        }
         if (clients.Count == 0) throw AuthoringException.NotFound(server.Name);
 
         var serverWrites = new List<ClientWrite>();
@@ -473,7 +482,8 @@ public sealed class ServerAuthoring(
     private AuthoringResult Write(
         ServerDraft draft,
         IReadOnlyList<ClientId> clients,
-        string? oldName)
+        string? oldName,
+        bool requireAbsent = false)
     {
         if (draft.Transport == Transport.Sse &&
             _descriptors.FirstOrDefault(candidate => clients.Contains(candidate.Id) && !candidate.ServerSchema.AcceptsSse)
@@ -497,9 +507,9 @@ public sealed class ServerAuthoring(
 
             var prepared = source.Format == ConfigFormat.Json
                 ? writer.Prepare<JsonDocument>(path, clientId, pathDisplay, expecting,
-                    document => WriteJson(document, draft, source.ServersKey, oldName, descriptor.ServerSchema, descriptor.ToolSwitch))
+                    document => WriteJson(document, draft, source.ServersKey, oldName, descriptor.ServerSchema, descriptor.ToolSwitch, requireAbsent))
                 : writer.Prepare<TomlDocument>(path, clientId, pathDisplay, expecting,
-                    document => WriteToml(document, draft, source, oldName));
+                    document => WriteToml(document, draft, source, oldName, requireAbsent));
             serverWrites.Add(new ClientWrite(clientId, prepared));
         }
 
@@ -528,12 +538,14 @@ public sealed class ServerAuthoring(
         string serversKey,
         string? oldName,
         ServerSchema schema,
-        ToolSwitch? toolSwitch)
+        ToolSwitch? toolSwitch,
+        bool requireAbsent = false)
     {
         // Already here: splice the draft into the definition the file has, under the
         // spelling it has (§6.3).
         if (document.ServerKey(Server.Identity(oldName ?? draft.TrimmedName), serversKey) is { } key)
         {
+            if (requireAbsent) throw NameTaken(draft);
             var text = document.SourceText;
             var name = key;
             if (oldName is not null)
@@ -592,13 +604,15 @@ public sealed class ServerAuthoring(
         TomlDocument document,
         ServerDraft draft,
         ConfigSource.ServerMap source,
-        string? oldName)
+        string? oldName,
+        bool requireAbsent = false)
     {
         // Spliced into the server's own tables, so `enabled = false` and every key a
         // draft does not describe stay put (§6.3).
         var key = source.ServersKey;
         if (document.ServerName(Server.Identity(oldName ?? draft.TrimmedName), key) is { } existing)
         {
+            if (requireAbsent) throw NameTaken(draft);
             var text = document.SourceText;
             var name = existing;
             if (oldName is not null)

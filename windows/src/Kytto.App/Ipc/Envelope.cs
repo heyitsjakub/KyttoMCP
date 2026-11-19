@@ -93,7 +93,8 @@ internal static class Envelope
         BadArgumentException => "badArgument",
         IpcException ipc => ipc.Code,
         JsonException => "badPayload",
-        GatewayManagedException or NoDriftException or PackagePinStateException => "appState",
+        GatewayManagedException or NoDriftException or PackagePinStateException or
+            ProjectCopyException or LaunchReviewStaleException => "appState",
         // Its own code: the page reloads and offers a retry for this one, and must
         // not have to recognise it by the wording of the message.
         ConfigWriteException { IsChangedOnDisk: true } => "changedOnDisk",

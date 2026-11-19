@@ -137,6 +137,15 @@ public static class ServerSourceKinds
 /// </remarks>
 public sealed record ServerSource(string Kind, string DisplayName, string? Version, bool ReadOnly);
 
+/// <summary>The file and exact key a copy was read from.</summary>
+/// <remarks>
+/// Only a definition actually read from a configuration file has one: an extension,
+/// a plugin or a parked copy has no file location until it is restored. The
+/// workspace is the key of a Claude Code project entry in the shared file, so the
+/// scope a copy belongs to can be named and its priority worked out (§4).
+/// </remarks>
+public sealed record DefinitionLocation(string File, string Name, string? ClaudeLocalWorkspace = null);
+
 /// <summary>One client's copy of a definition, as that client actually has it.</summary>
 /// <remarks>
 /// The matrix merges a name into one row, which is the whole point of it — but the
@@ -273,6 +282,14 @@ public sealed class Server
     /// files, where it can quietly drift out of step in one of them.
     /// </remarks>
     public Dictionary<ClientKey, ClientDefinition> DefinitionsByClient { get; init; } = [];
+
+    /// <summary>Where each client's copy was read, for the copies read from a file.</summary>
+    /// <remarks>
+    /// Kept beside <see cref="DefinitionsByClient"/> rather than inside a
+    /// <see cref="ClientDefinition"/>: two clients' copies are compared by what they
+    /// run, and the file each one sits in is not part of that.
+    /// </remarks>
+    public Dictionary<ClientKey, DefinitionLocation> Locations { get; init; } = [];
 
     /// <summary>The environment as each client has it.</summary>
     /// <remarks>
@@ -473,12 +490,18 @@ public sealed class Server
         {
             if (Transport != Transport.Stdio) return false;
             var (command, args) = Runnable;
-            if (!string.IsNullOrEmpty(command) && ContainsSeparator(command) && !IsAbsolute(command))
-            {
-                return true;
-            }
-            return args.Any(OpensWithRelativePrefix);
+            return HasRelativeLaunchPath(command, args);
         }
+    }
+
+    /// <summary>The rule behind <see cref="HasRelativePath"/>, for a definition that is not a row yet.</summary>
+    public static bool HasRelativeLaunchPath(string? command, IReadOnlyList<string> args)
+    {
+        if (!string.IsNullOrEmpty(command) && ContainsSeparator(command) && !IsAbsolute(command))
+        {
+            return true;
+        }
+        return args.Any(OpensWithRelativePrefix);
     }
 
     /// <summary>Whether the executable itself, rather than only an argument, is relative.</summary>

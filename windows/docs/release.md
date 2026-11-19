@@ -1,14 +1,13 @@
 # Windows release
 
-The current source release and latest published Windows build are **1.0.8**.
-Its verification results and remaining artifact limits are in
-[`releases/1.0.8.md`](releases/1.0.8.md); earlier notes sit beside it.
+The next Windows release is [1.0.9.6](releases/1.0.9.6.md).
+The [1.0.9.5 release notes](releases/1.0.9.5.md) record the previous installer and its verification results.
 
 Before creating an artifact, the exact release sources must pass:
 
 ```powershell
 dotnet test
-Push-Location web
+Push-Location ../web
 npm test
 Pop-Location
 dotnet build

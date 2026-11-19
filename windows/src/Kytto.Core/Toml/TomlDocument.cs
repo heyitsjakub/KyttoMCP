@@ -249,6 +249,7 @@ public enum TomlParseErrorKind
     /// </summary>
     DuplicateTable,
     DuplicateKey,
+    NestingTooDeep,
 }
 
 public sealed class TomlParseException(
@@ -279,6 +280,7 @@ public sealed class TomlParseException(
             TomlParseErrorKind.UnterminatedTableHeader => "unterminated table header",
             TomlParseErrorKind.DuplicateTable => "a table is defined more than once",
             TomlParseErrorKind.DuplicateKey => "a key is defined more than once",
+            TomlParseErrorKind.NestingTooDeep => "values nested too deeply",
             _ => "malformed TOML",
         };
         return $"{what} at line {line}, column {column}";
@@ -297,6 +299,8 @@ public sealed class TomlParseException(
 /// </remarks>
 internal ref struct TomlParser(byte[] bytes)
 {
+    // Discovery parses client files on a worker thread with a limited stack.
+    private const int MaximumContainerDepth = 64;
     private readonly byte[] _bytes = bytes;
     private int _index = 0;
 
@@ -495,7 +499,7 @@ internal ref struct TomlParser(byte[] bytes)
 
     // MARK: Pairs
 
-    private TomlPair ParsePair()
+    private TomlPair ParsePair(int depth = 0)
     {
         var start = _index;
         var key = ParseDottedKey();
@@ -509,13 +513,13 @@ internal ref struct TomlParser(byte[] bytes)
         _index++;
         SkipInlineSpace();
 
-        var value = ParseValue();
+        var value = ParseValue(depth);
         return new TomlPair(key, keySpan, value, new TomlSpan(start, value.Span.End));
     }
 
     // MARK: Values
 
-    private TomlValue ParseValue()
+    private TomlValue ParseValue(int depth)
     {
         if (_index >= _bytes.Length) throw Error(TomlParseErrorKind.UnexpectedEndOfInput);
         var start = _index;
@@ -530,13 +534,15 @@ internal ref struct TomlParser(byte[] bytes)
 
             case (byte)'[':
             {
-                var elements = ParseArray();
+                if (depth >= MaximumContainerDepth) throw Error(TomlParseErrorKind.NestingTooDeep);
+                var elements = ParseArray(depth + 1);
                 return new TomlValue(TomlKind.Array, new TomlSpan(start, _index), elements);
             }
 
             case (byte)'{':
             {
-                var pairs = ParseInlineTable();
+                if (depth >= MaximumContainerDepth) throw Error(TomlParseErrorKind.NestingTooDeep);
+                var pairs = ParseInlineTable(depth + 1);
                 return new TomlValue(TomlKind.InlineTable, new TomlSpan(start, _index), pairs);
             }
 
@@ -571,7 +577,7 @@ internal ref struct TomlParser(byte[] bytes)
         }
     }
 
-    private List<TomlValue> ParseArray()
+    private List<TomlValue> ParseArray(int depth)
     {
         _index++; // [
         var elements = new List<TomlValue>();
@@ -587,7 +593,7 @@ internal ref struct TomlParser(byte[] bytes)
                 return elements;
             }
 
-            elements.Add(ParseValue());
+            elements.Add(ParseValue(depth));
             SkipTrivia();
 
             if (_index >= _bytes.Length) throw Error(TomlParseErrorKind.UnterminatedArray);
@@ -602,7 +608,7 @@ internal ref struct TomlParser(byte[] bytes)
         }
     }
 
-    private List<TomlPair> ParseInlineTable()
+    private List<TomlPair> ParseInlineTable(int depth)
     {
         _index++; // {
         var pairs = new List<TomlPair>();
@@ -618,7 +624,7 @@ internal ref struct TomlParser(byte[] bytes)
                 return pairs;
             }
 
-            pairs.Add(ParsePair());
+            pairs.Add(ParsePair(depth));
             SkipTrivia();
 
             if (_index >= _bytes.Length) throw Error(TomlParseErrorKind.UnterminatedInlineTable);

@@ -1,4 +1,4 @@
-# Kytto MCP — roadmap
+# KyttoMCP — roadmap
 
 The one place for what comes next: ideas for the next version, deferred
 candidates and known gaps. Everything here is a candidate, not a commitment —
@@ -11,35 +11,58 @@ new sections are appended at the end.
 
 ## Next version — candidates
 
-In rough order of value. Each links to its section below.
+Proposed focus for macOS and Windows: **see which MCP definition a client
+uses, then deliberately copy that definition across clients.** The
+[19 November feedback review](#22-feature-proposals-from-community-feedback--2026-11-19)
+records the source and first usable scope for each candidate.
 
-Marketing evidence was reviewed on 2026-11-14; see §20 for the proposed
-shortlist, evidence strength, superseded requests and reports awaiting a later
-audit. No implementation or code audit was performed in that review.
+1. **Show source, scope and conflicts in the matrix** (§12, §22). Show which
+   definition takes precedence where client behavior has been verified.
+2. **Import a selected project's MCP definition into a supported client**
+   (§11, §12, §22). Extend the existing copy preview with source selection
+   and a setup check before writing.
+3. **Flag launch configuration changes made outside Kytto** (§7, §22). Start
+   with a local, masked diff in the matrix or server detail.
 
-A separate source audit on 2026-11-14 confirmed four high-priority defects and
-three medium-priority defects (§21). All seven are fixed on macOS for the next
-release (see `CHANGELOG.md`); the Windows port still has to be checked.
+The macOS and Windows backends and the shared web UI implement these three items for 1.0.9.6. Launch comparisons begin with the first read in each session and pending reviews survive restarts.
 
-Done on macOS for 1.0.9.5 (2026-11-14), Windows to follow: the §21 audit
-fixes, Contract Guard compatibility and security labels (§18), consent-bypass
-wording in the scanner (§20), project folders (§12), a second context figure
-for clients documented to defer tools (§16), and both parked demo reports
-(§20).
+Other candidates:
 
-1. **Context cost, the rest** (§16): which other clients defer tools, and
-   what a session actually loaded.
-2. **Project configs, the rest** (§12): precedence between scopes, and
-   noticing a newly committed file without waiting for the window to activate.
-3. **Alert when a server's launch definition changes outside Kytto** (§7).
-4. **`kytto` command-line tool** to switch a profile or a server from a terminal
+- **Tool risk evidence** (§22). Explore a local advisory view and follow the
+  mcpward draft before deciding on interoperability.
+- **Context cost, the rest** (§16): verify behavior for additional clients
+  and investigate session measurements with reliable client evidence.
+- **`kytto` command-line tool** to switch a profile or a server from a terminal
    or hook ([claude-code#10447](https://github.com/anthropics/claude-code/issues/10447)).
-5. **Import from MCP Router**, which reportedly ended support on 2026-09-18
+- **Import from MCP Router**, which reportedly ended support on 2026-09-18
    (claim from a competitor's site; verify first).
-6. **Contract Guard: separate compatibility and security labels** (§18).
-7. Later: Linux ([#2](https://github.com/heyitsjakub/KyttoMCP/issues/2)),
+- Later: Linux ([#2](https://github.com/heyitsjakub/KyttoMCP/issues/2)),
    Firewall rules (§5), cost limits (§6), Focused Inspector (§10),
    organization-managed inventory (§13).
+
+The [1.0.9.5 release notes](../../CHANGELOG.md#1095--2026-11-14) record project
+folder discovery, the two Contract Guard labels, the second context estimate,
+and the November audit and demo fixes for both platforms. The shared web UI is
+already listed under Unreleased.
+
+### Bugs and reliability
+
+Fixing bugs and reliability problems is also a priority for the next version.
+Review reports and known gaps (§19, §20), verify which still reproduce in the
+current macOS and Windows builds, and record confirmed issues here. Prioritize
+crashes, configuration or data loss, and failures in everyday workflows such
+as discovery, health checks, and saving or undoing changes. Verify each fix on
+the affected platform before release.
+
+The first stability pass covers repeated entrance animations, text fields
+being replaced during typing, keyboard focus after closing a dialog, and
+excessive nesting during TOML discovery. The fixes are under Unreleased in
+the changelog. Repeat the typing, dialog and discovery checks in the native
+Windows build before release.
+
+The macOS Add Server UI test also logged main-thread and thread-priority
+warnings during launch and text entry. Profile these paths in a normal app
+session to establish whether they cause a visible pause.
 
 ## 5. Local MCP Firewall
 
@@ -470,3 +493,59 @@ are fixed.
 **Follow-up scope:** verify the same boundaries independently on Windows, then
 convert each reproduction into a regression test for the corrected behavior.
 The two Windows demo reports parked in §20 remain unverified by this macOS audit.
+
+## 22. Feature proposals from community feedback — 2026-11-19
+
+The November marketing notes record one concrete Windows migration request
+for another app, an older multi-client question on X, and a collaboration
+proposal from the mcpward maintainer. These are individual, qualitative
+signals. The ordering below is a product proposal based on those notes and
+the behavior documented in the changelog and shared UI.
+
+### 1. Show where each definition comes from
+
+When the same name appears globally and in an attached project, show each
+definition with its file and scope in the server detail. Surface the conflict
+from the matrix. For the first client with verified precedence, explain which
+copy takes priority and in which workspace. Show unknown precedence elsewhere.
+Keep project discovery read-only and require a separate user action to run a
+project server. The older X question asked for one place to manage MCP across
+Grok, Claude and Codex. It supports the multi-client workflow, with Grok
+support still a research candidate. [X discussion](https://x.com/bhavikbuilds/status/2110978605648060530)
+
+### 2. Import a project definition using the copy preview
+
+Extend Kytto's existing client-to-client copy flow with an explicit project
+source. Start with one server and one writable destination from the existing
+client list. The preview names both files, lets the user choose between
+same-named source definitions, shows unresolved environment variable names
+with values masked, and explains unsupported settings before any write.
+Reuse the existing config validation, backup and Undo. Keep selection and
+preview local. If the destination already contains that name, stop and show
+the conflict. This covers a gap between 1.0.9.5's read-only project inventory
+and the existing portable setup flow for writable definitions. The Cherry
+Studio issue describes a broader migration that also includes skills. Use
+it to validate the workflow, and evaluate a Cherry Studio adapter separately
+once there is a redacted config and a verified write path. [Migration request](https://github.com/CherryHQ/cherry-studio/issues/24823) · [Preview discussion](https://github.com/CherryHQ/cherry-studio/issues/24823#issuecomment-7010935588)
+
+### 3. Show external launch configuration changes
+
+Build on §7. When a known file is re-read after an external save, show a review
+badge for a semantic change to a server's command, arguments, environment,
+or remote endpoint. Show the file, scope and changed fields in a masked
+before/after view. Formatting-only saves should stay quiet. Make this local
+and observational, with explicit acknowledgement. This is a Kytto product
+proposal that complements Contract Guard's review of tool definitions.
+Cardigan's separate report about stale client-side tool lists is a reason to
+label clearly when Kytto observed a definition and what it was able to
+check. [Cardigan discussion](https://github.com/camaragon/cardigan/issues/92)
+
+### Explore tool risk evidence with mcpward
+
+Prototype an advisory tool detail that shows effect and whether a tool
+interacts with external systems as separate fields. Label the evidence behind
+each value, distinguishing server-declared annotations from Kytto's own
+findings. Default to unknown when evidence is absent. Treat the shared
+manifest as research while the format is still a draft. Decide on import or
+export after both native implementations can agree on contract identity
+against common test vectors. [Original discussion](https://github.com/TsvetanG2/mcpward/discussions/83) · [Draft RFC](https://github.com/TsvetanG2/mcpward/discussions/98)

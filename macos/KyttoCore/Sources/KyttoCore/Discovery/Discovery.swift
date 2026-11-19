@@ -166,6 +166,16 @@ public struct Discovery: Sendable {
                     // server shown once, not two.
                     if merged[key]?.definitionsByClient[descriptor.id] == nil { countForClient += 1 }
 
+                    var definition = ClientDefinition(from: found.server)
+                    switch source {
+                    case .serverMap(let file, _, _, _):
+                        definition.location = DefinitionLocation(file: resolver.resolveServerMap(file, for: descriptor.id), name: found.name, claudeLocalWorkspace: nil)
+                    case .scopedJSONServerMap(let file, let workspace, _):
+                        definition.location = DefinitionLocation(file: resolver.resolve(file), name: found.name, claudeLocalWorkspace: workspace)
+                    case .readOnlyAutoServerMap(let file):
+                        definition.location = DefinitionLocation(file: resolver.resolve(file), name: found.name, claudeLocalWorkspace: nil)
+                    default: break
+                    }
                     if var existing = merged[key] {
                         // One cell cannot faithfully describe two competing
                         // sources. Keep the first (explicit config precedes
@@ -179,15 +189,13 @@ public struct Discovery: Sendable {
                         // which clients differ and in what — a diagnostic in the
                         // footer could only say that something, somewhere, did.
                         existing.enabledIn[descriptor.id] = found.enablement
-                        existing.definitionsByClient[descriptor.id] =
-                            ClientDefinition(from: found.server)
+                        existing.definitionsByClient[descriptor.id] = definition
                         existing.toolFilters[descriptor.id] = found.server.toolFilters[descriptor.id]
                         merged[key] = existing
                     } else {
                         var server = found.server
                         server.enabledIn[descriptor.id] = found.enablement
-                        server.definitionsByClient[descriptor.id] =
-                            ClientDefinition(from: found.server)
+                        server.definitionsByClient[descriptor.id] = definition
                         merged[key] = server
                         order.append(key)
                     }

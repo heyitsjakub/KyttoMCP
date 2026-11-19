@@ -209,6 +209,73 @@ public class WireFormatTests
     }
 
     /// <summary>
+    /// Definition sources and launch reviews, under the keys the shared
+    /// <c>definitionSources.js</c> reads. The server id is a dictionary key and keeps
+    /// its spelling.
+    /// </summary>
+    [Fact]
+    public void DefinitionSourcesAndLaunchReviewsUseTheSharedKeys()
+    {
+        var encoded = Encode(new StateDto(
+            Clients: [],
+            Servers: [],
+            Diagnostics: [],
+            PendingRestarts: new Dictionary<string, int>(),
+            GatewayRoutes: [],
+            DoctorReports: [],
+            ContractAlerts: [],
+            Drift: [],
+            Definitions: new Dictionary<string, DefinitionInventoryDto>
+            {
+                ["My-Server"] = new(
+                    [new DefinitionCopyDto("claudeCode", "My-Server", @"C:\Users\example\.claude.json", "User", false, "stdio")],
+                    [new DefinitionPriorityDto(@"C:\work", "custom.1", ["custom.1", "claudeCode"])],
+                    true),
+            },
+            LaunchReviews:
+            [
+                new LaunchReviewDto("T", "my-server", "cursor", @"C:\Users\example\.cursor\mcp.json", "Global",
+                    "2026-11-19T10:00:00Z", [new LaunchReviewFieldDto("Command", "Set (masked)", "Absent")]),
+            ],
+            LaunchReviewStorageError: null));
+
+        var inventory = encoded.GetProperty("definitions").GetProperty("My-Server");
+        Assert.Equal(["copies", "priorities", "overlapsScopes"], KeysOf(inventory));
+        Assert.Equal(
+            ["clientID", "name", "file", "scope", "repository", "transport"],
+            KeysOf(inventory.GetProperty("copies")[0]));
+        Assert.Equal(["workspace", "winner", "candidates"], KeysOf(inventory.GetProperty("priorities")[0]));
+        var review = encoded.GetProperty("launchReviews")[0];
+        Assert.Equal(
+            ["token", "serverID", "clientID", "file", "scope", "observedAt", "fields"],
+            KeysOf(review));
+        Assert.Equal(["name", "before", "after"], KeysOf(review.GetProperty("fields")[0]));
+        Assert.Equal(JsonValueKind.Null, encoded.GetProperty("launchReviewStorageError").ValueKind);
+    }
+
+    [Fact]
+    public void AProjectCopyPreviewCarriesNamesAndAnOptionalToken()
+    {
+        var encoded = Encode(new ProjectCopyPreviewDto(
+            null, "a", "b", "stdio", ["TOKEN"], ["SOURCE_TOKEN"], [], ["Unsupported settings: headers."]));
+
+        Assert.Equal(
+            ["token", "sourceFile", "targetFile", "transport", "environmentKeys", "unresolvedVariables", "warnings", "blockers"],
+            KeysOf(encoded));
+        Assert.Equal(JsonValueKind.Null, encoded.GetProperty("token").ValueKind);
+    }
+
+    [Fact]
+    public void ProjectCopyAndReviewPayloadsDecodeFromWhatTheWebLayerSends()
+    {
+        var copy = JsonSerializer.Deserialize<ProjectCopyPayload>(
+            """{ "serverID": "demo", "sourceClientID": "custom.1", "targetClientID": "cursor" }""", Envelope.Json);
+        Assert.Equal(new ProjectCopyPayload("demo", "custom.1", "cursor"), copy);
+        var token = JsonSerializer.Deserialize<ReviewTokenPayload>("""{ "token": "T" }""", Envelope.Json);
+        Assert.Equal("T", token?.Token);
+    }
+
+    /// <summary>
     /// Drift reports which environment keys differ and never what they are set to —
     /// the one field that describes something it deliberately does not carry (§6).
     /// </summary>
@@ -858,14 +925,16 @@ public class WireFormatTests
     }
 
     [Fact]
-    public void TheStateCarriesPendingContractImportsAsItsLastKey()
+    public void TheStateEndsWithPendingContractImportsAndTheDefinitionSources()
     {
         var encoded = Encode(EmptyState with
         {
             PendingContractImports = new PendingContractImportsDto([], null),
         });
 
-        Assert.Equal("pendingContractImports", KeysOf(encoded).Last());
+        Assert.Equal(
+            ["pendingContractImports", "definitions", "launchReviews", "launchReviewStorageError"],
+            KeysOf(encoded).TakeLast(4));
         Assert.Equal(
             ["entries", "error"],
             KeysOf(encoded.GetProperty("pendingContractImports")));

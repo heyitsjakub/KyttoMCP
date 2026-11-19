@@ -339,7 +339,55 @@ internal sealed record StateDto(
     /// Restart notices hidden by the user without changing the applied baseline.
     IReadOnlyList<string>? DismissedRestarts = null,
     /// Imported contract fingerprints awaiting a local check and a review (§7.13).
-    PendingContractImportsDto? PendingContractImports = null);
+    PendingContractImportsDto? PendingContractImports = null,
+    /// Server id → every file-backed copy of it and, where Claude Code decides, which wins.
+    IReadOnlyDictionary<string, DefinitionInventoryDto>? Definitions = null,
+    /// Launch fields changed outside Kytto, masked, until acknowledged (§22).
+    IReadOnlyList<LaunchReviewDto>? LaunchReviews = null,
+    /// Why pending reviews could not be read or saved; null when they could.
+    string? LaunchReviewStorageError = null);
+
+/// <param name="File">A display string; the page never builds a path from it.</param>
+internal sealed record DefinitionCopyDto(
+    string ClientID,
+    string Name,
+    string File,
+    string Scope,
+    bool Repository,
+    string Transport);
+
+internal sealed record DefinitionPriorityDto(
+    string Workspace,
+    string Winner,
+    IReadOnlyList<string> Candidates);
+
+internal sealed record DefinitionInventoryDto(
+    IReadOnlyList<DefinitionCopyDto> Copies,
+    IReadOnlyList<DefinitionPriorityDto> Priorities,
+    bool OverlapsScopes);
+
+/// <summary>Which launch field changed, as a masked summary — never a value.</summary>
+internal sealed record LaunchReviewFieldDto(string Name, string Before, string After);
+
+internal sealed record LaunchReviewDto(
+    string Token,
+    string ServerID,
+    string ClientID,
+    string File,
+    string Scope,
+    string ObservedAt,
+    IReadOnlyList<LaunchReviewFieldDto> Fields);
+
+/// <summary>The review of one project-definition import. Names only; values stay native.</summary>
+internal sealed record ProjectCopyPreviewDto(
+    string? Token,
+    string SourceFile,
+    string TargetFile,
+    string Transport,
+    IReadOnlyList<string> EnvironmentKeys,
+    IReadOnlyList<string> UnresolvedVariables,
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<string> Blockers);
 
 internal sealed record DriftVariantDto(
     IReadOnlyList<string> ClientIDs,

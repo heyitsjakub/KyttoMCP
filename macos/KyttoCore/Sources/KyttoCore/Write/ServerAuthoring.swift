@@ -111,7 +111,7 @@ public struct ServerAuthoring: Sendable {
         let errors = draft.validate(takenNames: taken)
         guard errors.isEmpty else { throw AuthoringError.invalid(errors) }
 
-        return try write(draft, to: clients, replacing: nil)
+        return try write(draft, to: clients, replacing: nil, requireAbsent: true)
     }
 
     // MARK: - Update
@@ -407,7 +407,9 @@ public struct ServerAuthoring: Sendable {
     }
 
     private func remove(_ server: Server, from clients: [ClientID]) throws -> AuthoringResult {
-        guard !server.isBundled else { throw AuthoringError.notEditable(server.name) }
+        guard !clients.contains(where: { server.definitionsByClient[$0]?.isBundled ?? server.isBundled }) else {
+            throw AuthoringError.notEditable(server.name)
+        }
         guard !clients.isEmpty else { throw AuthoringError.notFound(server.name) }
 
         let targets = try editableTargets(for: clients)
@@ -488,7 +490,8 @@ public struct ServerAuthoring: Sendable {
     private func write(
         _ draft: ServerDraft,
         to clients: [ClientID],
-        replacing oldName: String?
+        replacing oldName: String?,
+        requireAbsent: Bool = false
     ) throws -> AuthoringResult {
         if draft.transport == .sse,
            let refusing = descriptors.first(where: { clients.contains($0.id) && !$0.serverSchema.acceptsSSE }) {
@@ -523,6 +526,7 @@ public struct ServerAuthoring: Sendable {
                         // file has, under the spelling it has (§6.3).
                         let identity = Server.identity(for: oldName ?? draft.trimmedName)
                         if let key = try document.serverKey(for: identity, under: source.serversKey) {
+                            if requireAbsent { throw AuthoringError.invalid([.nameTaken(draft.trimmedName)]) }
                             var text = document.sourceText
                             var name = key
                             if oldName != nil {
@@ -581,6 +585,7 @@ public struct ServerAuthoring: Sendable {
                         // and every key a draft does not describe stay put (§6.3).
                         let identity = Server.identity(for: oldName ?? draft.trimmedName)
                         if let existing = try document.serverName(for: identity, under: source.serversKey) {
+                            if requireAbsent { throw AuthoringError.invalid([.nameTaken(draft.trimmedName)]) }
                             var text = document.sourceText
                             var name = existing
                             if oldName != nil {

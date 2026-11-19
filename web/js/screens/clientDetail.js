@@ -89,7 +89,7 @@ export function renderClient(state) {
   // servers as the matrix but one column of it, and a group snapshot that
   // changed shape between two renders would report the whole column as moved.
   const flipped = changedIn('client-cells', cellSnapshot([client], state.servers));
-  const settled = changedIn('client-dots', dotSnapshot(state.servers), 420);
+  const settled = changedIn('client-dots', dotSnapshot(state.servers));
 
   if (present.length > 0) {
     panel.append(

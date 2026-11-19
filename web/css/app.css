@@ -3230,7 +3230,6 @@ th.col-client.idle .app-icon {
   padding: 40px;
   color: var(--text-muted);
   text-align: center;
-  animation: fade-in 220ms var(--ease-out);
 }
 
 @keyframes fade-in {
@@ -3442,6 +3441,9 @@ body[data-stubbed='true'] .statusbar::after {
   background: var(--bg-elevated);
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-xl);
+}
+
+.onboarding.is-entering .onboarding-shell {
   animation: onboarding-in 460ms var(--ease-out);
 }
 
@@ -3613,11 +3615,14 @@ body[data-stubbed='true'] .statusbar::after {
   background: color-mix(in srgb, var(--bg-raised) 48%, transparent);
   border: 1px solid var(--hairline);
   border-radius: 12px;
-  animation: onboarding-item-in 360ms var(--ease-out) backwards;
   transition:
     background-color var(--fast) var(--ease),
     border-color var(--fast) var(--ease),
     transform var(--fast) var(--ease);
+}
+
+.onboarding.is-entering .onboarding-client {
+  animation: onboarding-item-in 360ms var(--ease-out) backwards;
 }
 
 .onboarding-client:nth-child(2) {
@@ -4715,3 +4720,15 @@ body[data-stubbed='true'] .statusbar::after {
 .field-hint.warning {
   color: var(--warn);
 }
+
+.definition-copy {
+  display: grid;
+  gap: 3px;
+  padding-block: 6px;
+}
+/* A grid item is as wide as its longest unbreakable run by default, so one deep
+   path (a scope line, a file) pushed every copy past the inspector's edge. */
+.definition-copy > * { min-width: 0; }
+.definition-sources, .sheet dd.mono { overflow-wrap: anywhere; }
+.launch-review-fields { width: 100%; margin-block: 8px; font-size: 12px; }
+.launch-review-fields th, .launch-review-fields td { text-align: start; padding: 3px; }

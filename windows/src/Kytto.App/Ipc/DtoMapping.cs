@@ -368,8 +368,43 @@ internal static class DtoMapping
                 .Select(client => client.Raw())
                 .Order(StringComparer.Ordinal)
                 .ToArray(),
-            PendingContractImports: model.ToPendingContractImportsDto());
+            PendingContractImports: model.ToPendingContractImportsDto(),
+            Definitions: model.DefinitionInventories().ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value.ToDto(),
+                StringComparer.Ordinal),
+            LaunchReviews: model.LaunchReviews.Alerts.Select(ToDto).ToArray(),
+            LaunchReviewStorageError: model.LaunchReviews.StorageError);
     }
+
+    internal static DefinitionInventoryDto ToDto(this DefinitionInventory inventory) => new(
+        Copies: inventory.Copies
+            .Select(copy => new DefinitionCopyDto(
+                copy.ClientID, copy.Name, copy.File, copy.Scope, copy.Repository, copy.Transport))
+            .ToArray(),
+        Priorities: inventory.Priorities
+            .Select(priority => new DefinitionPriorityDto(priority.Workspace, priority.Winner, priority.Candidates))
+            .ToArray(),
+        OverlapsScopes: inventory.OverlapsScopes);
+
+    internal static LaunchReviewDto ToDto(this LaunchReviews.Alert alert) => new(
+        Token: alert.Token,
+        ServerID: alert.ServerID,
+        ClientID: alert.ClientID,
+        File: alert.File,
+        Scope: alert.Scope,
+        ObservedAt: alert.ObservedAt,
+        Fields: alert.Fields.Select(field => new LaunchReviewFieldDto(field.Name, field.Before, field.After)).ToArray());
+
+    internal static ProjectCopyPreviewDto ToDto(this ProjectCopyPreview preview) => new(
+        Token: preview.Token,
+        SourceFile: preview.SourceFile,
+        TargetFile: preview.TargetFile,
+        Transport: preview.Transport,
+        EnvironmentKeys: preview.EnvironmentKeys,
+        UnresolvedVariables: preview.UnresolvedVariables,
+        Warnings: preview.Warnings,
+        Blockers: preview.Blockers);
 
     internal static ServerDriftDto ToDto(this ServerDrift drift) => new(
         ServerID: drift.ServerID,

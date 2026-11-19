@@ -60,6 +60,20 @@ struct TOMLSpanTests {
 @Suite("TOMLDocument — reading")
 struct TOMLReadingTests {
 
+    @Test("nested arrays and inline tables share a depth limit")
+    func nestingLimit() throws {
+        let value = String(repeating: "[{ child = ", count: 32) + "1" + String(repeating: "}]", count: 32)
+        _ = try TOMLDocument.parse("first = \(value)\nsecond = \(value)")
+        for deeper in ["[\(value)]", "{ child = \(value) }"] {
+            do {
+                _ = try TOMLDocument.parse("value = \(deeper)")
+                Issue.record("Expected a nesting error")
+            } catch let error as TOMLParseError {
+                #expect(error.kind == .nestingTooDeep)
+            }
+        }
+    }
+
     private func document() throws -> TOMLDocument {
         try TOMLDocument.parse(Fixture.codexConfig.text)
     }

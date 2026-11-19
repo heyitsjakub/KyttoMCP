@@ -20,6 +20,7 @@ import {
 import {
   el,
   button,
+  busyButton,
   formatTokens,
   sheet,
   glyph,
@@ -27,7 +28,8 @@ import {
   clientIcon,
   definitionList,
 } from '../dom.js';
-import { addedIn, appeared, began, changed, changedIn, stagger } from '../anim.js';
+import { launchReview, renderProjectCopy, projectSources } from './definitionSources.js';
+import { addedIn, began, changed, changedIn, stagger } from '../anim.js';
 import { toggleCell, cellSnapshot, serverOpener, dotSnapshot } from './serverRow.js';
 import { renderBackups } from './backups.js';
 import { renderClient } from './clientDetail.js';
@@ -83,8 +85,30 @@ function dragStrip() {
   return el('div', 'drag-strip');
 }
 
-export function render(root) {
+export function render(root, changes) {
   const state = getState();
+  // Editing a sheet only changes the dialog. Keep the workspace mounted so
+  // typing does not repaint every row and client icon behind the backdrop.
+  const keys = Object.keys(changes ?? {});
+  if (keys.length === 1 && (keys[0] === 'leavingSheet' || (keys[0] === 'sheet' && state.sheet))) {
+    const workspace = root.querySelector('#body');
+    if (workspace) {
+      root.querySelector('.sheet-backdrop')?.remove();
+      updateDialog(root, workspace, state);
+      return;
+    }
+  }
+  if (keys.length === 1 && keys[0] === 'filter') {
+    const matrix = root.querySelector('.matrix-workspace');
+    const search = root.querySelector('[data-action="filter"]');
+    if (matrix && search) {
+      const scroll = scrollSnapshot(root);
+      if (search.value !== state.filter) search.value = state.filter;
+      matrix.replaceWith(matrixWorkspace(state, matrixClients(), visibleServers()));
+      restoreScroll(scroll, root);
+      return;
+    }
+  }
   const scrollBeforeRender = scrollSnapshot(root);
   root.replaceChildren();
 
@@ -100,15 +124,15 @@ export function render(root) {
     return;
   }
 
-  const shellEntered = changed(
-    'shell',
-    state.settings?.hasCompletedOnboarding ? 'workspace' : 'onboarding',
-    460,
-  );
+  const onboarding = state.settings && !state.settings.hasCompletedOnboarding;
+  const shellEntered = changed('shell', onboarding ? 'onboarding' : 'workspace');
+  const onboardingEntered = began('onboarding', Boolean(onboarding));
 
   // First run: say what was found before showing anything to act on (§8).
-  if (state.settings && !state.settings.hasCompletedOnboarding) {
-    root.append(dragStrip(), renderOnboarding(state));
+  if (onboarding) {
+    const screen = renderOnboarding(state);
+    if (onboardingEntered) screen.classList.add('is-entering');
+    root.append(dragStrip(), screen);
     restoreScroll(scrollBeforeRender, root);
     return;
   }
@@ -124,10 +148,6 @@ export function render(root) {
 
   const body = el('div');
   body.id = 'body';
-  // A sheet is the only active surface while it is open. Keeping the workspace
-  // in the DOM preserves its scroll position, while inert keeps keyboard and
-  // assistive-technology navigation inside the dialog.
-  body.inert = Boolean(state.sheet);
   if (shellEntered) body.classList.add('shell-entering');
 
   const panelIdentity = state.panel === 'client'
@@ -152,6 +172,7 @@ export function render(root) {
 
   const currentNotice = state.notice ?? state.leavingNotice;
   if (currentNotice) content.append(notice(currentNotice, !state.notice));
+  else began('notice', null);
 
   let screen;
   if (state.panel === 'backups') {
@@ -172,6 +193,10 @@ export function render(root) {
   if (panelChanged) screen.classList.add('panel-entering', `panel-${panelDirection}`);
   content.append(screen);
 
+  if (state.launchReviewStorageError) content.append(el('p', 'failure-message', state.launchReviewStorageError));
+  for (const alert of state.launchReviews ?? []) {
+    if (!state.servers.some((server) => server.id === alert.serverID)) content.append(launchReview(state, alert));
+  }
   if (state.diagnostics.length > 0) content.append(diagnostics(state.diagnostics));
 
   const visiblePending = Object.fromEntries(
@@ -188,24 +213,29 @@ export function render(root) {
     state,
   ));
 
+  if (!restarts.length) began('restarts', null);
+
   content.append(footer(state));
   body.append(content);
   root.append(body);
-
-  const modal = renderSheet(state);
-  if (modal) {
-    root.append(modal);
-    // The state tree can legitimately refresh while a sheet is open. Restore
-    // its view position after the replacement DOM has acquired layout, or a
-    // config event turns scrolling a long server detail into a jump to the top.
-    const body = modal.querySelector('.sheet-body');
-    if (body) body.scrollTop = (state.sheet ?? state.leavingSheet)?.scrollTop ?? 0;
-  }
+  updateDialog(root, body, state);
 
   // State changes rebuild the whole tree. Put each workspace scroller back
   // before main.js restores focus, or the browser scrolls the replacement
   // toggle into view and the matrix appears to jump.
   restoreScroll(scrollBeforeRender, root);
+}
+
+function updateDialog(root, workspace, state) {
+  const modal = renderSheet(state);
+  // The toolbar and the workspace are siblings behind the same modal.
+  const modalOpen = Boolean(modal && state.sheet);
+  workspace.inert = modalOpen;
+  root.querySelector('.chrome-band').inert = modalOpen;
+  if (!modal) return;
+  root.append(modal);
+  const body = modal.querySelector('.sheet-body');
+  if (body) body.scrollTop = (state.sheet ?? state.leavingSheet)?.scrollTop ?? 0;
 }
 
 // Every scroller that outlives a render carries `data-scroll-key`, and its
@@ -243,14 +273,11 @@ function renderSheet(state) {
 
   const renderState = state.sheet ? state : { ...state, sheet: current };
   const modal = sheetBody(renderState);
-  // Only a sheet that was not on screen a moment ago animates in. Typing in a
-  // field re-renders the whole tree, and a panel that re-pops per keystroke is
-  // unusable — so the step and the subject, not the sheet's mere existence,
-  // decide what counts as new.
+  // A refresh can rebuild an open sheet. Only a new subject or step enters.
   let entering = false;
   if (state.sheet) entering = began('sheet', sheetSubject(current));
   else began('sheet', null);
-  const contentChanged = changed('sheet-content', sheetIdentity(current), 220);
+  const contentChanged = changed('sheet-content', sheetIdentity(current));
   if (modal && entering) {
     modal.classList.add('is-entering');
   }
@@ -294,6 +321,8 @@ function sheetBody(state) {
       return renderToolMask(state);
     case 'toolSwitch':
       return renderToolSwitch(state);
+    case 'projectCopy':
+      return renderProjectCopy(state);
     case 'unifyPreview':
       return renderUnifyPreview(state);
     case 'form':
@@ -518,7 +547,7 @@ function matrixWorkspace(state, clients, servers) {
   // filters hide, and this guards the one render in between.
   const selected = servers.find((server) => server.id === state.selectedServerId);
   const inspector = renderServerInspector(state, selected?.id);
-  if (changed('inspector-subject', selected?.id ?? '', 180)) inspector.classList.add('inspector-entering');
+  if (changed('inspector-subject', selected?.id ?? '')) inspector.classList.add('inspector-entering');
   split.append(list, inspector);
   workspace.append(split);
   return workspace;
@@ -588,11 +617,11 @@ function table(state, clients, servers) {
   // each cell and each dot can be told whether it is the thing that changed —
   // a toggle animates its own cell and leaves the other three hundred alone.
   const flipped = changedIn('cells', cellSnapshot(clients, servers));
-  const settled = changedIn('dots', dotSnapshot(servers), 420);
+  const settled = changedIn('dots', dotSnapshot(servers));
   // The list itself is a different question: it animates when the set of rows
   // changes — first load, a refresh, a filter — and never when a value inside
   // one of them does.
-  const added = addedIn('matrix-rows', servers.map((server) => server.id), 180);
+  const added = addedIn('matrix-rows', servers.map((server) => server.id));
 
   // The table lives inside a scroll container rather than being a flex child
   // itself. As a flex item it would stretch to fill the window and hand the
@@ -831,7 +860,7 @@ function notice(current, leaving = false) {
   // A banner appearing pushes the matrix down; sliding in makes that a movement
   // rather than a jump. It slides only when the message is a new one — the same
   // notice sitting there through the next ten renders stays put.
-  const fresh = appeared('notice', `${current.kind}:${current.message}`);
+  const fresh = began('notice', `${current.kind}:${current.message}`);
   const bar = el('div', `notice ${current.kind}${fresh && !leaving ? ' is-entering' : ''}${leaving ? ' is-leaving' : ''}`);
   bar.setAttribute('role', current.kind === 'info' ? 'status' : 'alert');
   bar.append(el('span', 'notice-message', current.message));
@@ -896,6 +925,12 @@ function renderMatrixWriteConfirmation(state) {
   ];
   if (current.error) body.push(el('p', 'failure-message', current.error));
 
+  if (current.previousState === 'absent' && projectSources(state, server.id).length) {
+    const primary = state.definitions[server.id].copies[0];
+    body.push(el('p', 'field-hint', `Add server copies the client definition from ${primary.file}.`),
+      busyButton(current.busy, 'Choose a project definition…', 'Changing…', 'open-project-copy',
+        { dataset: { serverId: server.id, clientId: client.id } }));
+  }
   return sheet('Change client configuration?', body, [
     button('Cancel', 'close-sheet', { className: 'button subtle' }),
     el('span', 'spacer'),
@@ -954,7 +989,7 @@ function renderRestartConfirm(state) {
 function restartBar(restarts, leaving = false, state = null) {
   const restartable = restartableClientIds(state);
   const text = restarts.map((entry) => `${entry.id}:${entry.count}`).join('|');
-  const fresh = appeared('restarts', text);
+  const fresh = began('restarts', text);
   const bar = el('div', `restart-bar${fresh && !leaving ? ' is-entering' : ''}${leaving ? ' is-leaving' : ''}`);
   bar.setAttribute('role', 'status');
   for (const entry of restarts) {

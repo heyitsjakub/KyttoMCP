@@ -291,7 +291,15 @@ const PATHS = {
 /// and Kytto parks it so the change is reversible.
 const PARKING_CLIENTS = new Set(['cursor', 'vsCode', 'claudeDesktop']);
 
+let projectCopyPlan;
+let projectPreviewSequence = 0;
 const world = {
+  launchReviews: [{
+    token: 'fixture-launch-review', serverID: 'repo-helper', clientID: REPOSITORY_SOURCE_ID,
+    file: CLIENTS.find((client) => client.id === REPOSITORY_SOURCE_ID).configPathDisplay,
+    scope: 'Workspace · shop', observedAt: new Date().toISOString(),
+    fields: [{ name: 'Arguments', before: '1 masked', after: '2 masked' }],
+  }],
   settings: {
     theme: 'dark',
     tokenWarningThreshold: 20_000,
@@ -1003,7 +1011,23 @@ const parseAgentImport = (text) => {
   });
 };
 
+function fixtureDefinitions() {
+  const result = {};
+  for (const server of world.servers) {
+    if (server.isBundled) continue;
+    const clients = CLIENTS.filter((client) => (server.enabledIn[client.id] ?? 'absent') !== 'absent');
+    const copies = clients.map((client) => ({
+      clientID: client.id, name: server.name, file: client.configPathDisplay, scope: client.scopeLabel || 'Global',
+      repository: client.isRepositoryFile, transport: server.transport,
+    }));
+    result[server.id] = { copies, priorities: [], overlapsScopes: copies.length > 1 && copies.some((copy) => copy.repository) };
+  }
+  return result;
+}
+
 const snapshot = () => ({
+  definitions: fixtureDefinitions(),
+  launchReviews: structuredClone(world.launchReviews),
   clients: CLIENTS.map((client) => ({ ...client, toolBudget: toolBudget(client.id) })),
   servers: structuredClone(world.servers).map((server) => ({ toolsOff: {}, lockedTools: {}, packageSafety: null, ...server })),
   diagnostics: structuredClone(world.diagnostics),
@@ -1180,7 +1204,7 @@ const HANDLERS = {
     build: '1',
     // `library` and `agent-import` are what native reports too; the sidebar's
     // Discover group and the toolbar's Import agent button are gated on them.
-    capabilities: ['config.read', 'config.write', 'backups', 'gateway.stdio', 'gateway.masking', 'updates', 'skills', 'provenance', 'package-safety', 'library', 'agent-import', 'health.http', 'health.oauth', 'portable-setup', 'client-restart'],
+    capabilities: ['config.read', 'config.write', 'backups', 'gateway.stdio', 'gateway.masking', 'updates', 'skills', 'provenance', 'package-safety', 'library', 'agent-import', 'health.http', 'health.oauth', 'portable-setup', 'project-copy', 'client-restart'],
     platformDisplayName: 'fixtures',
     // Deliberately neither "Keychain" nor "Credential Manager": the harness is
     // not pretending to be either platform, and a screen that reads correctly
@@ -1486,6 +1510,35 @@ const HANDLERS = {
     world.pendingContractImports.entries = world.pendingContractImports.entries
       .filter((entry) => entry.serverID !== serverID);
     return snapshot();
+  },
+
+  'launch.acknowledge': ({ token }) => {
+    if (!world.launchReviews.some((review) => review.token === token)) throw fixtureError('Review changed.', 'appState');
+    world.launchReviews = world.launchReviews.filter((review) => review.token !== token);
+    return snapshot();
+  },
+  'servers.projectCopyPreview': ({ serverID, sourceClientID, targetClientID }) => {
+    projectCopyPlan = null;
+    const server = world.servers.find((entry) => entry.id === serverID);
+    const source = fixtureDefinitions()[serverID]?.copies.find((copy) => copy.repository && copy.clientID === sourceClientID);
+    const dest = CLIENTS.find((client) => client.id === targetClientID && !client.isReadOnly && client.state !== 'notInstalled');
+    if (!source || !dest) throw fixtureError('Choose a project definition and writable client.', 'appState');
+    const blocked = (server.enabledIn[targetClientID] ?? 'absent') !== 'absent';
+    const token = blocked ? null : `fixture-copy-${++projectPreviewSequence}`;
+    if (token) projectCopyPlan = { token, server, targetClientID };
+    return { token, sourceFile: source.file, targetFile: dest.configPathDisplay, transport: source.transport,
+      environmentKeys: server.env.map((entry) => entry.key), unresolvedVariables: [], warnings: [],
+      blockers: blocked ? ['The destination already contains this server name.'] : [] };
+  },
+  'servers.applyProjectCopy': ({ token }) => {
+    const plan = projectCopyPlan;
+    projectCopyPlan = null;
+    if (!plan || plan.token !== token || (plan.server.enabledIn[plan.targetClientID] ?? 'absent') !== 'absent') {
+      throw fixtureError('Open a fresh preview.', 'appState');
+    }
+    plan.server.enabledIn[plan.targetClientID] = 'enabled';
+    recordWrite(plan.targetClientID);
+    return { serverName: plan.server.name, changed: [plan.targetClientID], requiresRestart: true, state: snapshot() };
   },
 
   'servers.unifyPreview': ({ serverID, sourceClientID }) => {

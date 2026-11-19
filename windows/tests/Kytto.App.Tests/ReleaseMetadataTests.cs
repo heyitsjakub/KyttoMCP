@@ -6,7 +6,7 @@ namespace Kytto.App.Tests;
 
 public sealed class ReleaseMetadataTests
 {
-    private const string CurrentRelease = "1.0.9.5";
+    private const string CurrentRelease = "1.0.9.6";
 
     [Fact]
     public void AppAssemblyAndProjectCarryTheCurrentReleaseVersion()
@@ -18,9 +18,7 @@ public sealed class ReleaseMetadataTests
 
         Assert.NotNull(informational);
         Assert.Equal(CurrentRelease, informational.Split('+', 2)[0]);
-        // Four parts: the assembly version always carries a revision, so 1.0.9 was
-        // 1.0.9.0 and 1.0.9.5 spells its fourth part out; `new Version(1, 0, 9)` equals neither.
-        Assert.Equal(new Version(1, 0, 9, 5), assembly.GetName().Version);
+        Assert.Equal(Version.Parse(CurrentRelease), assembly.GetName().Version);
 
         var project = XDocument.Load(Path.Combine(
             RepositoryRoot(), "src", "Kytto.App", "Kytto.App.csproj"));
